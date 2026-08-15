@@ -22,3 +22,99 @@
   pointer-events: none;
   z-index: 0;
 }
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes loadingBar {
+  0% {
+    left: -35%;
+    width: 35%;
+  }
+  50% {
+    left: 30%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 35%;
+  }
+}
+
+.animate-loading-bar {
+  animation: loadingBar 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes bubbleFloat1 {
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  50% { transform: translateY(-8px) scale(1.02) rotate(3deg); }
+}
+
+@keyframes bubbleFloat2 {
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  50% { transform: translateY(-12px) scale(0.98) rotate(-4deg); }
+}
+
+@keyframes bubbleFloat3 {
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  50% { transform: translateY(-6px) scale(1.04) rotate(2deg); }
+}
+
+.animate-bubble-1 {
+  animation: bubbleFloat1 5s ease-in-out infinite;
+}
+
+.animate-bubble-2 {
+  animation: bubbleFloat2 7s ease-in-out infinite 0.5s;
+}
+
+.animate-bubble-3 {
+  animation: bubbleFloat3 6s ease-in-out infinite 1.2s;
+}
+
+/* Entry transitions for the Login screen card & logo */
+@keyframes slideUpDrawer {
+  0% { transform: translateY(120px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-drawer-slide-up {
+  animation: slideUpDrawer 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInLogo {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in-logo {
+  animation: fadeInLogo 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+
+

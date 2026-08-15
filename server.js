@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import infoRoutes from './api/routes/info.routes.js';
+import loginRoutes from './api/routes/auth/login.routes.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -13,14 +13,14 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 9001;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // API Routes
-app.use('/api/info', infoRoutes);
+app.use('/api/auth', loginRoutes);
 
 // Serve static assets in production
 if (process.env.NODE_ENV === 'production') {
@@ -32,7 +32,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 } else {
   app.get('/', (req, res) => {
-    res.send('React & Express Starter Pack API Server is running. Frontend dev server is active on port 5173.');
+    res.send('React & Express Starter Pack API Server is running. Frontend dev server is active on port 9000.');
   });
 }
 
