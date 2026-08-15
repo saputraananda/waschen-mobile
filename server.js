@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import loginRoutes from './api/routes/auth/login.routes.js';
+import biometricsRoutes from './api/routes/auth/biometrics.routes.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -21,6 +22,7 @@ app.use(express.json());
 
 // API Routes
 app.use('/api/auth', loginRoutes);
+app.use('/api/auth', biometricsRoutes);
 
 // Serve static assets in production
 if (process.env.NODE_ENV === 'production') {
@@ -37,10 +39,15 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`=========================================`);
-  console.log(`  React & Express Monorepo Starter Server `);
-  console.log(`  Status: Running                        `);
-  console.log(`  Port:   http://localhost:${PORT}        `);
-  console.log(`=========================================`);
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`=========================================`);
+    console.log(`  React & Express Monorepo Starter Server `);
+    console.log(`  Status: Running                        `);
+    console.log(`  Port:   http://localhost:${PORT}        `);
+    console.log(`=========================================`);
+  });
+}
+
+export default app;
+
