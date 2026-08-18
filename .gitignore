@@ -21,3 +21,6 @@ dist-ssr/
 *.sw?
 
 .agent
+
+# Uploaded user files
+uploads/

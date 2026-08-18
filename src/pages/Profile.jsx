@@ -4,7 +4,8 @@ import axios from 'axios';
 import { startRegistration } from '@simplewebauthn/browser';
 import Navbar from '../components/Navbar';
 import ConfirmModal from '../components/ConfirmModal';
-import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2 } from 'lucide-react';
+import formatName from '../utils/FormatName.js';
+import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw } from 'lucide-react';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -94,22 +95,28 @@ export default function Profile() {
         fetchBiometricStatus(token, userId);
 
         // Fetch exact employee profile & join_date directly from database mst_employee mainpool
-        axios.get(`/api/auth/profile?email=${encodeURIComponent(email)}&employeeId=${empId}`)
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        axios.get(`/api/employee/profile-detail?email=${encodeURIComponent(email)}&employeeId=${empId}`, config)
             .then(res => {
                 if (res.data?.success && res.data?.data) {
                     const dbData = res.data.data;
                     setCurrentUser(prev => ({
                         ...prev,
                         ...dbData,
-                        fullName: dbData.full_name || prev.fullName,
+                        fullName: dbData.full_name || dbData.fullName || prev.fullName,
+                        employee_code: dbData.employee_code || dbData.employeeCode || prev.employee_code,
+                        employeeCode: dbData.employee_code || dbData.employeeCode || prev.employeeCode,
                         join_date: dbData.join_date || prev.join_date,
-                        phone: dbData.phone_number || prev.phone
+                        phone: dbData.phone_number || prev.phone,
+                        phone_number: dbData.phone_number || prev.phone_number,
+                        address: dbData.address || prev.address,
+                        position: dbData.position_name || dbData.position || prev.position,
+                        department: dbData.department_name || dbData.department || prev.department
                     }));
                     if (storedUser) {
                         try {
                             const parsed = JSON.parse(storedUser);
-                            parsed.join_date = dbData.join_date;
-                            parsed.joinDate = dbData.join_date;
+                            Object.assign(parsed, dbData);
                             localStorage.setItem('user', JSON.stringify(parsed));
                         } catch (e) { }
                     }
@@ -311,24 +318,71 @@ export default function Profile() {
 
                 {/* ===== HERO HEADER WITH PROFILE IDENTITY ===== */}
                 <div className="bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] pt-7 pb-14 px-5 relative overflow-hidden flex-shrink-0 text-white rounded-b-[36px] shadow-xl shadow-[#5f1340]/25">
-                    {/* Wavy layers */}
+                    {/* Wavy background layers */}
                     <div className="absolute top-0 left-[-20%] right-[-20%] h-[75%] bg-[#360823]/90 rounded-b-[50%] transform scale-x-110 origin-top pointer-events-none z-0" />
                     <div className="absolute top-0 left-[-10%] right-[-10%] h-[58%] bg-gradient-to-br from-[#4d0f34] to-[#5f1340]/90 rounded-b-[45%] pointer-events-none z-0" />
                     <div className="absolute top-0 right-[-15%] w-[55%] h-[130px] bg-gradient-to-br from-white/10 to-transparent rounded-bl-[180px] pointer-events-none z-0" />
+
+                    {/* Ambient Glow Spot */}
+                    <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-gradient-to-br from-pink-500/20 to-transparent rounded-full blur-2xl pointer-events-none z-0" />
+
+                    {/* Laundry & Profile Floating Watermark Icons - Placed above background at z-10 */}
+                    <div className="absolute inset-0 opacity-[0.12] pointer-events-none z-10 overflow-hidden select-none">
+                        {/* Top Left */}
+                        <div className="absolute top-2 left-3 transform -rotate-12">
+                            <RefreshCw className="w-14 h-14 text-white" />
+                        </div>
+                        {/* Top Right */}
+                        <div className="absolute top-3 right-5 transform rotate-12">
+                            <Shirt className="w-16 h-16 text-white" />
+                        </div>
+                        {/* Top Center-Right */}
+                        <div className="absolute top-12 right-24 transform -rotate-45">
+                            <Sparkles className="w-10 h-10 text-white" />
+                        </div>
+                        {/* Mid Left */}
+                        <div className="absolute top-20 left-4 transform rotate-12">
+                            <ShieldCheck className="w-14 h-14 text-white" />
+                        </div>
+                        {/* Mid Right */}
+                        <div className="absolute top-24 right-4 transform -rotate-12">
+                            <Wind className="w-14 h-14 text-white" />
+                        </div>
+                        {/* Center Left */}
+                        <div className="absolute top-36 left-12 transform -rotate-12">
+                            <User className="w-12 h-12 text-white" />
+                        </div>
+                        {/* Bottom Left */}
+                        <div className="absolute bottom-5 left-4 transform rotate-45">
+                            <Waves className="w-16 h-16 text-white" />
+                        </div>
+                        {/* Bottom Mid-Left */}
+                        <div className="absolute bottom-3 left-1/3 transform -rotate-6">
+                            <Droplets className="w-12 h-12 text-white" />
+                        </div>
+                        {/* Bottom Right */}
+                        <div className="absolute bottom-4 right-6 transform rotate-12">
+                            <Building2 className="w-14 h-14 text-white" />
+                        </div>
+                        {/* Bottom Mid-Right */}
+                        <div className="absolute bottom-12 right-20 transform -rotate-12">
+                            <Sparkles className="w-10 h-10 text-white" />
+                        </div>
+                    </div>
 
                     {/* Big Avatar + Name */}
                     <div className="relative z-20 flex flex-col items-center text-center pt-2">
                         {/* Avatar ring */}
                         <div className="relative mb-3">
                             <div className="w-[80px] h-[80px] rounded-full bg-gradient-to-br from-pink-300/50 via-[#8a1c5d] to-[#450d2e] border-[3px] border-white/40 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-                                <span className="text-[28px] font-black text-white">{getInitials(currentUser.fullName)}</span>
+                                <span className="text-[28px] font-black text-white">{getInitials(formatName(currentUser.fullName || currentUser.full_name))}</span>
                             </div>
                             <span className="absolute bottom-0.5 right-0.5 w-4.5 h-4.5 bg-emerald-400 rounded-full border-2 border-[#450d2e] shadow-sm" />
                         </div>
 
                         {/* Name */}
                         <h2 className="text-[19px] font-black text-white tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
-                            {currentUser.fullName}
+                            {formatName(currentUser.fullName || currentUser.full_name)}
                         </h2>
 
                         {/* Subtitle / Role Display according to rule #4 */}
@@ -376,7 +430,6 @@ export default function Profile() {
                     <div className="mx-4 -mt-6 relative z-20 bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 overflow-hidden">
                         <div className="px-5 pt-4 pb-2 border-b border-slate-100 flex justify-between items-center">
                             <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider">Informasi Akun</span>
-                            <span className="text-[10px] text-[#5f1340] font-black uppercase tracking-wider bg-[#5f1340]/10 px-2 py-0.5 rounded-full">Waschen HR</span>
                         </div>
 
                         <div className="divide-y divide-slate-100/80">
@@ -387,7 +440,7 @@ export default function Profile() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Nama</span>
-                                    <span className="text-[13px] text-slate-800 font-bold truncate block">{currentUser.fullName || currentUser.full_name || '-'}</span>
+                                    <span className="text-[13px] text-slate-800 font-bold truncate block">{formatName(currentUser.fullName || currentUser.full_name) || '-'}</span>
                                 </div>
                             </div>
 

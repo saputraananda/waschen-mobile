@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home.jsx';
 import Login from './pages/auth/Login.jsx';
-import Riwayat from './pages/Riwayat.jsx';
+import History from './pages/History.jsx';
+import Attendance from './pages/Attendance.jsx';
+import Leave from './pages/Leave.jsx';
 import Profile from './pages/Profile.jsx';
 import EditProfile from './pages/EditProfile.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -119,9 +121,19 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/riwayat" element={<Riwayat />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/attendance" element={<Attendance />} />
+        <Route path="/leave" element={<Leave />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
+
+        {/* Backward-compatibility aliases for legacy URLs */}
+        <Route path="/riwayat" element={<Navigate to="/history" replace />} />
+        <Route path="/absensi" element={<Navigate to="/attendance" replace />} />
+        <Route path="/absence" element={<Navigate to="/attendance" replace />} />
+        <Route path="/perizinan" element={<Navigate to="/leave" replace />} />
+        <Route path="/izin" element={<Navigate to="/leave" replace />} />
+
         {/* Fallback route redirection */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

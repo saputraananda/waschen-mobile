@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import waschenLogo from '../assets/images/waschen.png';
 import Navbar from '../components/Navbar';
+import formatName from '../utils/FormatName.js';
 import {
   Calendar,
   Clock,
@@ -152,13 +153,13 @@ export default function Home() {
                   onClick={() => navigate('/profile')}
                   className="w-[50px] h-[50px] rounded-[18px] bg-white/15 border border-white/25 flex items-center justify-center font-extrabold text-[17px] text-white flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-transform"
                 >
-                  {getInitials(currentUser?.fullName)}
+                  {getInitials(formatName(currentUser?.fullName || currentUser?.full_name))}
                 </div>
 
                 {/* User Name & Employee Code */}
                 <div className="min-w-0">
                   <h2 className="text-[15.5px] font-bold text-white leading-snug truncate tracking-tight">
-                    {currentUser?.fullName || 'Karyawan Waschen'}
+                    {formatName(currentUser?.fullName || currentUser?.full_name || 'Karyawan Waschen')}
                   </h2>
                   <p className="text-[11.5px] text-white/75 font-medium truncate mt-0.5 tracking-wide">
                     Karyawan &middot; {currentUser?.employeeCode || 'WAI2026029'}
@@ -226,7 +227,7 @@ export default function Home() {
               {/* Menu 1: Absensi */}
               <button
                 id="menu-absensi-btn"
-                onClick={() => handleMenuClick('/absensi', 'Absensi')}
+                onClick={() => handleMenuClick('/attendance', 'Absensi')}
                 className="bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_rgba(16,185,129,0.12)] hover:-translate-y-0.5 active:scale-[0.97] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group"
               >
                 <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />
@@ -246,7 +247,7 @@ export default function Home() {
               {/* Menu 2: Izin / Libur */}
               <button
                 id="menu-izin-btn"
-                onClick={() => handleMenuClick('/izin', 'Izin / Libur')}
+                onClick={() => handleMenuClick('/leave', 'Izin / Libur')}
                 className="bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_rgba(245,158,11,0.12)] hover:-translate-y-0.5 active:scale-[0.97] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group"
               >
                 <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />

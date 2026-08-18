@@ -8,7 +8,7 @@ export default function Navbar() {
 
   const tabs = [
     { id: 'beranda', label: 'Beranda', route: '/', icon: <Layers className="w-5 h-5" /> },
-    { id: 'riwayat', label: 'Riwayat', route: '/riwayat', icon: <Clock className="w-5 h-5" /> },
+    { id: 'history', label: 'Riwayat', route: '/history', icon: <Clock className="w-5 h-5" /> },
     { id: 'profil', label: 'Profil', route: '/profile', icon: <User className="w-5 h-5" /> },
   ];
 

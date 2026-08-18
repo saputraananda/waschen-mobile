@@ -5,6 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import loginRoutes from './api/routes/auth/login.routes.js';
 import biometricsRoutes from './api/routes/auth/biometrics.routes.js';
+import profileRoutes from './api/routes/profile.routes.js';
+import { getBaseUploadDir } from './api/middleware/upload.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -20,9 +22,14 @@ const PORT = process.env.PORT || 9001;
 app.use(cors());
 app.use(express.json());
 
+// Serve uploaded files statically
+app.use('/uploads', express.static(getBaseUploadDir()));
+
 // API Routes
 app.use('/api/auth', loginRoutes);
 app.use('/api/auth', biometricsRoutes);
+app.use('/api/employee', profileRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Serve static assets in production
 if (process.env.NODE_ENV === 'production') {
