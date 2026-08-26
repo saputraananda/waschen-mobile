@@ -120,20 +120,22 @@ export default function ConfirmModal({
 
         {/* Action Buttons */}
         <div className="flex gap-2.5">
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-[12px] border border-slate-200 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-600 text-[13px] font-semibold transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {cancelText}
-          </button>
+          {cancelText ? (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-[12px] border border-slate-200 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-600 text-[13px] font-semibold transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {cancelText}
+            </button>
+          ) : null}
           
           <button
             type="button"
             disabled={isLoading}
             onClick={onConfirm}
-            className={`flex-1 py-2.5 rounded-[12px] text-[13px] font-bold shadow-sm transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${currentTheme.confirmBtn}`}
+            className={`${cancelText ? 'flex-1' : 'w-full'} py-2.5 rounded-[12px] text-[13px] font-bold shadow-sm transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${currentTheme.confirmBtn}`}
           >
             {isLoading ? (
               <>

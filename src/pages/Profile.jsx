@@ -5,7 +5,16 @@ import { startRegistration } from '@simplewebauthn/browser';
 import Navbar from '../components/Navbar';
 import ConfirmModal from '../components/ConfirmModal';
 import formatName from '../utils/FormatName.js';
-import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw } from 'lucide-react';
+import {
+    getDeferredInstallPrompt,
+    clearDeferredInstallPrompt,
+    subscribePwaInstall,
+    isPwaKnownInstalled,
+    checkPwaInstalled,
+    markPwaInstalled,
+    waitForInstallPrompt,
+} from '../utils/pwaInstall.js';
+import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw, Download, Smartphone } from 'lucide-react';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -41,6 +50,17 @@ export default function Profile() {
         variant: 'info'
     });
 
+    // PWA install states
+    const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(() => getDeferredInstallPrompt());
+    const [isPwaInstalled, setIsPwaInstalled] = useState(() => isPwaKnownInstalled());
+    const [pwaInstallLoading, setPwaInstallLoading] = useState(false);
+    const [pwaAlertModal, setPwaAlertModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        variant: 'info'
+    });
+
     // Fetch biometric status from server
     const fetchBiometricStatus = async (token, userId) => {
         try {
@@ -63,7 +83,40 @@ export default function Profile() {
     };
 
     useEffect(() => {
-        document.title = 'Profil Saya - Waschen Mobile';
+        let alive = true;
+
+        const syncInstalled = async () => {
+            const installed = await checkPwaInstalled();
+            if (alive) setIsPwaInstalled(installed);
+        };
+        syncInstalled();
+
+        const unsubscribe = subscribePwaInstall((prompt) => {
+            setDeferredInstallPrompt(prompt);
+            // Jika browser masih menawarkan install, anggap belum terpasang
+            if (prompt) {
+                setIsPwaInstalled(false);
+            } else {
+                syncInstalled();
+            }
+        });
+
+        const onAppInstalled = () => {
+            clearDeferredInstallPrompt();
+            markPwaInstalled();
+            setIsPwaInstalled(true);
+        };
+        window.addEventListener('appinstalled', onAppInstalled);
+
+        return () => {
+            alive = false;
+            unsubscribe();
+            window.removeEventListener('appinstalled', onAppInstalled);
+        };
+    }, []);
+
+    useEffect(() => {
+        document.title = 'Profil Saya';
         const token = localStorage.getItem('token');
         if (!token) {
             navigate('/login');
@@ -246,6 +299,72 @@ export default function Profile() {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         navigate('/login');
+    };
+
+    const showAlreadyInstalledModal = () => {
+        setIsPwaInstalled(true);
+        setPwaAlertModal({
+            isOpen: true,
+            title: 'Aplikasi Sudah Terpasang',
+            message: 'Waschen Mobile sudah terpasang di perangkat Anda dan siap dibuka dari layar utama.',
+            variant: 'info'
+        });
+    };
+
+    const isIosDevice = () => {
+        const ua = window.navigator.userAgent.toLowerCase();
+        return /iphone|ipad|ipod/.test(ua) ||
+            (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+    };
+
+    const handleInstallPwa = async () => {
+        if (await checkPwaInstalled()) {
+            showAlreadyInstalledModal();
+            return;
+        }
+
+        setPwaInstallLoading(true);
+        try {
+            let promptEvent = getDeferredInstallPrompt() || deferredInstallPrompt;
+            if (!promptEvent) {
+                promptEvent = await waitForInstallPrompt(1800);
+            }
+
+            if (promptEvent) {
+                await promptEvent.prompt();
+                const choice = await promptEvent.userChoice;
+                clearDeferredInstallPrompt();
+                setDeferredInstallPrompt(null);
+                if (choice.outcome === 'accepted') {
+                    markPwaInstalled();
+                    setIsPwaInstalled(true);
+                }
+                return;
+            }
+
+            // Sudah terinstall: Chrome biasanya tidak kirim beforeinstallprompt lagi
+            if (await checkPwaInstalled() || isPwaKnownInstalled()) {
+                showAlreadyInstalledModal();
+                return;
+            }
+
+            // Tanpa prompt install di Chromium desktop = hampir selalu sudah terpasang
+            // (atau baru saja di-install di sesi sebelumnya tanpa flag lokal).
+            if (!isIosDevice()) {
+                markPwaInstalled();
+                showAlreadyInstalledModal();
+                return;
+            }
+
+            setPwaAlertModal({
+                isOpen: true,
+                title: 'Pasang di iPhone / iPad',
+                message: 'Buka aplikasi ini di Safari → ketuk tombol Share → pilih "Add to Home Screen" → tekan Add. Aplikasi akan muncul di layar utama tanpa address bar.',
+                variant: 'info'
+            });
+        } finally {
+            setPwaInstallLoading(false);
+        }
     };
 
     const getInitials = (name) => {
@@ -526,6 +645,35 @@ export default function Profile() {
                                 <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#5f1340] group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                             </button>
 
+                            {/* Download / Install PWA */}
+                            <button
+                                id="install-pwa-btn"
+                                onClick={handleInstallPwa}
+                                disabled={pwaInstallLoading}
+                                className="bg-white border border-slate-100 rounded-[22px] shadow-[0_4px_16px_rgba(0,0,0,0.03)] p-4 flex items-center gap-3.5 hover:shadow-[0_8px_24px_rgba(95,19,64,0.12)] hover:-translate-y-0.5 active:scale-[.98] transition-all group disabled:opacity-70 disabled:pointer-events-none"
+                            >
+                                <div className="w-10 h-10 rounded-2xl bg-[#5f1340]/10 text-[#5f1340] flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                                    {isPwaInstalled ? <Smartphone className="w-5 h-5" /> : <Download className="w-5 h-5" />}
+                                </div>
+                                <div className="flex-1 text-left min-w-0">
+                                    <span className="text-[13.5px] font-black text-slate-800 group-hover:text-[#5f1340] transition-colors block leading-tight">
+                                        {isPwaInstalled ? 'Aplikasi Sudah Terpasang' : 'Download Aplikasi (PWA)'}
+                                    </span>
+                                    <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+                                        {pwaInstallLoading
+                                            ? 'Menyiapkan instalasi...'
+                                            : isPwaInstalled
+                                            ? 'Waschen Mobile siap di layar utama perangkat Anda'
+                                            : 'Pasang ke layar utama agar akses lebih cepat seperti app native'}
+                                    </span>
+                                </div>
+                                {isPwaInstalled ? (
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                                ) : (
+                                    <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#5f1340] group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                                )}
+                            </button>
+
                             {/* Biometric & Face ID Security Card - Entire Card Clickable */}
                             <div className="relative group">
                                 <button
@@ -626,6 +774,19 @@ export default function Profile() {
                     confirmText="Tutup"
                     cancelText=""
                     variant={biometricAlertModal.variant}
+                    closeOnOverlayClick={true}
+                />
+
+                {/* ===== PWA INSTALL INFORMATION MODAL ===== */}
+                <ConfirmModal
+                    isOpen={pwaAlertModal.isOpen}
+                    onClose={() => setPwaAlertModal(prev => ({ ...prev, isOpen: false }))}
+                    onConfirm={() => setPwaAlertModal(prev => ({ ...prev, isOpen: false }))}
+                    title={pwaAlertModal.title}
+                    message={pwaAlertModal.message}
+                    confirmText="Mengerti"
+                    cancelText=""
+                    variant={pwaAlertModal.variant}
                     closeOnOverlayClick={true}
                 />
 
