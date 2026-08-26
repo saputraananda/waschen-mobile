@@ -4,6 +4,7 @@ import axios from 'axios';
 import { startAuthentication } from '@simplewebauthn/browser';
 import waschenLogo from '../../assets/images/waschen.png';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
+import { resetPageView } from '../../utils/resetPageView.js';
 import { Eye, EyeOff, Lock, User as UserIcon, ScanFace, Fingerprint } from 'lucide-react';
 
 export default function Login() {
@@ -23,13 +24,19 @@ export default function Login() {
         message: 'Username/Email atau Kata Sandi yang Anda masukkan tidak sesuai.',
     });
 
+    const goToHomeFresh = () => {
+        resetPageView();
+        navigate('/', { replace: true });
+    };
+
     // Check WebAuthn support & Redirect to dashboard if token exists
     useEffect(() => {
-        document.title = 'Masuk Akun - Waschen Mobile';
+        document.title = 'Masuk Akun';
         const token = localStorage.getItem('token');
         if (token) {
-            navigate('/');
+            goToHomeFresh();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [navigate]);
 
     // Form submission handler
@@ -57,8 +64,7 @@ export default function Login() {
                 // Save auth data
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data.user));
-                // Redirect to dashboard
-                navigate('/');
+                goToHomeFresh();
             } else {
                 throw new Error(response.data?.message || 'Username atau Kata Sandi salah');
             }
@@ -109,7 +115,7 @@ export default function Login() {
             if (verifyRes.data && verifyRes.data.success) {
                 localStorage.setItem('token', verifyRes.data.token);
                 localStorage.setItem('user', JSON.stringify(verifyRes.data.user));
-                navigate('/');
+                goToHomeFresh();
             } else {
                 throw new Error(verifyRes.data?.message || 'Verifikasi biometrik tidak valid');
             }
@@ -187,7 +193,7 @@ export default function Login() {
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                     disabled={isSubmitting}
-                                    className="w-full border border-slate-200 rounded-[18px] pl-4 pr-11 py-3.5 text-[15px] text-slate-800 focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/20 outline-none transition duration-150 font-medium"
+                                    className="w-full border border-slate-200 rounded-[18px] pl-4 pr-11 py-3.5 text-[16px] text-slate-800 focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/20 outline-none transition duration-150 font-medium"
                                 />
                                 <div className="absolute right-4 text-slate-400 pointer-events-none">
                                     <UserIcon className="w-4.5 h-4.5" />
@@ -208,7 +214,7 @@ export default function Login() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     disabled={isSubmitting}
-                                    className="w-full border border-slate-200 rounded-[18px] pl-4 pr-12 py-3.5 text-[15px] text-slate-800 focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/20 outline-none transition duration-150 font-medium"
+                                    className="w-full border border-slate-200 rounded-[18px] pl-4 pr-12 py-3.5 text-[16px] text-slate-800 focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/20 outline-none transition duration-150 font-medium"
                                 />
                                 <button
                                     id="login-password-toggle"

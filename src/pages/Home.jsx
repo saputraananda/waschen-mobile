@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 import waschenLogo from '../assets/images/waschen.png';
 import Navbar from '../components/Navbar';
 import formatName from '../utils/FormatName.js';
+import { resetPageView } from '../utils/resetPageView.js';
 import {
   Calendar,
   Clock,
@@ -44,7 +45,9 @@ export default function Home() {
 
   // Check auth token and set document title
   useEffect(() => {
-    document.title = 'Dasbor Utama - Waschen Mobile';
+    document.title = 'Dasbor Utama';
+    resetPageView();
+
     const token = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
     if (!token) {
