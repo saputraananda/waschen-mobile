@@ -137,13 +137,13 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-[100dvh] bg-slate-100 flex justify-center items-stretch antialiased font-sans select-none overflow-y-auto">
+        <div className="min-h-[100dvh] bg-slate-100 flex justify-center items-stretch antialiased font-sans overflow-y-auto">
             <div className="w-full max-w-[430px] min-h-[100dvh] bg-[#2a051b] overflow-y-auto flex flex-col relative shadow-2xl">
 
                 {/* ==========================================
                     ABSTRACT WAVY BACKDROP WITH BUBBLES
                     ========================================== */}
-                <div className="h-[220px] relative overflow-hidden pointer-events-none z-0 flex-shrink-0">
+                <div className="min-h-[220px] pt-safe-header relative overflow-hidden pointer-events-none z-0 flex-shrink-0">
                     <div className="absolute top-0 left-[-20%] right-[-20%] h-[150%] bg-[#3d0a28] rounded-b-[45%] transform scale-x-110 origin-top z-0" />
                     <div className="absolute top-0 left-[-10%] right-[-10%] h-[120%] bg-gradient-to-br from-[#4d0f34] to-[#5f1340] rounded-b-[45%] shadow-[0_12px_36px_rgba(0,0,0,0.18)] z-0" />
                     <div className="absolute top-0 right-0 left-[15%] h-[80%] bg-[#8c2060]/30 rounded-bl-[120px] rounded-br-[60px] z-0" />

@@ -1,4 +1,4 @@
-import { mainPool, myWaschenPool } from '../db/pool.js';
+import { mainPool, myWaschenPool } from '../../db/pool.js';
 import jwt from 'jsonwebtoken';
 
 /**
@@ -131,6 +131,7 @@ export const getProfileDetail = async (req, res) => {
       department: employeeRow.department_name || 'Waschen Laundry',
       profile_url: employeeRow.profile_path || employeeRow.avatar || null,
       role: assignedRole || 'Frontliner',
+      assignedRole: assignedRole || null,
       is_leader: isLeader,
       isLeader: isLeader,
       outlet_id: assignedOutletId,

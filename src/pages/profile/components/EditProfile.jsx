@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import formatName from '../../../utils/FormatName.js';
 
 const api = axios.create({
     baseURL: '/api',
@@ -15,8 +17,7 @@ api.interceptors.request.use(config => {
 });
 
 /* ── Helpers ── */
-const titleCase = s => (!s ? '' : s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()));
-const initials = name => (!name ? '?' : name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase());
+const initials = name => (!name ? '?' : formatName(name).split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase());
 
 /* ── Icons ── */
 const IconBack = () => (
@@ -107,14 +108,14 @@ function DocPreviewModal({ open, onClose, url, label }) {
     const [imgErr, setImgErr] = useState(false);
     const [downloading, setDownloading] = useState(false);
 
+    useLockBodyScroll(open);
+
     useEffect(() => {
         if (!open) return;
         setImgErr(false);
-        document.body.style.overflow = 'hidden';
         const onKey = e => { if (e.key === 'Escape') onClose(); };
         window.addEventListener('keydown', onKey);
         return () => {
-            document.body.style.overflow = '';
             window.removeEventListener('keydown', onKey);
         };
     }, [open, onClose]);
@@ -147,7 +148,7 @@ function DocPreviewModal({ open, onClose, url, label }) {
 
     return (
         <div
-            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-[3px]"
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-[3px] pb-[max(0px,env(safe-area-inset-bottom))]"
             style={{ animation: 'ikm-fade-in .15s ease-out' }}
             onClick={onClose}
         >
@@ -157,12 +158,12 @@ function DocPreviewModal({ open, onClose, url, label }) {
             `}</style>
 
             <div
-                className="relative w-full max-w-[430px] bg-white rounded-t-[28px] sm:rounded-[24px] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,.4)]"
-                style={{ maxHeight: '92dvh', animation: 'ikm-slide-up .2s cubic-bezier(.32,.72,0,1)' }}
+                className="relative w-full max-w-[430px] bg-white rounded-t-[28px] sm:rounded-[24px] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,.4)] max-h-safe-sheet"
+                style={{ animation: 'ikm-slide-up .2s cubic-bezier(.32,.72,0,1)' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* ── Header ── */}
-                <div className="flex items-center gap-3 px-4 pt-4 pb-3 flex-shrink-0">
+                <div className="flex items-center gap-3 px-4 pt-safe-overlay pb-3 flex-shrink-0">
                     <div
                         className="w-10 h-10 rounded-[12px] flex-shrink-0 grid place-items-center text-white shadow-md shadow-[#5f1340]/20"
                         style={{ background: 'linear-gradient(135deg,#450d2e,#5f1340)' }}
@@ -470,21 +471,21 @@ export default function ProfileEditPage() {
         ...educationLevels.map(e => ({ v: String(e.education_level_id), l: e.education_level_name })),
     ];
 
-    const name = titleCase(detail?.full_name || '');
+    const name = formatName(detail?.full_name || '');
 
     return (
         <div className="min-h-[100dvh] bg-slate-100 flex justify-center">
             <div className="w-full max-w-[430px] min-h-[100dvh] bg-slate-50 flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,.04),0_8px_48px_rgba(0,0,0,.08)] relative overflow-hidden">
 
                 {/* ── Hero ── */}
-                <div className="relative overflow-hidden rounded-b-[28px] flex-shrink-0 pb-[22px] bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] text-white shadow-xl shadow-[#5f1340]/20">
+                <div className="relative overflow-hidden rounded-b-[28px] flex-shrink-0 pb-[22px] pt-safe-header bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] text-white shadow-xl shadow-[#5f1340]/20">
                     <div className="absolute -top-[70px] -right-[40px] w-[200px] h-[200px] rounded-full"
                         style={{ background: 'radial-gradient(circle, rgba(236,72,153,.25) 0%, transparent 70%)' }} />
                     <div className="absolute inset-0 pointer-events-none opacity-[.04]"
                         style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
 
                     {/* Top bar */}
-                    <div className="relative z-[1] flex items-center justify-between px-[18px] pt-[14px]">
+                    <div className="relative z-[1] flex items-center justify-between px-[18px] pt-3">
                         <Link to="/profile"
                             className="w-9 h-9 rounded-[11px] bg-white/10 border border-white/12 text-white grid place-items-center flex-shrink-0 transition hover:bg-white/20 no-underline backdrop-blur-xl">
                             <IconBack />

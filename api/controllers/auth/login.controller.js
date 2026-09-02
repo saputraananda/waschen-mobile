@@ -61,35 +61,38 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { 
-        userId: user.user_id, 
-        username: user.username, 
-        email: user.user_email, 
-        role: user.user_role 
-      },
-      process.env.SESSION_SECRET || 'waschensecret',
-      { expiresIn: '24h' }
-    );
-
-    // Fetch assigned role and outlet from my_waschen
+    // Fetch assigned role/outlet (my_waschen) & all outlets (waschen) in parallel
     let assignedRole = null;
     let isLeader = 0;
     let assignedOutletId = null;
     let assignedOutletName = null;
+    let outlets = [];
 
-    if (user.employee_id) {
-      const [roleRows] = await myWaschenPool.query(
-        'SELECT role, is_leader, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
-        [user.employee_id]
-      );
-      if (roleRows.length > 0) {
-        assignedRole = roleRows[0].role;
-        isLeader = roleRows[0].is_leader || 0;
-        assignedOutletId = roleRows[0].outlet_id;
+    const [roleRows, outletListRows] = await Promise.all([
+      user.employee_id
+        ? myWaschenPool.query(
+            'SELECT role, is_leader, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+            [user.employee_id]
+          ).then(([rows]) => rows)
+        : Promise.resolve([]),
+      user.company_id === 1
+        ? mainPool.query('SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC')
+            .then(([rows]) => rows)
+        : Promise.resolve([])
+    ]);
 
-        if (assignedOutletId) {
+    outlets = outletListRows;
+
+    if (roleRows.length > 0) {
+      assignedRole = roleRows[0].role;
+      isLeader = roleRows[0].is_leader || 0;
+      assignedOutletId = roleRows[0].outlet_id;
+
+      if (assignedOutletId) {
+        const found = outlets.find((o) => String(o.id) === String(assignedOutletId));
+        if (found) {
+          assignedOutletName = found.full_name || found.name;
+        } else {
           const [outletRows] = await mainPool.query(
             'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
             [assignedOutletId]
@@ -101,14 +104,20 @@ export const loginUser = async (req, res) => {
       }
     }
 
-    // Fetch all outlets for company_id = 1
-    let outlets = [];
-    if (user.company_id === 1) {
-      const [outletRows] = await mainPool.query(
-        'SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC'
-      );
-      outlets = outletRows;
-    }
+    // Generate JWT token (include assignedOutletId so downstream requests
+    // don't need to re-query mst_role on every single API call)
+    const token = jwt.sign(
+      {
+        userId: user.user_id,
+        employee_id: user.employee_id,
+        username: user.username,
+        email: user.user_email,
+        role: user.user_role,
+        assignedOutletId
+      },
+      process.env.SESSION_SECRET || 'waschensecret',
+      { expiresIn: '24h' }
+    );
 
     // Return success response with user and employee info
     return res.status(200).json({

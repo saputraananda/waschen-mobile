@@ -5,7 +5,7 @@ import {
   getBanks,
   getEducationLevels,
   uploadDoc
-} from '../controllers/profile.controller.js';
+} from '../../controllers/profile/profile.controller.js';
 
 const router = express.Router();
 

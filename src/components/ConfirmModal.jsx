@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React from 'react';
+import useLockBodyScroll from '../hooks/useLockBodyScroll.js';
 
 /**
  * Standar Komponen Popup Konfirmasi untuk Aplikasi Waschen / IKM Mobile
@@ -30,16 +31,7 @@ export default function ConfirmModal({
   icon,
 }) {
   // Prevent background scroll saat modal terbuka
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen]);
+  useLockBodyScroll(isOpen);
 
   if (!isOpen) return null;
 
@@ -96,7 +88,7 @@ export default function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-[3px] flex items-center justify-center p-4 animate-fade-in"
+      className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-[3px] flex items-center justify-center p-safe-modal animate-fade-in"
       onClick={() => closeOnOverlayClick && !isLoading && onClose()}
     >
       <div

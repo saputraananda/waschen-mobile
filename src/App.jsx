@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Home from './pages/Home.jsx';
+import Home from './pages/home/index.jsx';
 import Login from './pages/auth/Login.jsx';
-import History from './pages/History.jsx';
-import Attendance from './pages/Attendance.jsx';
-import Leave from './pages/Leave.jsx';
-import Profile from './pages/Profile.jsx';
-import EditProfile from './pages/EditProfile.jsx';
+import History from './pages/history/index.jsx';
+import Attendance from './pages/attendance/index.jsx';
+import Leave from './pages/leave/index.jsx';
+import Kasbon from './pages/kasbon/index.jsx';
+import Produksi from './pages/produksi/index.jsx';
+import Profile from './pages/profile/index.jsx';
+import EditProfile from './pages/profile/components/EditProfile.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import waschenLogo from './assets/images/waschen.png';
 
@@ -124,6 +126,8 @@ export default function App() {
         <Route path="/history" element={<History />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/leave" element={<Leave />} />
+        <Route path="/kasbon" element={<Kasbon />} />
+        <Route path="/produksi" element={<Produksi />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
 

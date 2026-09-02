@@ -13,7 +13,7 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-30 bg-white/95 backdrop-blur-[24px] border-t border-slate-200/60 flex items-center justify-around py-2 px-3 shadow-[0_-8px_32px_rgba(0,0,0,0.06)]">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-30 bg-white/95 backdrop-blur-[24px] border-t border-slate-200/60 flex items-center justify-around pt-2 px-3 pb-safe-nav-bar shadow-[0_-8px_32px_rgba(0,0,0,0.06)]">
       {tabs.map((tab) => {
         const isActive =
           location.pathname === tab.route ||

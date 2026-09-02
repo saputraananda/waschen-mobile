@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { startRegistration } from '@simplewebauthn/browser';
-import Navbar from '../components/Navbar';
-import ConfirmModal from '../components/ConfirmModal';
-import formatName from '../utils/FormatName.js';
+import Navbar from '../../../components/Navbar';
+import ConfirmModal from '../../../components/ConfirmModal';
+import formatName from '../../../utils/FormatName.js';
 import {
     getDeferredInstallPrompt,
     clearDeferredInstallPrompt,
@@ -13,7 +13,7 @@ import {
     checkPwaInstalled,
     markPwaInstalled,
     waitForInstallPrompt,
-} from '../utils/pwaInstall.js';
+} from '../../../utils/pwaInstall.js';
 import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw, Download, Smartphone } from 'lucide-react';
 
 export default function Profile() {
@@ -432,11 +432,11 @@ export default function Profile() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans select-none">
-            <div className="w-full max-w-[430px] min-h-screen bg-slate-50 shadow-2xl flex flex-col relative pb-[90px]">
+        <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans">
+            <div className="w-full max-w-[430px] min-h-screen bg-slate-50 shadow-2xl flex flex-col relative pb-safe-nav">
 
                 {/* ===== HERO HEADER WITH PROFILE IDENTITY ===== */}
-                <div className="bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] pt-7 pb-14 px-5 relative overflow-hidden flex-shrink-0 text-white rounded-b-[36px] shadow-xl shadow-[#5f1340]/25">
+                <div className="bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] pt-safe-header-lg pb-14 px-5 relative overflow-hidden flex-shrink-0 text-white rounded-b-[36px] shadow-xl shadow-[#5f1340]/25">
                     {/* Wavy background layers */}
                     <div className="absolute top-0 left-[-20%] right-[-20%] h-[75%] bg-[#360823]/90 rounded-b-[50%] transform scale-x-110 origin-top pointer-events-none z-0" />
                     <div className="absolute top-0 left-[-10%] right-[-10%] h-[58%] bg-gradient-to-br from-[#4d0f34] to-[#5f1340]/90 rounded-b-[45%] pointer-events-none z-0" />

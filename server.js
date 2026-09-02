@@ -5,7 +5,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import loginRoutes from './api/routes/auth/login.routes.js';
 import biometricsRoutes from './api/routes/auth/biometrics.routes.js';
-import profileRoutes from './api/routes/profile.routes.js';
+import profileRoutes from './api/routes/profile/profile.routes.js';
+import attendanceRoutes from './api/routes/attendance/attendance.routes.js';
+import leaveRoutes from './api/routes/leave/leave.routes.js';
+import kasbonRoutes from './api/routes/kasbon/kasbon.routes.js';
+import produksiRoutes from './api/routes/produksi/produksi.routes.js';
+import historyRoutes from './api/routes/history/history.routes.js';
 import { getBaseUploadDir } from './api/middleware/upload.js';
 
 // Resolve directory paths in ES module
@@ -30,6 +35,11 @@ app.use('/api/auth', loginRoutes);
 app.use('/api/auth', biometricsRoutes);
 app.use('/api/employee', profileRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leave', leaveRoutes);
+app.use('/api/kasbon', kasbonRoutes);
+app.use('/api/progress', produksiRoutes);
+app.use('/api/history', historyRoutes);
 
 // Serve static assets in production
 if (process.env.NODE_ENV === 'production') {

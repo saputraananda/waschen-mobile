@@ -12,7 +12,8 @@ export const mainPool = mysql.createPool({
   database: process.env.DB_NAME || 'waschen',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  connectTimeout: 10000
 });
 
 // secondary my_waschen database pool (contains mst_role)
@@ -24,5 +25,6 @@ export const myWaschenPool = mysql.createPool({
   database: process.env.DB_NAME_MY_WASCHEN || 'my_waschen_prod',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  connectTimeout: 10000
 });
