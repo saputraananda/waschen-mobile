@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/home/index.jsx';
 import Login from './pages/auth/Login.jsx';
-import History from './pages/history/index.jsx';
-import Attendance from './pages/attendance/index.jsx';
-import Leave from './pages/leave/index.jsx';
-import Kasbon from './pages/kasbon/index.jsx';
-import Produksi from './pages/produksi/index.jsx';
-import Profile from './pages/profile/index.jsx';
-import EditProfile from './pages/profile/components/EditProfile.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import waschenLogo from './assets/images/waschen.png';
+
+const History = lazy(() => import('./pages/history/index.jsx'));
+const Attendance = lazy(() => import('./pages/attendance/index.jsx'));
+const Leave = lazy(() => import('./pages/leave/index.jsx'));
+const Kasbon = lazy(() => import('./pages/kasbon/index.jsx'));
+const Produksi = lazy(() => import('./pages/produksi/index.jsx'));
+const Profile = lazy(() => import('./pages/profile/index.jsx'));
+const EditProfile = lazy(() => import('./pages/profile/components/EditProfile.jsx'));
 
 // ==========================================
 // ELEGANT STARTUP SPLASH SCREEN COMPONENT (morphs transition to login)
@@ -96,6 +97,14 @@ function SplashScreen({ isTransitioning }) {
   );
 }
 
+function PageFallback() {
+  return (
+    <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-[#5f1340]/20 border-t-[#5f1340] animate-spin" />
+    </div>
+  );
+}
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -120,6 +129,7 @@ export default function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
+      <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -141,6 +151,7 @@ export default function App() {
         {/* Fallback route redirection */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
 
       {showSplash && (
         <SplashScreen isTransitioning={isTransitioning} />

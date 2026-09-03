@@ -96,4 +96,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('react-dom') || id.includes('react-router') || id.includes('/react/')) return 'react-vendor';
+          if (id.includes('lucide-react')) return 'icons';
+          if (id.includes('html5-qrcode')) return 'scanner';
+          if (id.includes('@simplewebauthn')) return 'webauthn';
+          return 'vendor';
+        },
+      },
+    },
+  },
 });
