@@ -41,15 +41,15 @@ app.use('/api/kasbon', kasbonRoutes);
 app.use('/api/progress', produksiRoutes);
 app.use('/api/history', historyRoutes);
 
-// Serve static assets in production
-if (process.env.NODE_ENV === 'production') {
+// Serve static assets in production (self-hosted / local only — Vercel serves dist/ separately)
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
   app.use(express.static(path.join(__dirname, 'dist')));
 
   // Wildcard handler for client side routing
   app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
   });
-} else {
+} else if (!process.env.VERCEL) {
   app.get('/', (req, res) => {
     res.send('React & Express Starter Pack API Server is running. Frontend dev server is active on port 9000.');
   });
