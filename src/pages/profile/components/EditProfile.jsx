@@ -463,12 +463,16 @@ export default function ProfileEditPage() {
 
     const bankOpts = [
         { v: '', l: '— Pilih Bank —' },
-        ...banks.map(b => ({ v: String(b.bank_id), l: b.bank_name })),
+        ...banks
+            .map((b) => ({ v: String(b.v ?? b.bank_id ?? ''), l: b.l ?? b.bank_name ?? '' }))
+            .filter((o) => o.v && o.l),
     ];
 
     const educationOpts = [
         { v: '', l: '— Pilih Pendidikan —' },
-        ...educationLevels.map(e => ({ v: String(e.education_level_id), l: e.education_level_name })),
+        ...educationLevels
+            .map((e) => ({ v: String(e.v ?? e.education_level_id ?? ''), l: e.l ?? e.education_level_name ?? '' }))
+            .filter((o) => o.v && o.l),
     ];
 
     const name = formatName(detail?.full_name || '');
