@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../../../components/Navbar';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
   Calendar,
   Clock,
@@ -164,6 +165,11 @@ export default function History() {
     fetchCalendar();
     fetchDayOffs();
   }, [fetchCalendar, fetchDayOffs]);
+
+  useRealtimeRefresh(['history', 'attendance', 'leave'], () => {
+    fetchCalendar();
+    fetchDayOffs();
+  });
 
   const firstDay = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();

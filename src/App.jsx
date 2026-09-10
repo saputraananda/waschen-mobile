@@ -9,6 +9,7 @@ const History = lazy(() => import('./pages/history/index.jsx'));
 const Attendance = lazy(() => import('./pages/attendance/index.jsx'));
 const Leave = lazy(() => import('./pages/leave/index.jsx'));
 const Kasbon = lazy(() => import('./pages/kasbon/index.jsx'));
+const Overtime = lazy(() => import('./pages/overtime/index.jsx'));
 const Produksi = lazy(() => import('./pages/produksi/index.jsx'));
 const Profile = lazy(() => import('./pages/profile/index.jsx'));
 const EditProfile = lazy(() => import('./pages/profile/components/EditProfile.jsx'));
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/leave" element={<Leave />} />
         <Route path="/kasbon" element={<Kasbon />} />
+        <Route path="/overtime" element={<Overtime />} />
         <Route path="/produksi" element={<Produksi />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
@@ -147,6 +149,7 @@ export default function App() {
         <Route path="/absence" element={<Navigate to="/attendance" replace />} />
         <Route path="/perizinan" element={<Navigate to="/leave" replace />} />
         <Route path="/izin" element={<Navigate to="/leave" replace />} />
+        <Route path="/lembur" element={<Navigate to="/overtime" replace />} />
 
         {/* Fallback route redirection */}
         <Route path="*" element={<Navigate to="/" replace />} />

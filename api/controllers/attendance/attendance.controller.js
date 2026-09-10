@@ -1,5 +1,6 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile } from '../../middleware/upload.js';
+import { emitDataChange } from '../../socket/io.js';
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 const MAX_DIST_M = 1000;
@@ -251,6 +252,13 @@ export const punchSelfie = async (req, res) => {
         );
       }
 
+      emitDataChange({
+        domain: 'attendance',
+        outletId,
+        employeeId,
+        action: 'check_in'
+      });
+      emitDataChange({ domain: 'history', employeeId, action: 'check_in' });
       return res.status(200).json({ success: true, message: 'Absen masuk berhasil dicatat.' });
     }
 
@@ -268,6 +276,13 @@ export const punchSelfie = async (req, res) => {
       [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
     );
 
+    emitDataChange({
+      domain: 'attendance',
+      outletId,
+      employeeId,
+      action: 'check_out'
+    });
+    emitDataChange({ domain: 'history', employeeId, action: 'check_out' });
     return res.status(200).json({ success: true, message: 'Absen keluar berhasil dicatat.' });
   } catch (error) {
     console.error('punchSelfie error:', error);

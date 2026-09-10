@@ -1,5 +1,6 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { KASBON_UPLOAD_PUBLIC_PATH, deleteKasbonProofFile } from '../../middleware/upload.js';
+import { emitDataChange } from '../../socket/io.js';
 
 const KASBON_TYPES = ['kasbon', 'pinjaman'];
 
@@ -144,6 +145,7 @@ export const submitKasbon = async (req, res) => {
 
     const [inserted] = await myWaschenPool.query('SELECT * FROM tr_kasbon WHERE id = ?', [result.insertId]);
 
+    emitDataChange({ domain: 'kasbon', employeeId, action: 'create' });
     return res.status(201).json({ success: true, message: 'Pengajuan berhasil dikirim', data: mapRow(req, inserted[0]) });
   } catch (error) {
     await cleanupFile();
@@ -223,6 +225,7 @@ export const updateKasbon = async (req, res) => {
     );
 
     const [updatedRows] = await myWaschenPool.query('SELECT * FROM tr_kasbon WHERE id = ?', [id]);
+    emitDataChange({ domain: 'kasbon', employeeId, action: 'update' });
     return res.status(200).json({ success: true, message: 'Pengajuan berhasil diperbarui', data: mapRow(req, updatedRows[0]) });
   } catch (error) {
     await cleanupFile();
@@ -256,6 +259,7 @@ export const deleteKasbon = async (req, res) => {
     }
 
     await myWaschenPool.query('DELETE FROM tr_kasbon WHERE id = ?', [id]);
+    emitDataChange({ domain: 'kasbon', employeeId, action: 'delete' });
     return res.status(200).json({ success: true, message: 'Pengajuan berhasil dihapus' });
   } catch (error) {
     console.error('deleteKasbon error:', error);

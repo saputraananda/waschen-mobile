@@ -6,6 +6,7 @@ import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
   Sun,
   Calendar,
@@ -188,6 +189,11 @@ export default function Leave() {
     fetchList();
     fetchStats();
   }, [fetchList, fetchStats]);
+
+  useRealtimeRefresh('leave', () => {
+    fetchList();
+    fetchStats();
+  });
 
   // Sync endDate for non-cuti / half-day requests (single day only)
   useEffect(() => {

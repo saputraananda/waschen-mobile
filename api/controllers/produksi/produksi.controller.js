@@ -4,6 +4,8 @@ import {
   deleteProduksiPhotoFile,
   saveProduksiPhotoBuffers
 } from '../../middleware/upload.js';
+import { findCoveringOvertime } from '../overtime/overtime.controller.js';
+import { emitDataChange } from '../../socket/io.js';
 
 const STAGES = ['frontliner', 'washing', 'ironing', 'packing'];
 
@@ -408,6 +410,20 @@ export const submitQC = async (req, res) => {
 
     const employeeName = await resolveEmployeeName(employeeId, req.user.email);
 
+    // MEMORY LEMBUR: flag KPI hanya jika completed_at jatuh di dalam [start_time, end_time]
+    // slot tr_overtime aktif (pengajuan/disetujui). Kerja di luar end_time tanpa perpanjang → normal.
+    let overtimeId = null;
+    let workTimeFlag = 'normal';
+    try {
+      const cover = await findCoveringOvertime(employeeId, new Date());
+      if (cover) {
+        overtimeId = cover.overtime_id;
+        workTimeFlag = cover.work_time_flag;
+      }
+    } catch (otErr) {
+      console.warn('findCoveringOvertime skipped:', otErr.message);
+    }
+
     conn = await myWaschenPool.getConnection();
     await conn.beginTransaction();
 
@@ -417,8 +433,9 @@ export const submitQC = async (req, res) => {
     const [progressResult] = await conn.query(
       `INSERT INTO tr_item_progress
          (transaction_id, transaction_detail_id, stage, employee_id, employee_name, role_used,
-          outlet_id, qc_status, qc_decision, returned_to_stage, notes, wa_contacted, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          outlet_id, qc_status, qc_decision, returned_to_stage, notes, wa_contacted, status,
+          overtime_id, work_time_flag)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         detail.txn_id,
         detail.id,
@@ -432,7 +449,9 @@ export const submitQC = async (req, res) => {
         qc_decision === 'kembali' ? returned_to_stage : null,
         notes?.trim() || null,
         stage === 'frontliner' && (wa_contacted === '1' || wa_contacted === 1) ? 1 : 0,
-        progressStatus
+        progressStatus,
+        overtimeId,
+        workTimeFlag
       ]
     );
     const progressId = progressResult.insertId;
@@ -548,6 +567,14 @@ export const submitQC = async (req, res) => {
       'SELECT id, item_work_status, has_finding, is_on_hold, hold_stage, requires_ironing FROM tr_transaction_detail WHERE id = ?',
       [detail.id]
     );
+
+    emitDataChange({
+      domain: 'progress',
+      outletId: detail.outlet_id,
+      employeeId,
+      action: 'qc',
+      meta: { stage, transaction_id: detail.txn_id }
+    });
 
     return res.status(201).json({
       success: true,
@@ -709,6 +736,14 @@ export const resolveHold = async (req, res) => {
       'SELECT id, item_work_status, has_finding, is_on_hold FROM tr_transaction_detail WHERE id = ?',
       [detailId]
     );
+
+    emitDataChange({
+      domain: 'progress',
+      outletId: detail.outlet_id,
+      employeeId,
+      action: 'resolve_hold',
+      meta: { transaction_id: detail.txn_id }
+    });
 
     return res.status(200).json({
       success: true,

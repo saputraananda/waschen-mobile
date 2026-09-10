@@ -12,6 +12,7 @@ import HoldList from './HoldList.jsx';
 import TransactionDetailModal from './TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
 import ConfirmModal from '../../../components/ConfirmModal.jsx';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 
 export default function Produksi() {
   const navigate = useNavigate();
@@ -81,8 +82,8 @@ export default function Produksi() {
     }
   }, [navigate]);
 
-  const loadData = useCallback(async (stage) => {
-    setLoading(true);
+  const loadData = useCallback(async (stage, { silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [summaryRes, listRes, holdsRes] = await Promise.allSettled([
@@ -103,7 +104,7 @@ export default function Produksi() {
     } catch (e) {
       if (!handleAuthError(e)) setError('Gagal memuat data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [handleAuthError]);
 
@@ -126,6 +127,12 @@ export default function Produksi() {
       setSearching(false);
     }
   }, [handleAuthError]);
+
+  useRealtimeRefresh('progress', () => {
+    loadData(activeStage, { silent: true });
+    const q = searchQuery.trim();
+    if (q) runSearch(q);
+  });
 
   useEffect(() => {
     if (skipSearchEffectRef.current) {

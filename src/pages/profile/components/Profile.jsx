@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { startRegistration } from '@simplewebauthn/browser';
 import Navbar from '../../../components/Navbar';
 import ConfirmModal from '../../../components/ConfirmModal';
 import formatName from '../../../utils/FormatName.js';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
     getDeferredInstallPrompt,
     clearDeferredInstallPrompt,
@@ -116,6 +117,38 @@ export default function Profile() {
         };
     }, []);
 
+    const refreshProfile = useCallback((email, empId, token) => {
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        axios.get(`/api/employee/profile-detail?email=${encodeURIComponent(email || '')}&employeeId=${empId || 0}`, config)
+            .then(res => {
+                if (res.data?.success && res.data?.data) {
+                    const dbData = res.data.data;
+                    setCurrentUser(prev => ({
+                        ...prev,
+                        ...dbData,
+                        fullName: dbData.full_name || dbData.fullName || prev.fullName,
+                        employee_code: dbData.employee_code || dbData.employeeCode || prev.employee_code,
+                        employeeCode: dbData.employee_code || dbData.employeeCode || prev.employeeCode,
+                        join_date: dbData.join_date || prev.join_date,
+                        phone: dbData.phone_number || prev.phone,
+                        phone_number: dbData.phone_number || prev.phone_number,
+                        address: dbData.address || prev.address,
+                        position: dbData.position_name || dbData.position || prev.position,
+                        department: dbData.department_name || dbData.department || prev.department
+                    }));
+                    const storedUser = localStorage.getItem('user');
+                    if (storedUser) {
+                        try {
+                            const parsed = JSON.parse(storedUser);
+                            Object.assign(parsed, dbData);
+                            localStorage.setItem('user', JSON.stringify(parsed));
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            })
+            .catch(() => { });
+    }, []);
+
     useEffect(() => {
         document.title = 'Profil Saya';
         const token = localStorage.getItem('token');
@@ -145,41 +178,25 @@ export default function Profile() {
             }
         }
 
-        // Fetch biometric status (disembunyikan sementara)
         if (BIOMETRICS_UI_ENABLED) {
             fetchBiometricStatus(token, userId);
         }
 
-        // Fetch exact employee profile & join_date directly from database mst_employee mainpool
-        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-        axios.get(`/api/employee/profile-detail?email=${encodeURIComponent(email)}&employeeId=${empId}`, config)
-            .then(res => {
-                if (res.data?.success && res.data?.data) {
-                    const dbData = res.data.data;
-                    setCurrentUser(prev => ({
-                        ...prev,
-                        ...dbData,
-                        fullName: dbData.full_name || dbData.fullName || prev.fullName,
-                        employee_code: dbData.employee_code || dbData.employeeCode || prev.employee_code,
-                        employeeCode: dbData.employee_code || dbData.employeeCode || prev.employeeCode,
-                        join_date: dbData.join_date || prev.join_date,
-                        phone: dbData.phone_number || prev.phone,
-                        phone_number: dbData.phone_number || prev.phone_number,
-                        address: dbData.address || prev.address,
-                        position: dbData.position_name || dbData.position || prev.position,
-                        department: dbData.department_name || dbData.department || prev.department
-                    }));
-                    if (storedUser) {
-                        try {
-                            const parsed = JSON.parse(storedUser);
-                            Object.assign(parsed, dbData);
-                            localStorage.setItem('user', JSON.stringify(parsed));
-                        } catch (e) { }
-                    }
-                }
-            })
-            .catch(() => { });
-    }, [navigate]);
+        refreshProfile(email, empId, token);
+    }, [navigate, refreshProfile]);
+
+    useRealtimeRefresh('profile', () => {
+        const token = localStorage.getItem('token');
+        const storedUser = localStorage.getItem('user');
+        let email = '';
+        let empId = 0;
+        try {
+            const parsed = JSON.parse(storedUser || '{}');
+            email = parsed.email || parsed.user_email || '';
+            empId = parsed.employeeId || parsed.employee_id || 0;
+        } catch (_) { /* ignore */ }
+        if (token) refreshProfile(email, empId, token);
+    });
 
     // Handler to register Face ID / Biometrics
     const handleRegisterBiometric = async () => {
@@ -301,6 +318,7 @@ export default function Profile() {
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        window.dispatchEvent(new Event('waschen:auth-changed'));
         navigate('/login');
     };
 

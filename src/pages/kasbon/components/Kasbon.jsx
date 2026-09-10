@@ -6,6 +6,7 @@ import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
   CreditCard,
   Banknote,
@@ -177,6 +178,8 @@ export default function Kasbon() {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  useRealtimeRefresh('kasbon', fetchList);
 
   const stats = useMemo(() => {
     const s = { kasbon: 0, pinjaman: 0 };

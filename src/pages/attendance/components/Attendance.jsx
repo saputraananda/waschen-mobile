@@ -5,6 +5,7 @@ import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
   Calendar,
   Clock,
@@ -211,6 +212,10 @@ export default function Attendance() {
 
     loadPage();
   }, [navigate, fetchToday, handleAuthError]);
+
+  useRealtimeRefresh(['attendance', 'leave'], () => {
+    fetchToday();
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);

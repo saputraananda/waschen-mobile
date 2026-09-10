@@ -65,6 +65,7 @@ export default function Login() {
                 // Save auth data
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data.user));
+                window.dispatchEvent(new Event('waschen:auth-changed'));
                 goToHomeFresh();
             } else {
                 throw new Error(response.data?.message || 'Username atau Kata Sandi salah');
@@ -116,6 +117,7 @@ export default function Login() {
             if (verifyRes.data && verifyRes.data.success) {
                 localStorage.setItem('token', verifyRes.data.token);
                 localStorage.setItem('user', JSON.stringify(verifyRes.data.user));
+                window.dispatchEvent(new Event('waschen:auth-changed'));
                 goToHomeFresh();
             } else {
                 throw new Error(verifyRes.data?.message || 'Verifikasi biometrik tidak valid');

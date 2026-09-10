@@ -1,5 +1,6 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { LEAVE_UPLOAD_PUBLIC_PATH, deleteLeaveDocFile } from '../../middleware/upload.js';
+import { emitDataChange } from '../../socket/io.js';
 
 const LEAVE_TYPES = ['izin', 'sakit', 'cuti'];
 const DURATION_TYPES = ['full_day', 'half_day_morning', 'half_day_afternoon'];
@@ -235,6 +236,7 @@ export const submitLeave = async (req, res) => {
 
     const [inserted] = await myWaschenPool.query('SELECT * FROM tr_leave WHERE leave_id = ?', [result.insertId]);
 
+    emitDataChange({ domain: 'leave', employeeId, action: 'create' });
     return res.status(201).json({ success: true, message: 'Pengajuan izin berhasil dikirim', data: mapRow(req, inserted[0]) });
   } catch (error) {
     await cleanupFile();
@@ -346,6 +348,7 @@ export const updateLeave = async (req, res) => {
     );
 
     const [updatedRows] = await myWaschenPool.query('SELECT * FROM tr_leave WHERE leave_id = ?', [id]);
+    emitDataChange({ domain: 'leave', employeeId, action: 'update' });
     return res.status(200).json({ success: true, message: 'Pengajuan berhasil diperbarui', data: mapRow(req, updatedRows[0]) });
   } catch (error) {
     await cleanupFile();
@@ -380,6 +383,7 @@ export const cancelLeave = async (req, res) => {
     }
 
     await myWaschenPool.query('DELETE FROM tr_leave WHERE leave_id = ?', [id]);
+    emitDataChange({ domain: 'leave', employeeId, action: 'cancel' });
     return res.status(200).json({ success: true, message: 'Pengajuan berhasil dibatalkan' });
   } catch (error) {
     console.error('cancelLeave error:', error);

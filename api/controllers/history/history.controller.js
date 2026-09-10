@@ -1,4 +1,5 @@
 import { myWaschenPool } from '../../db/pool.js';
+import { emitDataChange } from '../../socket/io.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -326,6 +327,7 @@ export const requestDayOff = async (req, res) => {
       [result.insertId]
     );
 
+    emitDataChange({ domain: 'history', employeeId, action: 'day_off_request' });
     return res.status(201).json({
       success: true,
       message: 'Pengajuan libur berhasil dikirim. Menunggu persetujuan admin.',
@@ -379,6 +381,7 @@ export const cancelDayOff = async (req, res) => {
     );
 
     await conn.commit();
+    emitDataChange({ domain: 'history', employeeId, action: 'day_off_cancel' });
     return res.status(200).json({ success: true, message: 'Pengajuan libur dibatalkan' });
   } catch (error) {
     if (conn) { try { await conn.rollback(); } catch (_) { /* ignore */ } }

@@ -1,5 +1,6 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import jwt from 'jsonwebtoken';
+import { emitDataChange } from '../../socket/io.js';
 
 /**
  * Helper to extract user identity from JWT header or request params/query
@@ -242,6 +243,7 @@ export const updateProfile = async (req, res) => {
       } catch (e) {}
     }
 
+    emitDataChange({ domain: 'profile', employeeId: empId, action: 'update' });
     return res.status(200).json({
       success: true,
       message: 'Profil karyawan berhasil diperbarui di database mst_employee'
