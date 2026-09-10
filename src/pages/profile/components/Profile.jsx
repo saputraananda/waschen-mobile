@@ -15,6 +15,7 @@ import {
     waitForInstallPrompt,
 } from '../../../utils/pwaInstall.js';
 import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw, Download, Smartphone } from 'lucide-react';
+import { BIOMETRICS_UI_ENABLED } from '../../../utils/featureFlags.js';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -144,8 +145,10 @@ export default function Profile() {
             }
         }
 
-        // Fetch biometric status
-        fetchBiometricStatus(token, userId);
+        // Fetch biometric status (disembunyikan sementara)
+        if (BIOMETRICS_UI_ENABLED) {
+            fetchBiometricStatus(token, userId);
+        }
 
         // Fetch exact employee profile & join_date directly from database mst_employee mainpool
         const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
@@ -674,7 +677,8 @@ export default function Profile() {
                                 )}
                             </button>
 
-                            {/* Biometric & Face ID Security Card - Entire Card Clickable */}
+                            {/* Biometric & Face ID Security Card — disembunyikan sementara */}
+                            {BIOMETRICS_UI_ENABLED && (
                             <div className="relative group">
                                 <button
                                     id="biometric-card-btn"
@@ -728,6 +732,7 @@ export default function Profile() {
                                     )}
                                 </button>
                             </div>
+                            )}
 
                             {/* Logout button */}
                             <button

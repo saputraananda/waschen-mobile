@@ -1,4 +1,4 @@
-import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { myWaschenPool } from '../../db/pool.js';
 import {
   getProduksiPhotoPublicPath,
   deleteProduksiPhotoFile,
@@ -58,11 +58,14 @@ const recalcWorkStatus = async (conn, transactionId) => {
 
 const resolveEmployeeName = async (employeeId, fallback) => {
   try {
-    const [rows] = await mainPool.query(
-      'SELECT full_name FROM mst_employee WHERE employee_id = ? LIMIT 1',
+    const [rows] = await myWaschenPool.query(
+      `SELECT employee_name FROM mst_role
+       WHERE employee_id = ?
+         AND employee_name IS NOT NULL AND TRIM(employee_name) != ''
+       LIMIT 1`,
       [employeeId]
     );
-    return rows[0]?.full_name || fallback || 'Unknown';
+    return rows[0]?.employee_name || fallback || 'Unknown';
   } catch (_) {
     return fallback || 'Unknown';
   }
@@ -141,9 +144,20 @@ export const getList = async (req, res) => {
 
     if (search) {
       const like = `%${search}%`;
-      whereClause = `t.outlet_id = ? AND (t.order_no LIKE ? OR t.barcode LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)`;
-      params = [outletId, like, like, like, like];
-      orderClause = 'ORDER BY t.order_date DESC LIMIT 50';
+      whereClause = `t.outlet_id = ? AND (
+        t.order_no = ? OR t.barcode = ? OR CAST(t.id AS CHAR) = ?
+        OR t.order_no LIKE ? OR t.barcode LIKE ?
+        OR c.name LIKE ? OR c.phone LIKE ?
+      )`;
+      params = [outletId, search, search, search, like, like, like, like];
+      orderClause = `ORDER BY
+        CASE
+          WHEN t.order_no = ? OR t.barcode = ? OR CAST(t.id AS CHAR) = ? THEN 0
+          ELSE 1
+        END,
+        t.order_date DESC
+        LIMIT 50`;
+      params.push(search, search, search);
     } else {
       if (!STAGES.includes(stage)) {
         return res.status(422).json({ success: false, message: 'Tahap tidak valid' });

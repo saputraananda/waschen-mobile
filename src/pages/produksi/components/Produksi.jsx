@@ -5,6 +5,7 @@ import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, CheckCircle2, Search, ScanLine, X } from 'lucide-react';
 import { api, STAGES, stageForRole } from '../../../utils/produksiShared.js';
+import { evaluateNotaForStage, STAGE_ITEM_STATUS } from '../../../utils/notaScan.js';
 import TransactionCard from './TransactionCard.jsx';
 import ItemQCSheet from './ItemQCSheet.jsx';
 import HoldList from './HoldList.jsx';
@@ -36,7 +37,9 @@ export default function Produksi() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanNotice, setScanNotice] = useState(null);
   const searchDebounceRef = useRef(null);
+  const skipSearchEffectRef = useRef(false);
   const [stageSwitchPrompt, setStageSwitchPrompt] = useState(null);
 
   const handleAuthError = useCallback((err) => {
@@ -125,6 +128,10 @@ export default function Produksi() {
   }, [handleAuthError]);
 
   useEffect(() => {
+    if (skipSearchEffectRef.current) {
+      skipSearchEffectRef.current = false;
+      return;
+    }
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     const q = searchQuery.trim();
     if (!q) {
@@ -137,20 +144,89 @@ export default function Produksi() {
     return () => clearTimeout(searchDebounceRef.current);
   }, [searchQuery, runSearch]);
 
-  const handleBarcodeDetected = (code) => {
-    setScannerOpen(false);
-    setSearchQuery(code);
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
   };
+
+  const pickExactTxn = (list, key) => {
+    const q = String(key || '').trim().toLowerCase();
+    if (!q || !Array.isArray(list)) return null;
+    return (
+      list.find((t) => String(t.order_no || '').toLowerCase() === q) ||
+      list.find((t) => String(t.barcode || '').toLowerCase() === q) ||
+      list.find((t) => String(t.id) === q) ||
+      list[0] ||
+      null
+    );
+  };
+
+  const handleBarcodeDetected = useCallback(async (code) => {
+    setScannerOpen(false);
+    const key = String(code || '').trim();
+    if (!key) return;
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    skipSearchEffectRef.current = true;
+    setSearchQuery(key);
+    setSearching(true);
+    setSearchError(null);
+    setScanNotice(null);
+
+    const stageLabel = STAGES.find((s) => s.key === activeStage)?.label || activeStage;
+    const stageStatus = STAGE_ITEM_STATUS[activeStage];
+
+    try {
+      const res = await api.get('/progress/list', { params: { search: key } });
+      const list = res.data?.data || [];
+      const txn = pickExactTxn(list, key);
+
+      if (!txn) {
+        setSearchResults([]);
+        setSearching(false);
+        setScanNotice({
+          title: 'Nota Tidak Ditemukan',
+          message: `Nota "${key}" tidak ditemukan di outlet ini. Pastikan QR/barcode sesuai nota Waschen.`,
+          variant: 'warning',
+        });
+        return;
+      }
+
+      const verdict = evaluateNotaForStage(txn, activeStage, stageLabel);
+      if (verdict.ok) {
+        const matched = list.filter((t) =>
+          (t.items || []).some((it) => it.item_work_status === stageStatus)
+        );
+        setSearchResults(matched.length ? matched : [txn]);
+        setSearching(false);
+        showToast(`Nota ${txn.order_no} siap QC di ${stageLabel}`);
+        return;
+      }
+
+      setSearchResults(null);
+      setSearchQuery('');
+      setSearching(false);
+      setScanNotice({
+        title: verdict.title,
+        message: verdict.message,
+        variant: verdict.variant === 'success' ? 'success' : verdict.variant === 'info' ? 'info' : 'warning',
+      });
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      setSearching(false);
+      setSearchResults([]);
+      setScanNotice({
+        title: 'Gagal Memuat Nota',
+        message: e.response?.data?.message || 'Tidak dapat mencari nota dari hasil scan.',
+        variant: 'danger',
+      });
+    }
+  }, [activeStage, handleAuthError]);
 
   const clearSearch = () => {
     setSearchQuery('');
     setSearchResults(null);
     setSearchError(null);
-  };
-
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2500);
   };
 
   const handleQCDone = (msg) => {
@@ -387,6 +463,17 @@ export default function Produksi() {
           open={scannerOpen}
           onDetect={handleBarcodeDetected}
           onClose={() => setScannerOpen(false)}
+        />
+
+        <ConfirmModal
+          isOpen={!!scanNotice}
+          onClose={() => setScanNotice(null)}
+          onConfirm={() => setScanNotice(null)}
+          title={scanNotice?.title || 'Info Scan'}
+          message={scanNotice?.message || ''}
+          confirmText="Mengerti"
+          cancelText=""
+          variant={scanNotice?.variant || 'info'}
         />
 
         <ConfirmModal

@@ -12,8 +12,12 @@ const SCANNER_ID = 'waschen-mobile-qr-scanner';
  */
 export default function BarcodeScannerModal({ open, onDetect, onClose }) {
   const scannerRef = useRef(null);
+  const onDetectRef = useRef(onDetect);
+  const handledRef = useRef(false);
   const [starting, setStarting] = useState(false);
   const [scannerError, setScannerError] = useState(null);
+
+  onDetectRef.current = onDetect;
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -32,16 +36,22 @@ export default function BarcodeScannerModal({ open, onDetect, onClose }) {
       stopScanner();
       setScannerError(null);
       setStarting(false);
+      handledRef.current = false;
       return undefined;
     }
 
     let cancelled = false;
+    handledRef.current = false;
     setStarting(true);
     setScannerError(null);
 
     const startScanner = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       if (cancelled) return;
+
+      // Pastikan elemen target kosong sebelum init ulang
+      const el = document.getElementById(SCANNER_ID);
+      if (el) el.innerHTML = '';
 
       const scanner = new Html5Qrcode(SCANNER_ID, {
         verbose: false,
@@ -57,12 +67,22 @@ export default function BarcodeScannerModal({ open, onDetect, onClose }) {
       try {
         await scanner.start(
           { facingMode: 'environment' },
-          // Tanpa qrbox → scan seluruh frame, tanpa overlay hitam di sekitar kotak scan
-          { fps: 10 },
+          {
+            fps: 12,
+            qrbox: (viewW, viewH) => {
+              const side = Math.floor(Math.min(viewW, viewH) * 0.72);
+              return { width: side, height: side };
+            },
+            aspectRatio: 1,
+          },
           (decodedText) => {
+            if (cancelled || handledRef.current) return;
             const key = extractNotaSearchKey(decodedText);
             if (!key) return;
-            stopScanner().then(() => onDetect(key));
+            handledRef.current = true;
+            stopScanner().then(() => {
+              onDetectRef.current?.(key);
+            });
           },
           () => {}
         );
@@ -86,10 +106,12 @@ export default function BarcodeScannerModal({ open, onDetect, onClose }) {
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (scanner?.isScanning) {
-        scanner.stop().catch(() => {}).finally(() => scanner.clear());
+        scanner.stop().catch(() => {}).finally(() => {
+          try { scanner.clear(); } catch { /* ignore */ }
+        });
       }
     };
-  }, [open, onDetect, stopScanner]);
+  }, [open, stopScanner]);
 
   useLockBodyScroll(open);
 
@@ -124,12 +146,12 @@ export default function BarcodeScannerModal({ open, onDetect, onClose }) {
             <div className="rounded-[16px] overflow-hidden bg-black relative aspect-square qr-scanner-wrap">
               <div id={SCANNER_ID} className="w-full h-full min-h-[280px]" />
               {starting && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none z-10">
                   <span className="text-white text-[11px] font-semibold">Menyiapkan kamera…</span>
                 </div>
               )}
               {!starting && (
-                <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none">
+                <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none z-10">
                   <span className="text-white/90 text-[11px] font-semibold bg-black/40 px-3 py-1.5 rounded-full">
                     Arahkan kamera ke QR code nota
                   </span>

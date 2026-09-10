@@ -100,13 +100,16 @@ export const getProfileDetail = async (req, res) => {
 
     try {
       const [roleRows] = await myWaschenPool.query(
-        'SELECT role, is_leader, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+        'SELECT role, is_leader, outlet_id, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
         [employeeRow.employee_id]
       );
       if (roleRows.length > 0) {
         assignedRole = roleRows[0].role;
         isLeader = roleRows[0].is_leader || 0;
         assignedOutletId = roleRows[0].outlet_id;
+        if (roleRows[0].employee_name && !employeeRow.full_name) {
+          employeeRow.full_name = roleRows[0].employee_name;
+        }
 
         if (assignedOutletId) {
           const [outletRows] = await mainPool.query(
@@ -215,6 +218,18 @@ export const updateProfile = async (req, res) => {
       queryParams.push(empId);
       const sql = `UPDATE mst_employee SET ${updateFields.join(', ')} WHERE employee_id = ?`;
       await mainPool.query(sql, queryParams);
+    }
+
+    // Sync nama ke myWaschen.mst_role.employee_name (hindari ketergantungan mainPool untuk display name)
+    if (data.full_name) {
+      try {
+        await myWaschenPool.query(
+          `UPDATE mst_role SET employee_name = ? WHERE employee_id = ?`,
+          [String(data.full_name).trim() || null, empId]
+        );
+      } catch (e) {
+        console.warn('sync mst_role.employee_name warning:', e.message);
+      }
     }
 
     // Optionally sync full_name / phone / address back to users table if matching email

@@ -1,4 +1,4 @@
-import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { myWaschenPool } from '../../db/pool.js';
 import { KASBON_UPLOAD_PUBLIC_PATH, deleteKasbonProofFile } from '../../middleware/upload.js';
 
 const KASBON_TYPES = ['kasbon', 'pinjaman'];
@@ -124,11 +124,14 @@ export const submitKasbon = async (req, res) => {
       return res.status(422).json({ success: false, message: 'Jumlah pengajuan harus lebih dari 0' });
     }
 
-    const [empRows] = await mainPool.query(
-      'SELECT full_name FROM mst_employee WHERE employee_id = ? LIMIT 1',
+    const [empRows] = await myWaschenPool.query(
+      `SELECT employee_name FROM mst_role
+       WHERE employee_id = ?
+         AND employee_name IS NOT NULL AND TRIM(employee_name) != ''
+       LIMIT 1`,
       [employeeId]
     );
-    const employeeName = empRows[0]?.full_name || req.user.email || 'Unknown';
+    const employeeName = empRows[0]?.employee_name || req.user.email || 'Unknown';
 
     const proofPath = req.file ? `${KASBON_UPLOAD_PUBLIC_PATH}/${req.file.filename}` : null;
 

@@ -6,6 +6,7 @@ import waschenLogo from '../../assets/images/waschen.png';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { resetPageView } from '../../utils/resetPageView.js';
 import { Eye, EyeOff, Lock, User as UserIcon, ScanFace, Fingerprint } from 'lucide-react';
+import { BIOMETRICS_UI_ENABLED } from '../../utils/featureFlags.js';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -249,8 +250,8 @@ export default function Login() {
                             )}
                         </button>
 
-                        {/* WebAuthn Face ID / Biometrics Button */}
-                        {isBiometricSupported && (
+                        {/* WebAuthn Face ID / Biometrics Button — disembunyikan sementara */}
+                        {BIOMETRICS_UI_ENABLED && isBiometricSupported && (
                             <>
                                 <div className="relative flex py-1 items-center justify-center">
                                     <div className="flex-grow border-t border-slate-200"></div>

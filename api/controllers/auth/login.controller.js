@@ -71,7 +71,7 @@ export const loginUser = async (req, res) => {
     const [roleRows, outletListRows] = await Promise.all([
       user.employee_id
         ? myWaschenPool.query(
-            'SELECT role, is_leader, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+            'SELECT role, is_leader, outlet_id, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
             [user.employee_id]
           ).then(([rows]) => rows)
         : Promise.resolve([]),
@@ -103,6 +103,11 @@ export const loginUser = async (req, res) => {
         }
       }
     }
+
+    const displayName =
+      user.full_name ||
+      roleRows[0]?.employee_name ||
+      user.user_display_name;
 
     // Generate JWT token (include assignedOutletId so downstream requests
     // don't need to re-query mst_role on every single API call)
@@ -142,7 +147,7 @@ export const loginUser = async (req, res) => {
         isLeader: isLeader,
         join_date: user.join_date,
         joinDate: user.join_date,
-        fullName: user.full_name || user.user_display_name,
+        fullName: displayName,
         position: user.position_name || 'Staff',
         department: user.department_name || 'Waschen Laundry',
         profilePath: user.profile_path || user.avatar,

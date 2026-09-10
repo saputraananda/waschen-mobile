@@ -88,16 +88,18 @@ const fetchUserLoginPayload = async (userId) => {
   let isLeader = 0;
   let assignedOutletId = null;
   let assignedOutletName = null;
+  let roleEmployeeName = null;
 
   if (user.employee_id) {
     const [roleRows] = await myWaschenPool.query(
-      'SELECT role, is_leader, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+      'SELECT role, is_leader, outlet_id, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
       [user.employee_id]
     );
     if (roleRows.length > 0) {
       assignedRole = roleRows[0].role;
       isLeader = roleRows[0].is_leader || 0;
       assignedOutletId = roleRows[0].outlet_id;
+      roleEmployeeName = roleRows[0].employee_name || null;
 
       if (assignedOutletId) {
         const [outletRows] = await mainPool.query(
@@ -151,7 +153,7 @@ const fetchUserLoginPayload = async (userId) => {
       isLeader: isLeader,
       join_date: user.join_date,
       joinDate: user.join_date,
-      fullName: user.full_name || user.user_display_name,
+      fullName: user.full_name || roleEmployeeName || user.user_display_name,
       position: user.position_name || 'Staff',
       department: user.department_name || 'Waschen Laundry',
       profilePath: user.profile_path || user.avatar,
