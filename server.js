@@ -41,30 +41,28 @@ app.use('/api/kasbon', kasbonRoutes);
 app.use('/api/progress', produksiRoutes);
 app.use('/api/history', historyRoutes);
 
-// Serve static assets in production (self-hosted / local only — Vercel serves dist/ separately)
-if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+// Serve static assets in production (self-hosted / local)
+if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
 
   // Wildcard handler for client side routing
   app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
   });
-} else if (!process.env.VERCEL) {
+} else {
   app.get('/', (req, res) => {
     res.send('React & Express Starter Pack API Server is running. Frontend dev server is active on port 9000.');
   });
 }
 
 // Start Server
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`=========================================`);
-    console.log(`  React & Express Monorepo Starter Server `);
-    console.log(`  Status: Running                        `);
-    console.log(`  Port:   http://localhost:${PORT}        `);
-    console.log(`=========================================`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`=========================================`);
+  console.log(`  React & Express Monorepo Starter Server `);
+  console.log(`  Status: Running                        `);
+  console.log(`  Port:   http://localhost:${PORT}        `);
+  console.log(`=========================================`);
+});
 
 export default app;
 
