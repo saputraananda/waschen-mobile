@@ -5,9 +5,13 @@ import { resetPageView } from '../../utils/resetPageView.js';
 import fetchAssignedRole from '../../utils/fetchAssignedRole.js';
 import Banner from './components/Banner.jsx';
 import MenuSection from './components/MenuSection.jsx';
+import AlertOvertime from './components/AlertOvertime.jsx';
+import useActiveOvertime from '../../hooks/useActiveOvertime.js';
 
 export default function Home() {
   const navigate = useNavigate();
+  const { active, locked, isActive } = useActiveOvertime(true);
+  const [forceOtModal, setForceOtModal] = useState(true);
 
   const [currentUser, setCurrentUser] = useState({
     fullName: 'Ananda Saputra',
@@ -32,7 +36,7 @@ export default function Home() {
     } else if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser);
-        setCurrentUser(prev => ({
+        setCurrentUser((prev) => ({
           ...prev,
           ...parsed,
           assignedOutletName: parsed.assignedOutletName || prev.assignedOutletName || 'Waschen Head Office'
@@ -50,11 +54,13 @@ export default function Home() {
   }, [navigate]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (locked) setForceOtModal(true);
+  }, [locked]);
 
   const getInitials = (name) => {
     if (!name) return 'WS';
@@ -63,13 +69,11 @@ export default function Home() {
     return String(name).slice(0, 2).toUpperCase() || 'WS';
   };
 
-  const formatTime = (date) => {
-    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
+  const formatTime = (date) =>
+    date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  };
+  const formatDate = (date) =>
+    date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const getGreeting = () => {
     const h = new Date().getHours();
@@ -81,6 +85,10 @@ export default function Home() {
   };
 
   const handleMenuClick = (path) => {
+    if (locked && !['/overtime', '/history', '/profile'].includes(path)) {
+      setForceOtModal(true);
+      return;
+    }
     navigate(path);
   };
 
@@ -99,7 +107,17 @@ export default function Home() {
             getGreeting={getGreeting}
           />
 
-          <MenuSection onMenuClick={handleMenuClick} />
+          {isActive && (
+            <AlertOvertime
+              active={active}
+              locked={locked}
+              forceModal={locked && forceOtModal}
+              onDismissModal={() => setForceOtModal(false)}
+              onGoOvertime={() => navigate('/overtime')}
+            />
+          )}
+
+          <MenuSection onMenuClick={handleMenuClick} menusLocked={locked} />
         </div>
 
         <Navbar />

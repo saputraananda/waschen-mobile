@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Home from './pages/home/index.jsx';
 import Login from './pages/auth/Login.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
+import OvertimeLockGuard from './components/OvertimeLockGuard.jsx';
 import waschenLogo from './assets/images/waschen.png';
 
 const History = lazy(() => import('./pages/history/index.jsx'));
@@ -131,6 +132,7 @@ export default function App() {
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <Suspense fallback={<PageFallback />}>
+      <OvertimeLockGuard>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -154,6 +156,7 @@ export default function App() {
         {/* Fallback route redirection */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </OvertimeLockGuard>
       </Suspense>
 
       {showSplash && (

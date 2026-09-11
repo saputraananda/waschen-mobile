@@ -1,36 +1,27 @@
 import { myWaschenPool } from '../../db/pool.js';
+import { emitDataChange } from '../../socket/io.js';
 
 /**
  * =============================================================================
  * BUSINESS RULES — LEMBUR (tr_overtime) — MEMORY / DO NOT DRIFT
  * =============================================================================
- * 1. Karyawan mengisi: tanggal, jam mulai, jam selesai, alasan.
- * 2. Multi-slot diperbolehkan (beberapa pengajuan di hari yang sama), asalkan
- *    rentang jam tidak overlap dengan slot aktif (pengajuan/disetujui).
- * 3. Status awal = 'pengajuan'. Muncul di tab Persetujuan leader cabang
- *    (mst_role.is_leader=1, outlet_id sama) dan di Alsa HRIS.
- * 4. Leader/Alsa ACC → 'disetujui' (+ approval_note opsional).
- *    Tolak → 'ditolak' (+ rejection_note wajib).
- * 5. Edit setelah disetujui: BOLEH edit semua field, TAPI status kembali ke
- *    'pengajuan' dan frontend WAJIB tampilkan notif agar karyawan sadar
- *    perlu ACC ulang. Hapus/batal juga boleh meski sudah ACC → 'dibatalkan'.
- * 6. FLAG KPI di tr_item_progress (saat QC di jendela jam):
- *    - status lembur 'disetujui'  → work_time_flag = 'overtime'
- *    - status lembur 'pengajuan' → work_time_flag = 'overtime_pending'
- *    - di luar start_time–end_time (tanpa slot yang cover) → TIDAK ada flag
- *      lembur (tetap 'normal'). Contoh: slot 19:00–20:00, kerja jam 20:15
- *      tanpa perpanjang/ACC tambahan → tidak terhitung lembur.
- * 7. Perpanjang jam (mis. sedang di 19:30, ingin sampai 21:00): harus edit
- *    slot / ajukan slot baru → butuh ACC leader lagi. Tanpa itu, item setelah
- *    end_time tidak dapat flag lembur.
- * 8. ACC terlambat (besok baru ACC): progress yang sudah ditandai
- *    overtime_pending dipromosikan jadi 'overtime'. Jika ditolak/dibatalkan:
- *    jadi 'outside_hours' (kerja di luar jam, sukarela, bukan KPI lembur).
+ * Alur sesi (seperti absen), BUKAN pengajuan di muka:
+ * 1. Karyawan Start Lembur → status 'berlangsung', start_at=NOW().
+ *    Hanya 1 sesi berlangsung per karyawan.
+ * 2. Selama 'berlangsung', semua QC/kerja di-tag overtime_id +
+ *    work_time_flag='overtime_pending'.
+ * 3. Karyawan Close Lembur → end_at=NOW(), status 'pengajuan'
+ *    (muncul di Persetujuan leader + Alsa).
+ * 4. Leader/Alsa ACC → 'disetujui' (pending→overtime KPI).
+ *    Tolak → 'ditolak' (→outside_hours = sukarela).
+ * 5. Setelah close: boleh edit jam/alasan (seperti dulu). Edit setelah ACC
+ *    → status kembali 'pengajuan' (ACC ulang). Hapus/batal → 'dibatalkan'.
+ * 6. Lupa close & ganti hari: sesi tetap 'berlangsung' → AlertOvertime merah
+ *    + lock menu (kecuali Lembur/Riwayat/Profil) sampai close.
  * =============================================================================
  */
-import { emitDataChange } from '../../socket/io.js';
 
-const ACTIVE_STATUSES = ['pengajuan', 'disetujui'];
+const CLOSED_ACTIVE = ['pengajuan', 'disetujui'];
 
 const toDateOnly = (v) => {
   if (!v) return null;
@@ -44,7 +35,6 @@ const toDateOnly = (v) => {
 const toTimeOnly = (v) => {
   if (!v) return null;
   const s = String(v).trim();
-  // accept HH:MM or HH:MM:SS
   const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return null;
   const hh = String(Math.min(23, Number(m[1]))).padStart(2, '0');
@@ -53,17 +43,49 @@ const toTimeOnly = (v) => {
   return `${hh}:${mm}:${ss}`;
 };
 
-const timeToSec = (t) => {
-  const p = String(t).split(':').map(Number);
-  return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const formatSqlDateTime = (d = new Date()) => {
+  const x = d instanceof Date ? d : new Date(d);
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())} ${pad2(x.getHours())}:${pad2(x.getMinutes())}:${pad2(x.getSeconds())}`;
 };
 
-const mapRow = (row) => ({
-  ...row,
-  overtime_date: toDateOnly(row.overtime_date),
-  start_time: row.start_time ? String(row.start_time).slice(0, 8) : null,
-  end_time: row.end_time ? String(row.end_time).slice(0, 8) : null
-});
+const parseSqlDateTime = (v) => {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  const s = String(v).replace('T', ' ').slice(0, 19);
+  const d = new Date(s.replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const isSameCalendarDay = (a, b = new Date()) => {
+  const da = a instanceof Date ? a : parseSqlDateTime(a);
+  const db = b instanceof Date ? b : parseSqlDateTime(b);
+  if (!da || !db) return true;
+  return da.getFullYear() === db.getFullYear()
+    && da.getMonth() === db.getMonth()
+    && da.getDate() === db.getDate();
+};
+
+const mapRow = (row) => {
+  if (!row) return null;
+  const startAt = row.start_at || null;
+  const endAt = row.end_at || null;
+  const startParsed = parseSqlDateTime(startAt);
+  const pastMidnight = row.status === 'berlangsung' && startParsed
+    ? !isSameCalendarDay(startParsed, new Date())
+    : false;
+  return {
+    ...row,
+    overtime_date: toDateOnly(row.overtime_date),
+    start_time: row.start_time ? String(row.start_time).slice(0, 8) : null,
+    end_time: row.end_time ? String(row.end_time).slice(0, 8) : null,
+    start_at: startAt ? formatSqlDateTime(parseSqlDateTime(startAt) || startAt) : null,
+    end_at: endAt ? formatSqlDateTime(parseSqlDateTime(endAt) || endAt) : null,
+    is_active: row.status === 'berlangsung',
+    past_midnight: pastMidnight
+  };
+};
 
 const resolveRoleMeta = async (employeeId) => {
   const [rows] = await myWaschenPool.query(
@@ -89,32 +111,34 @@ const assertLeaderOfOutlet = async (employeeId, outletId) => {
   return role;
 };
 
-/** Cek overlap jam di hari yang sama untuk slot aktif. */
-const hasTimeOverlap = async (employeeId, overtimeDate, startTime, endTime, excludeId = null) => {
-  const params = [employeeId, overtimeDate, ...ACTIVE_STATUSES];
-  let sql = `
-    SELECT id, start_time, end_time FROM tr_overtime
-    WHERE employee_id = ? AND overtime_date = ?
-      AND status IN (?, ?)
-  `;
-  if (excludeId) {
-    sql += ' AND id <> ?';
-    params.push(excludeId);
-  }
-  const [rows] = await myWaschenPool.query(sql, params);
-  const s = timeToSec(startTime);
-  const e = timeToSec(endTime);
-  return rows.some((r) => {
-    const rs = timeToSec(String(r.start_time).slice(0, 8));
-    const re = timeToSec(String(r.end_time).slice(0, 8));
-    return s < re && e > rs;
-  });
+const getOpenSession = async (employeeId, connOrPool = myWaschenPool) => {
+  const [rows] = await connOrPool.query(
+    `SELECT * FROM tr_overtime
+     WHERE employee_id = ? AND status = 'berlangsung' AND end_at IS NULL
+     ORDER BY id DESC LIMIT 1`,
+    [employeeId]
+  );
+  return rows[0] || null;
 };
 
-/**
- * Reconcile flag progress terkait satu overtime_id.
- * mode: 'approve' | 'reject_or_cancel' | 'reset_pending' | 'resync_window'
- */
+/** Overlap sesi tertutup (pengajuan/disetujui) via DATETIME. */
+const hasDateTimeOverlap = async (employeeId, startAt, endAt, excludeId = null) => {
+  let sql = `
+    SELECT id FROM tr_overtime
+    WHERE employee_id = ?
+      AND status IN (?, ?)
+      AND start_at IS NOT NULL AND end_at IS NOT NULL
+      AND start_at < ? AND end_at > ?
+  `;
+  const p = [employeeId, ...CLOSED_ACTIVE, endAt, startAt];
+  if (excludeId) {
+    sql += ' AND id <> ?';
+    p.push(excludeId);
+  }
+  const [rows] = await myWaschenPool.query(sql, p);
+  return rows.length > 0;
+};
+
 const reconcileProgressFlags = async (connOrPool, overtimeId, mode, window = null) => {
   const db = connOrPool;
   if (mode === 'approve') {
@@ -145,50 +169,46 @@ const reconcileProgressFlags = async (connOrPool, overtimeId, mode, window = nul
     return;
   }
   if (mode === 'resync_window' && window) {
-    const { overtime_date, start_time, end_time } = window;
-    // Di dalam jendela baru → pending (menunggu ACC ulang)
+    const { start_at, end_at } = window;
     await db.query(
       `UPDATE tr_item_progress
        SET work_time_flag = 'overtime_pending'
        WHERE overtime_id = ?
-         AND DATE(completed_at) = ?
-         AND TIME(completed_at) >= ?
-         AND TIME(completed_at) <= ?`,
-      [overtimeId, overtime_date, start_time, end_time]
+         AND completed_at >= ?
+         AND completed_at <= ?`,
+      [overtimeId, start_at, end_at]
     );
-    // Di luar jendela baru → lepas flag lembur (bukan KPI)
     await db.query(
       `UPDATE tr_item_progress
        SET overtime_id = NULL, work_time_flag = 'normal'
        WHERE overtime_id = ?
-         AND (
-           DATE(completed_at) <> ?
-           OR TIME(completed_at) < ?
-           OR TIME(completed_at) > ?
-         )`,
-      [overtimeId, overtime_date, start_time, end_time]
+         AND (completed_at < ? OR completed_at > ?)`,
+      [overtimeId, start_at, end_at]
     );
   }
 };
 
 /**
- * Dipakai produksi QC: cari slot lembur yang cover timestamp sekarang.
- * MEMORY: hanya item di dalam [start_time, end_time] yang dapat flag.
+ * Dipakai produksi QC: sesi berlangsung ATAU jendela closed yang cover now.
  */
 export const findCoveringOvertime = async (employeeId, atDateTime = new Date()) => {
-  const d = atDateTime instanceof Date ? atDateTime : new Date(atDateTime);
-  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  const at = atDateTime instanceof Date ? atDateTime : new Date(atDateTime);
+  const atSql = formatSqlDateTime(at);
+
+  const open = await getOpenSession(employeeId);
+  if (open) {
+    return { overtime_id: open.id, work_time_flag: 'overtime_pending' };
+  }
 
   const [rows] = await myWaschenPool.query(
     `SELECT id, status FROM tr_overtime
      WHERE employee_id = ?
-       AND overtime_date = ?
        AND status IN ('pengajuan', 'disetujui')
-       AND ? BETWEEN start_time AND end_time
+       AND start_at IS NOT NULL AND end_at IS NOT NULL
+       AND ? BETWEEN start_at AND end_at
      ORDER BY FIELD(status, 'disetujui', 'pengajuan'), id DESC
      LIMIT 1`,
-    [employeeId, dateStr, timeStr]
+    [employeeId, atSql]
   );
   if (!rows[0]) return null;
   return {
@@ -197,19 +217,18 @@ export const findCoveringOvertime = async (employeeId, atDateTime = new Date()) 
   };
 };
 
-/**
- * GET /api/overtime/me-meta — is_leader + outlet untuk UI tabs
- */
 export const getMeMeta = async (req, res) => {
   try {
     const role = await resolveRoleMeta(req.user.employee_id);
+    const active = await getOpenSession(req.user.employee_id);
     return res.json({
       success: true,
       data: {
         is_leader: Number(role?.is_leader) === 1,
         outlet_id: role?.outlet_id ?? req.user.assignedOutletId ?? null,
         employee_name: role?.employee_name || null,
-        role: role?.role || null
+        role: role?.role || null,
+        active_overtime: mapRow(active)
       }
     });
   } catch (error) {
@@ -218,9 +237,118 @@ export const getMeMeta = async (req, res) => {
   }
 };
 
-/**
- * GET /api/overtime/list?month=&year=&status=&scope=mine|history
- */
+/** GET /api/overtime/active */
+export const getActiveOvertime = async (req, res) => {
+  try {
+    const active = await getOpenSession(req.user.employee_id);
+    return res.json({
+      success: true,
+      data: mapRow(active),
+      locked: Boolean(active && mapRow(active)?.past_midnight)
+    });
+  } catch (error) {
+    console.error('getActiveOvertime:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** POST /api/overtime/start — mulai sesi lembur */
+export const startOvertime = async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    const existing = await getOpenSession(employeeId);
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Anda masih memiliki sesi lembur yang berlangsung. Close dulu sebelum start baru.',
+        data: mapRow(existing)
+      });
+    }
+
+    const role = await resolveRoleMeta(employeeId);
+    const outletId = role?.outlet_id || req.user.assignedOutletId;
+    if (!outletId) {
+      return res.status(422).json({ success: false, message: 'Outlet karyawan tidak ditemukan di mst_role' });
+    }
+
+    const now = new Date();
+    const startAt = formatSqlDateTime(now);
+    const overtimeDate = toDateOnly(now);
+    const startTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    const reason = String(req.body.reason || '').trim() || 'Sesi lembur';
+
+    const [result] = await myWaschenPool.query(
+      `INSERT INTO tr_overtime
+         (employee_id, employee_name, outlet_id, overtime_date, start_time, end_time,
+          start_at, end_at, reason, status)
+       VALUES (?, ?, ?, ?, ?, '23:59:59', ?, NULL, ?, 'berlangsung')`,
+      [employeeId, role?.employee_name || null, outletId, overtimeDate, startTime, startAt, reason]
+    );
+
+    const [rows] = await myWaschenPool.query('SELECT * FROM tr_overtime WHERE id = ?', [result.insertId]);
+    emitDataChange({ domain: 'overtime', outletId, employeeId, action: 'start' });
+    return res.status(201).json({
+      success: true,
+      message: 'Sesi lembur dimulai. Semua kerjaan akan tercatat sebagai lembur sampai Anda close.',
+      data: mapRow(rows[0])
+    });
+  } catch (error) {
+    console.error('startOvertime:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** POST /api/overtime/end — tutup sesi → pengajuan */
+export const endOvertime = async (req, res) => {
+  const conn = await myWaschenPool.getConnection();
+  try {
+    const employeeId = req.user.employee_id;
+    const active = await getOpenSession(employeeId, conn);
+    if (!active) {
+      return res.status(404).json({ success: false, message: 'Tidak ada sesi lembur yang berlangsung' });
+    }
+
+    const now = new Date();
+    const endAt = formatSqlDateTime(now);
+    const endTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    const reasonRaw = String(req.body.reason || active.reason || '').trim();
+    const reason = reasonRaw.length >= 5 ? reasonRaw : (active.reason || 'Sesi lembur');
+
+    const startParsed = parseSqlDateTime(active.start_at);
+    if (startParsed && now.getTime() <= startParsed.getTime()) {
+      return res.status(422).json({ success: false, message: 'Jam selesai harus setelah jam mulai' });
+    }
+
+    await conn.beginTransaction();
+    await conn.query(
+      `UPDATE tr_overtime SET
+         end_at = ?, end_time = ?, reason = ?, status = 'pengajuan', updated_at = NOW()
+       WHERE id = ? AND status = 'berlangsung'`,
+      [endAt, endTime, reason, active.id]
+    );
+    await conn.commit();
+
+    const [rows] = await myWaschenPool.query('SELECT * FROM tr_overtime WHERE id = ?', [active.id]);
+    emitDataChange({
+      domain: 'overtime',
+      outletId: active.outlet_id,
+      employeeId,
+      action: 'end'
+    });
+    return res.json({
+      success: true,
+      message: 'Sesi lembur ditutup. Status menjadi Pengajuan — menunggu ACC leader. Anda bisa edit jam/alasan jika perlu.',
+      data: mapRow(rows[0])
+    });
+  } catch (error) {
+    try { await conn.rollback(); } catch (_) { /* ignore */ }
+    console.error('endOvertime:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    conn.release();
+  }
+};
+
 export const getMyList = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
@@ -241,23 +369,23 @@ export const getMyList = async (req, res) => {
       params.push(periodStart, periodEnd);
     }
 
-    // Tab Pengajuan: aktif (pengajuan + disetujui belum lewat / semua aktif)
-    // Tab Riwayat: semua status final + yang sudah selesai review
     if (scope === 'pengajuan') {
-      cond.push(`status IN ('pengajuan','disetujui')`);
+      cond.push(`status IN ('berlangsung','pengajuan','disetujui')`);
     } else if (scope === 'riwayat') {
-      // riwayat = semua milik sendiri
-      if (status && ['pengajuan', 'disetujui', 'ditolak', 'dibatalkan'].includes(status)) {
+      if (status && ['berlangsung', 'pengajuan', 'disetujui', 'ditolak', 'dibatalkan'].includes(status)) {
         cond.push('status = ?');
         params.push(status);
       }
-    } else if (status && ['pengajuan', 'disetujui', 'ditolak', 'dibatalkan'].includes(status)) {
+    } else if (status && ['berlangsung', 'pengajuan', 'disetujui', 'ditolak', 'dibatalkan'].includes(status)) {
       cond.push('status = ?');
       params.push(status);
     }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT * FROM tr_overtime WHERE ${cond.join(' AND ')} ORDER BY overtime_date DESC, start_time DESC, id DESC LIMIT 500`,
+      `SELECT * FROM tr_overtime WHERE ${cond.join(' AND ')}
+       ORDER BY FIELD(status,'berlangsung','pengajuan','disetujui','ditolak','dibatalkan'),
+                overtime_date DESC, start_at DESC, id DESC
+       LIMIT 500`,
       params
     );
 
@@ -274,10 +402,6 @@ export const getMyList = async (req, res) => {
   }
 };
 
-/**
- * GET /api/overtime/approvals?filter=pengajuan|disetujui|ditolak
- * Leader only — pengajuan karyawan outlet yang sama.
- */
 export const getApprovals = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
@@ -313,7 +437,7 @@ export const getApprovals = async (req, res) => {
 
     const [rows] = await myWaschenPool.query(
       `SELECT * FROM tr_overtime WHERE ${cond.join(' AND ')}
-       ORDER BY FIELD(status,'pengajuan','disetujui','ditolak'), overtime_date DESC, start_time DESC
+       ORDER BY FIELD(status,'pengajuan','disetujui','ditolak'), overtime_date DESC, start_at DESC
        LIMIT 500`,
       params
     );
@@ -325,71 +449,12 @@ export const getApprovals = async (req, res) => {
   }
 };
 
-/**
- * POST /api/overtime
- * body: overtime_date, start_time, end_time, reason
- */
+/** Legacy create — redirect behavior: start session if no times, else reject */
 export const createOvertime = async (req, res) => {
-  try {
-    const employeeId = req.user.employee_id;
-    const overtime_date = toDateOnly(req.body.overtime_date);
-    const start_time = toTimeOnly(req.body.start_time);
-    const end_time = toTimeOnly(req.body.end_time);
-    const reason = String(req.body.reason || '').trim();
-
-    if (!overtime_date || !start_time || !end_time) {
-      return res.status(422).json({ success: false, message: 'Tanggal, jam mulai, dan jam selesai wajib diisi' });
-    }
-    if (timeToSec(start_time) >= timeToSec(end_time)) {
-      return res.status(422).json({ success: false, message: 'Jam selesai harus setelah jam mulai' });
-    }
-    if (reason.length < 5) {
-      return res.status(422).json({ success: false, message: 'Alasan lembur wajib diisi minimal 5 karakter' });
-    }
-
-    const role = await resolveRoleMeta(employeeId);
-    const outletId = role?.outlet_id || req.user.assignedOutletId;
-    if (!outletId) {
-      return res.status(422).json({ success: false, message: 'Outlet karyawan tidak ditemukan di mst_role' });
-    }
-
-    if (await hasTimeOverlap(employeeId, overtime_date, start_time, end_time)) {
-      return res.status(409).json({
-        success: false,
-        message: 'Rentang jam overlap dengan pengajuan lembur aktif lain. Perpanjang slot yang ada atau pilih jam berbeda.'
-      });
-    }
-
-    const [result] = await myWaschenPool.query(
-      `INSERT INTO tr_overtime
-         (employee_id, employee_name, outlet_id, overtime_date, start_time, end_time, reason, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pengajuan')`,
-      [employeeId, role?.employee_name || null, outletId, overtime_date, start_time, end_time, reason]
-    );
-
-    const [rows] = await myWaschenPool.query('SELECT * FROM tr_overtime WHERE id = ?', [result.insertId]);
-    emitDataChange({
-      domain: 'overtime',
-      outletId,
-      employeeId,
-      action: 'create'
-    });
-    return res.status(201).json({
-      success: true,
-      message: 'Pengajuan lembur dikirim. Menunggu persetujuan leader.',
-      data: mapRow(rows[0])
-    });
-  } catch (error) {
-    console.error('createOvertime:', error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
+  // Backward-compatible: prefer start session
+  return startOvertime(req, res);
 };
 
-/**
- * PUT /api/overtime/:id
- * MEMORY: jika sebelumnya 'disetujui', edit apapun → status kembali 'pengajuan'
- * (butuh ACC ulang). Response menyertakan reset_to_pengajuan=true untuk notif UI.
- */
 export const updateOvertime = async (req, res) => {
   const conn = await myWaschenPool.getConnection();
   try {
@@ -402,7 +467,13 @@ export const updateOvertime = async (req, res) => {
     );
     const existing = existingRows[0];
     if (!existing) {
-      return res.status(404).json({ success: false, message: 'Pengajuan lembur tidak ditemukan' });
+      return res.status(404).json({ success: false, message: 'Data lembur tidak ditemukan' });
+    }
+    if (existing.status === 'berlangsung') {
+      return res.status(403).json({
+        success: false,
+        message: 'Sesi masih berlangsung. Close lembur dulu, baru bisa edit jam.'
+      });
     }
     if (existing.status === 'ditolak' || existing.status === 'dibatalkan') {
       return res.status(403).json({ success: false, message: 'Pengajuan yang ditolak/dibatalkan tidak dapat diedit' });
@@ -416,14 +487,25 @@ export const updateOvertime = async (req, res) => {
     if (!overtime_date || !start_time || !end_time) {
       return res.status(422).json({ success: false, message: 'Tanggal dan jam wajib diisi' });
     }
-    if (timeToSec(start_time) >= timeToSec(end_time)) {
-      return res.status(422).json({ success: false, message: 'Jam selesai harus setelah jam mulai' });
-    }
     if (reason.length < 5) {
       return res.status(422).json({ success: false, message: 'Alasan lembur wajib diisi minimal 5 karakter' });
     }
 
-    if (await hasTimeOverlap(employeeId, overtime_date, start_time, end_time, id)) {
+    // Build DATETIME window (handle overnight if end < start)
+    const startAt = `${overtime_date} ${start_time}`;
+    let endDate = overtime_date;
+    const [sh, sm, ss] = start_time.split(':').map(Number);
+    const [eh, em, es] = end_time.split(':').map(Number);
+    const startN = sh * 3600 + sm * 60 + (ss || 0);
+    const endN = eh * 3600 + em * 60 + (es || 0);
+    if (endN <= startN) {
+      const d = new Date(`${overtime_date}T00:00:00`);
+      d.setDate(d.getDate() + 1);
+      endDate = toDateOnly(d);
+    }
+    const endAt = `${endDate} ${end_time}`;
+
+    if (await hasDateTimeOverlap(employeeId, startAt, endAt, id)) {
       return res.status(409).json({
         success: false,
         message: 'Rentang jam overlap dengan pengajuan lembur aktif lain.'
@@ -431,28 +513,23 @@ export const updateOvertime = async (req, res) => {
     }
 
     const wasApproved = existing.status === 'disetujui';
-    // MEMORY: edit setelah ACC → kembali pengajuan (perpanjang jam juga ikut rule ini)
     const nextStatus = wasApproved || existing.status === 'pengajuan' ? 'pengajuan' : existing.status;
     const resetToPengajuan = wasApproved;
 
     await conn.beginTransaction();
-
     await conn.query(
       `UPDATE tr_overtime SET
-         overtime_date = ?, start_time = ?, end_time = ?, reason = ?,
+         overtime_date = ?, start_time = ?, end_time = ?,
+         start_at = ?, end_at = ?, reason = ?,
          status = ?, approval_note = NULL, rejection_note = NULL,
          reviewed_by = NULL, reviewed_by_name = NULL, reviewed_at = NULL,
          updated_at = NOW()
        WHERE id = ?`,
-      [overtime_date, start_time, end_time, reason, nextStatus, id]
+      [overtime_date, start_time, end_time, startAt, endAt, reason, nextStatus, id]
     );
 
     if (resetToPengajuan || existing.status === 'pengajuan') {
-      await reconcileProgressFlags(conn, id, 'resync_window', {
-        overtime_date,
-        start_time,
-        end_time
-      });
+      await reconcileProgressFlags(conn, id, 'resync_window', { start_at: startAt, end_at: endAt });
     }
 
     await conn.commit();
@@ -468,8 +545,8 @@ export const updateOvertime = async (req, res) => {
       success: true,
       reset_to_pengajuan: resetToPengajuan,
       message: resetToPengajuan
-        ? 'Perubahan disimpan. Status kembali ke Pengajuan — leader harus menyetujui ulang (termasuk jika Anda memperpanjang jam).'
-        : 'Pengajuan lembur diperbarui',
+        ? 'Perubahan disimpan. Status kembali ke Pengajuan — leader harus menyetujui ulang.'
+        : 'Data lembur diperbarui',
       data: mapRow(rows[0])
     });
   } catch (error) {
@@ -481,9 +558,6 @@ export const updateOvertime = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/overtime/:id — batalkan (boleh meski sudah disetujui)
- */
 export const cancelOvertime = async (req, res) => {
   const conn = await myWaschenPool.getConnection();
   try {
@@ -503,11 +577,20 @@ export const cancelOvertime = async (req, res) => {
     }
 
     await conn.beginTransaction();
-    await conn.query(
-      `UPDATE tr_overtime SET status = 'dibatalkan', updated_at = NOW() WHERE id = ?`,
-      [id]
-    );
-    // MEMORY: progress yang sudah di-flag → outside_hours (bukan KPI lembur)
+    if (existing.status === 'berlangsung') {
+      await conn.query(
+        `UPDATE tr_overtime SET
+           status = 'dibatalkan', end_at = NOW(),
+           end_time = TIME(NOW()), updated_at = NOW()
+         WHERE id = ?`,
+        [id]
+      );
+    } else {
+      await conn.query(
+        `UPDATE tr_overtime SET status = 'dibatalkan', updated_at = NOW() WHERE id = ?`,
+        [id]
+      );
+    }
     await reconcileProgressFlags(conn, id, 'reject_or_cancel');
     await conn.commit();
 
@@ -517,7 +600,7 @@ export const cancelOvertime = async (req, res) => {
       employeeId,
       action: 'cancel'
     });
-    return res.json({ success: true, message: 'Pengajuan lembur dibatalkan' });
+    return res.json({ success: true, message: 'Lembur dibatalkan' });
   } catch (error) {
     try { await conn.rollback(); } catch (_) { /* ignore */ }
     console.error('cancelOvertime:', error);
@@ -527,10 +610,6 @@ export const cancelOvertime = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/overtime/:id/approve
- * body: approval_note? (opsional)
- */
 export const approveOvertime = async (req, res) => {
   const conn = await myWaschenPool.getConnection();
   try {
@@ -541,6 +620,9 @@ export const approveOvertime = async (req, res) => {
     const [rows] = await conn.query('SELECT * FROM tr_overtime WHERE id = ? LIMIT 1', [id]);
     const row = rows[0];
     if (!row) return res.status(404).json({ success: false, message: 'Pengajuan tidak ditemukan' });
+    if (row.status === 'berlangsung') {
+      return res.status(403).json({ success: false, message: 'Sesi masih berlangsung — karyawan harus close dulu' });
+    }
     if (row.status !== 'pengajuan') {
       return res.status(403).json({ success: false, message: 'Hanya status pengajuan yang dapat disetujui' });
     }
@@ -563,7 +645,6 @@ export const approveOvertime = async (req, res) => {
        WHERE id = ?`,
       [approval_note, reviewerId, reviewer.employee_name || null, id]
     );
-    // MEMORY: ACC (termasuk terlambat) → promote pending → overtime (KPI)
     await reconcileProgressFlags(conn, id, 'approve');
     await conn.commit();
 
@@ -583,10 +664,6 @@ export const approveOvertime = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/overtime/:id/reject
- * body: rejection_note (wajib)
- */
 export const rejectOvertime = async (req, res) => {
   const conn = await myWaschenPool.getConnection();
   try {
@@ -601,6 +678,9 @@ export const rejectOvertime = async (req, res) => {
     const [rows] = await conn.query('SELECT * FROM tr_overtime WHERE id = ? LIMIT 1', [id]);
     const row = rows[0];
     if (!row) return res.status(404).json({ success: false, message: 'Pengajuan tidak ditemukan' });
+    if (row.status === 'berlangsung') {
+      return res.status(403).json({ success: false, message: 'Sesi masih berlangsung — karyawan harus close dulu' });
+    }
     if (row.status !== 'pengajuan') {
       return res.status(403).json({ success: false, message: 'Hanya status pengajuan yang dapat ditolak' });
     }
@@ -623,7 +703,6 @@ export const rejectOvertime = async (req, res) => {
        WHERE id = ?`,
       [rejection_note, reviewerId, reviewer.employee_name || null, id]
     );
-    // MEMORY: ditolak → outside_hours (bukan KPI lembur)
     await reconcileProgressFlags(conn, id, 'reject_or_cancel');
     await conn.commit();
 
@@ -633,7 +712,7 @@ export const rejectOvertime = async (req, res) => {
       employeeId: row.employee_id,
       action: 'reject'
     });
-    return res.json({ success: true, message: 'Lembur ditolak' });
+    return res.json({ success: true, message: 'Lembur ditolak (dianggap sukarela)' });
   } catch (error) {
     try { await conn.rollback(); } catch (_) { /* ignore */ }
     console.error('rejectOvertime:', error);

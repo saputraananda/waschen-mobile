@@ -23,11 +23,10 @@ import {
 
 /**
  * MEMORY LEMBUR (UI):
- * - Style disamakan dengan Kasbon / Leave (hero gradient + card filter + list)
- * - Karyawan: tab Pengajuan + Riwayat
- * - Leader (mst_role.is_leader): + tab Persetujuan (filter pengajuan/disetujui/ditolak)
- * - Edit setelah disetujui → status kembali pengajuan; tampilkan notif reset_to_pengajuan
- * - Perpanjang jam → edit/slot baru → wajib ACC leader lagi
+ * - Start / Close sesi (seperti absen), bukan buat pengajuan di muka
+ * - Close → status pengajuan → ACC leader/Alsa
+ * - Edit/hapus setelah close (sama flow lama)
+ * - Leader: tab Persetujuan
  */
 
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
@@ -38,6 +37,7 @@ api.interceptors.request.use((config) => {
 });
 
 const STATUS_META = {
+  berlangsung: { label: 'Berlangsung', cls: 'text-sky-800 bg-sky-50 border-sky-200' },
   pengajuan: { label: 'Pengajuan', cls: 'text-blue-700 bg-blue-50 border-blue-200' },
   disetujui: { label: 'Disetujui', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
   ditolak: { label: 'Ditolak', cls: 'text-red-700 bg-red-50 border-red-200' },
@@ -105,6 +105,8 @@ export default function Overtime() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [reviewTarget, setReviewTarget] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
+  const [activeSession, setActiveSession] = useState(null);
+  const [sessionBusy, setSessionBusy] = useState(false);
 
   useLockBodyScroll(formOpen || !!cancelTarget || !!reviewTarget);
 
@@ -160,6 +162,15 @@ export default function Overtime() {
     return base;
   }, [isLeader]);
 
+  const fetchActive = useCallback(async () => {
+    try {
+      const res = await api.get('/overtime/active');
+      setActiveSession(res.data?.data || null);
+    } catch {
+      setActiveSession(null);
+    }
+  }, []);
+
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     setListError(null);
@@ -179,6 +190,7 @@ export default function Overtime() {
         });
         setItems(res.data?.data || []);
       }
+      await fetchActive();
     } catch (err) {
       if (handleAuthError(err)) return;
       setListError(err.response?.data?.message || 'Gagal memuat data lembur');
@@ -186,19 +198,55 @@ export default function Overtime() {
     } finally {
       setLoadingList(false);
     }
-  }, [mainTab, approvalFilter, filterMonth, filterYear, handleAuthError]);
+  }, [mainTab, approvalFilter, filterMonth, filterYear, handleAuthError, fetchActive]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
   // Realtime: ACC leader/Alsa / edit karyawan lain di outlet → auto refetch
   useRealtimeRefresh('overtime', fetchList);
 
+  const handleStartSession = async () => {
+    if (sessionBusy) return;
+    setSessionBusy(true);
+    setListError(null);
+    try {
+      const res = await api.post('/overtime/start');
+      setActiveSession(res.data?.data || null);
+      setInfoBanner(res.data?.message || 'Sesi lembur dimulai');
+      fetchList();
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      setListError(err.response?.data?.message || 'Gagal start lembur');
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (sessionBusy) return;
+    setSessionBusy(true);
+    setListError(null);
+    try {
+      const res = await api.post('/overtime/end');
+      setActiveSession(null);
+      setInfoBanner(res.data?.message || 'Sesi lembur ditutup — menunggu ACC leader');
+      setMainTab('pengajuan');
+      fetchList();
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      setListError(err.response?.data?.message || 'Gagal close lembur');
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
   const stats = useMemo(() => {
-    const s = { pengajuan: 0, disetujui: 0, ditolak: 0 };
+    const s = { pengajuan: 0, disetujui: 0, ditolak: 0, berlangsung: 0 };
     items.forEach((it) => {
       if (it.status === 'pengajuan') s.pengajuan += 1;
       else if (it.status === 'disetujui') s.disetujui += 1;
       else if (it.status === 'ditolak') s.ditolak += 1;
+      else if (it.status === 'berlangsung') s.berlangsung += 1;
     });
     return s;
   }, [items]);
@@ -214,6 +262,7 @@ export default function Overtime() {
   }, [now]);
 
   const openCreate = () => {
+    // Diganti start session — tetap buka form hanya untuk edit
     setEditing(null);
     setForm(emptyForm());
     setSubmitError(null);
@@ -221,6 +270,7 @@ export default function Overtime() {
   };
 
   const openEdit = (row) => {
+    if (row.status === 'berlangsung') return;
     setEditing(row);
     setForm({
       overtime_date: row.overtime_date || todayISO(),
@@ -242,6 +292,10 @@ export default function Overtime() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
+    if (!editing) {
+      setSubmitError('Gunakan tombol Start Lembur untuk memulai sesi');
+      return;
+    }
     if (!form.reason || form.reason.trim().length < 5) {
       setSubmitError('Alasan lembur wajib diisi minimal 5 karakter');
       return;
@@ -254,19 +308,15 @@ export default function Overtime() {
         end_time: form.end_time,
         reason: form.reason.trim()
       };
-      if (editing) {
-        const res = await api.put(`/overtime/${editing.id}`, payload);
-        if (res.data?.reset_to_pengajuan) {
-          setInfoBanner(res.data.message);
-        }
-      } else {
-        await api.post('/overtime', payload);
+      const res = await api.put(`/overtime/${editing.id}`, payload);
+      if (res.data?.reset_to_pengajuan) {
+        setInfoBanner(res.data.message);
       }
       closeForm();
       fetchList();
     } catch (err) {
       if (handleAuthError(err)) return;
-      setSubmitError(err.response?.data?.message || 'Gagal menyimpan pengajuan');
+      setSubmitError(err.response?.data?.message || 'Gagal menyimpan perubahan');
     } finally {
       setSubmitting(false);
     }
@@ -325,8 +375,10 @@ export default function Overtime() {
     mainTab === 'persetujuan'
       ? 'Persetujuan Lembur Cabang'
       : mainTab === 'pengajuan'
-        ? 'Pengajuan Lembur Saya'
+        ? 'Sesi & Pengajuan Saya'
         : 'Riwayat Lembur Saya';
+
+  const activePastMidnight = Boolean(activeSession?.past_midnight);
 
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans">
@@ -359,7 +411,7 @@ export default function Overtime() {
           </div>
 
           <div className="relative z-10 text-center py-2">
-            <span className="text-[11px] text-pink-200/80 font-bold uppercase tracking-wider block">Manajemen Pengajuan</span>
+            <span className="text-[11px] text-pink-200/80 font-bold uppercase tracking-wider block">Sesi Kerja Lembur</span>
             <span className="text-[22px] font-black text-white tracking-tight leading-tight block mt-0.5">
               Lembur
             </span>
@@ -451,14 +503,50 @@ export default function Overtime() {
             </div>
 
             {mainTab !== 'persetujuan' && (
-              <button
-                type="button"
-                onClick={openCreate}
-                className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4.5 h-4.5" />
-                <span>Buat Pengajuan Lembur</span>
-              </button>
+              <div className="space-y-2.5">
+                {activeSession ? (
+                  <div className={`rounded-[18px] border p-3.5 ${
+                    activePastMidnight
+                      ? 'border-rose-300 bg-rose-50'
+                      : 'border-sky-200 bg-sky-50'
+                  }`}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className={`text-[11px] font-black uppercase tracking-wide ${
+                        activePastMidnight ? 'text-rose-700' : 'text-sky-800'
+                      }`}>
+                        {activePastMidnight ? 'Belum close (ganti hari)' : 'Sesi berlangsung'}
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-600">
+                        Mulai {fmtTime(activeSession.start_time)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-medium mb-3 leading-relaxed">
+                      Kerjaan Anda tercatat sebagai lembur sampai close. Setelah close bisa edit jam/alasan.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={sessionBusy}
+                      onClick={handleEndSession}
+                      className={`w-full py-3.5 rounded-[16px] text-white text-[13.5px] font-black disabled:opacity-50 flex items-center justify-center gap-2 ${
+                        activePastMidnight ? 'bg-rose-600' : 'bg-sky-700'
+                      }`}
+                    >
+                      {sessionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Timer className="w-4 h-4" />}
+                      Close Lembur
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={sessionBusy}
+                    onClick={handleStartSession}
+                    className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {sessionBusy ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Plus className="w-4.5 h-4.5" />}
+                    <span>Start Lembur</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -475,8 +563,8 @@ export default function Overtime() {
           )}
 
           <div className="mx-4 mt-3 rounded-[16px] border border-slate-100 bg-white px-3.5 py-2.5 text-[10.5px] text-slate-500 leading-relaxed font-medium">
-            <span className="font-extrabold text-slate-600">Catatan:</span> Kerja di luar jam selesai lembur tanpa perpanjang &amp; ACC leader
-            tidak dihitung sebagai lembur. Edit setelah disetujui akan mengembalikan status ke pengajuan.
+            <span className="font-extrabold text-slate-600">Alur:</span> Start → kerja tercatat lembur → Close → status Pengajuan → ACC leader.
+            Jika ditolak, kerjaan dianggap sukarela (bukan KPI lembur). Lupa close sampai ganti hari akan mengunci menu lain.
           </div>
 
           {/* LIST */}
@@ -578,6 +666,26 @@ export default function Overtime() {
                         </div>
                       )}
 
+                      {row.status === 'berlangsung' && mainTab !== 'persetujuan' && (
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleEndSession}
+                            disabled={sessionBusy}
+                            className="flex-1 h-[32px] rounded-[10px] border border-sky-200 bg-sky-50 text-sky-800 text-[10.5px] font-bold flex items-center justify-center gap-1"
+                          >
+                            <Timer className="w-3 h-3" /> Close
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCancelTarget(row)}
+                            className="flex-1 h-[32px] rounded-[10px] border border-red-200 bg-red-50 text-red-600 text-[10.5px] font-bold flex items-center justify-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Batalkan
+                          </button>
+                        </div>
+                      )}
+
                       {canEditRow(row) && (
                         <div className="mt-3 flex gap-2">
                           <button
@@ -619,7 +727,7 @@ export default function Overtime() {
           >
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
               <div className="text-[14px] font-extrabold text-slate-900">
-                {editing ? 'Edit Pengajuan Lembur' : 'Buat Pengajuan Lembur'}
+                Edit Jam / Alasan Lembur
               </div>
               <button
                 type="button"
@@ -696,8 +804,8 @@ export default function Overtime() {
                 disabled={submitting}
                 className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                {editing ? 'Simpan Perubahan' : 'Kirim Pengajuan'}
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                Simpan Perubahan
               </button>
             </form>
           </div>

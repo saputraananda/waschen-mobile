@@ -2,8 +2,11 @@ import express from 'express';
 import { requireAuth } from '../../middleware/auth.js';
 import {
   getMeMeta,
+  getActiveOvertime,
   getMyList,
   getApprovals,
+  startOvertime,
+  endOvertime,
   createOvertime,
   updateOvertime,
   cancelOvertime,
@@ -15,8 +18,11 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get('/me-meta', getMeMeta);
+router.get('/active', getActiveOvertime);
 router.get('/list', getMyList);
 router.get('/approvals', getApprovals);
+router.post('/start', startOvertime);
+router.post('/end', endOvertime);
 router.post('/', createOvertime);
 router.put('/:id', updateOvertime);
 router.delete('/:id', cancelOvertime);

@@ -1,5 +1,5 @@
 import express from 'express';
-import { emitDataChange, getIO } from '../socket/io.js';
+import { emitDataChange, getIO } from '../../socket/io.js';
 
 const router = express.Router();
 
