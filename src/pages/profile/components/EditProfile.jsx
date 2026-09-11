@@ -252,23 +252,29 @@ function DocPreviewModal({ open, onClose, url, label }) {
 function Section({ title, children }) {
     return (
         <div className="bg-white rounded-[20px] overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,.04),0_0_0_1px_rgba(0,0,0,.03)]">
-            <div className="px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-[.08em]">{title}</div>
-            <div className="flex flex-col">{children}</div>
+            <div className="px-4 pt-3.5 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-[.08em]">{title}</div>
+            <div className="flex flex-col gap-3 px-4 pb-4 pt-1">{children}</div>
         </div>
     );
 }
 
-/* ── Text/Date/Select field row ── */
+/* ── Text/Date/Select field (standalone, bukan list border-b) ── */
 function FieldRow({ label, name, type = 'text', value, onChange, options, placeholder, error }) {
+    const controlCls = `w-full text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] px-3 h-[42px] focus:outline-none focus:ring-2 transition ${
+        error
+            ? 'border-red-400 focus:ring-red-200'
+            : 'border-slate-200 focus:ring-[#5f1340]/30 focus:border-[#5f1340]'
+    } ${type === 'date' ? 'text-left [color-scheme:light] [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left' : ''}`;
+
     return (
-        <div className="px-4 py-2.5 border-b border-slate-50 last:border-b-0">
-            <div className="text-[10.5px] font-semibold text-slate-400 mb-1">{label}</div>
+        <div className="w-full">
+            <div className="text-[10.5px] font-semibold text-slate-400 mb-1.5">{label}</div>
             {options ? (
                 <select
                     name={name}
                     value={value || ''}
                     onChange={e => onChange(name, e.target.value)}
-                    className={`w-full text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[10px] px-3 h-[38px] focus:outline-none focus:ring-2 transition ${error ? 'border-red-400 focus:ring-red-200' : 'border-slate-200 focus:ring-[#5f1340]/30 focus:border-[#5f1340]'}`}
+                    className={controlCls}
                 >
                     {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                 </select>
@@ -279,7 +285,7 @@ function FieldRow({ label, name, type = 'text', value, onChange, options, placeh
                     value={value || ''}
                     onChange={e => onChange(name, e.target.value)}
                     placeholder={placeholder || ''}
-                    className={`w-full text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[10px] px-3 h-[38px] focus:outline-none focus:ring-2 transition placeholder:text-slate-300 ${error ? 'border-red-400 focus:ring-red-200' : 'border-slate-200 focus:ring-[#5f1340]/30 focus:border-[#5f1340]'}`}
+                    className={`${controlCls} placeholder:text-slate-300`}
                 />
             )}
             {error && <div className="text-[10.5px] text-red-500 font-semibold mt-1">{error}</div>}
@@ -292,7 +298,7 @@ function DocRow({ docKey, label, accept, currentUrl, onUpload, onPreview, upload
     const fileRef = useRef(null);
     const isLoading = uploading === docKey;
     return (
-        <div className="px-4 py-3 border-b border-slate-50 last:border-b-0">
+        <div className="rounded-[12px] border border-slate-200 bg-slate-50/60 px-3 py-3">
             <div className="flex items-center justify-between gap-2">
                 <div>
                     <div className="text-[12.5px] font-semibold text-slate-700">{label}</div>
@@ -306,7 +312,7 @@ function DocRow({ docKey, label, accept, currentUrl, onUpload, onPreview, upload
                         <button
                             type="button"
                             onClick={() => onPreview(currentUrl, label)}
-                            className="h-[32px] px-3 rounded-[9px] border border-slate-200 bg-slate-50 text-slate-600 text-[11px] font-bold flex items-center gap-1 transition hover:bg-slate-100"
+                            className="h-[32px] px-3 rounded-[9px] border border-slate-200 bg-white text-slate-600 text-[11px] font-bold flex items-center gap-1 transition hover:bg-slate-100"
                         >
                             <IconEye /> Lihat
                         </button>
