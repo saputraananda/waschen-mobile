@@ -253,21 +253,24 @@ function Section({ title, children }) {
     return (
         <div className="bg-white rounded-[20px] overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,.04),0_0_0_1px_rgba(0,0,0,.03)]">
             <div className="px-4 pt-3.5 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-[.08em]">{title}</div>
-            <div className="flex flex-col gap-3 px-4 pb-4 pt-1">{children}</div>
+            <div className="flex flex-col gap-3 px-4 pb-4 pt-1 min-w-0">{children}</div>
         </div>
     );
 }
 
 /* ── Text/Date/Select field (standalone, bukan list border-b) ── */
 function FieldRow({ label, name, type = 'text', value, onChange, options, placeholder, error }) {
-    const controlCls = `w-full text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] px-3 h-[42px] focus:outline-none focus:ring-2 transition ${
+    // iOS Safari kasih intrinsic width sendiri ke input[type=date] -> wajib appearance-none + min-w-0
+    const controlCls = `block w-full min-w-0 max-w-full box-border appearance-none text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] px-3 h-[42px] leading-[42px] focus:outline-none focus:ring-2 transition ${
         error
             ? 'border-red-400 focus:ring-red-200'
             : 'border-slate-200 focus:ring-[#5f1340]/30 focus:border-[#5f1340]'
-    } ${type === 'date' ? 'text-left [color-scheme:light] [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left' : ''}`;
+    } ${type === 'date'
+        ? 'text-left [color-scheme:light] [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:w-full [&::-webkit-date-and-time-value]:m-0 [&::-webkit-datetime-edit]:p-0 [&::-webkit-calendar-picker-indicator]:ml-auto'
+        : ''}`;
 
     return (
-        <div className="w-full">
+        <div className="w-full min-w-0">
             <div className="text-[10.5px] font-semibold text-slate-400 mb-1.5">{label}</div>
             {options ? (
                 <select
