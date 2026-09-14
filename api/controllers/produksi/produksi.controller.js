@@ -527,8 +527,9 @@ export const submitQC = async (req, res) => {
       detailParams
     );
 
-    // Log status
-    const logStatus = qc_decision === 'lanjut' ? nextStatusFor(stage, detail) : detail.item_work_status;
+    // Log mencatat tahap yang DIKERJAKAN, bukan tujuan berikutnya.
+    const logStatus =
+      qc_decision === 'batal' ? 'Dibatalkan' : (STAGE_STATUS[stage] || detail.item_work_status);
     await conn.query(
       `INSERT INTO tr_transaction_status_log (transaction_id, transaction_detail_id, status, employee_id, notes)
        VALUES (?, ?, ?, ?, ?)`,
