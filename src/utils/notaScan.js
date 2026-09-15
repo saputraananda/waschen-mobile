@@ -81,25 +81,19 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
     };
   }
 
-  // Tab Delivery: Siap Diantar (QC) + Sedang Diantar (tetap tampil). Wajib Lunas.
+  // Tab Delivery: Siap Diantar (QC) + Sedang Diantar (tetap tampil). Boleh outstanding.
   if (stageKey === 'delivery') {
     const pendingQc = items.filter((it) => it.item_work_status === 'Siap Diantar');
     const inTransit = items.filter((it) => it.item_work_status === 'Sedang Diantar');
-
-    if (pendingQc.length > 0 && paymentStatus !== 'Lunas') {
-      return {
-        ok: false,
-        title: 'Belum Lunas',
-        message: `Nota ${orderNo} sudah Siap Diantar, tetapi belum Lunas. Lunasi dulu di POS sebelum QC Delivery & antar.`,
-        variant: 'warning',
-      };
-    }
+    const payLabel = paymentStatus && paymentStatus !== 'Lunas'
+      ? ` Pembayaran: ${paymentStatus}.`
+      : '';
 
     if (pendingQc.length > 0) {
       return {
         ok: true,
         title: 'Nota Siap QC Delivery',
-        message: `${pendingQc.length} item menunggu QC final. Setelah aman/temuan+catatan lanjut → Sedang Diantar.`,
+        message: `${pendingQc.length} item menunggu QC final. Setelah aman/temuan+catatan lanjut → Sedang Diantar.${payLabel}`,
         variant: 'success',
       };
     }
@@ -108,7 +102,7 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
       return {
         ok: true,
         title: 'Sedang Diantar — Siap Serah Terima',
-        message: `Nota ${orderNo}: ${inTransit.length} item sedang diantar. Ketuk item → foto bukti → Tandai Selesai.`,
+        message: `Nota ${orderNo}: ${inTransit.length} item sedang diantar. Ketuk item → foto bukti → Tandai Selesai.${payLabel}`,
         variant: 'info',
       };
     }

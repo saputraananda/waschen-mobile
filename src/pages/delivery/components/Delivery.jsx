@@ -70,7 +70,7 @@ function AddressBlock({ txn }) {
 
   return (
     <div className="mt-2.5 rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2.5">
-      <button
+      <button   
         type="button"
         disabled={!canOpenMaps}
         onClick={(e) => {
@@ -222,21 +222,20 @@ function DeliveryCard({ txn, tab, onOpen, onItemClick }) {
         <div className="mx-3 mb-3 bg-slate-50 rounded-[14px] border border-slate-200/80 p-2 flex flex-col gap-1.5">
           {pendingQcItems.map((item) => {
             const isHold = Number(item.is_on_hold) === 1;
-            const canQc = isPickup || isLunas;
             return (
               <button
                 key={item.id}
                 type="button"
-                disabled={isHold || !canQc}
+                disabled={isHold}
                 onClick={() => onItemClick({ txn, item, stage: isPickup ? 'frontliner' : 'delivery' })}
                 className={`text-left pl-2.5 pr-3 py-2.5 rounded-[11px] border text-[11.5px] font-bold flex items-center gap-2.5 transition active:scale-[.98] ${
-                  isHold || !canQc
+                  isHold
                     ? 'bg-amber-50 text-amber-700 border-amber-200 opacity-80'
                     : 'bg-white text-slate-700 border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
                 }`}
               >
                 <span className={`w-7 h-7 rounded-[9px] grid place-items-center flex-shrink-0 ${
-                  isHold || !canQc ? 'bg-amber-100 text-amber-600' : 'bg-[#5f1340]/10 text-[#5f1340]'
+                  isHold ? 'bg-amber-100 text-amber-600' : 'bg-[#5f1340]/10 text-[#5f1340]'
                 }`}>
                   {isHold ? <PauseOctagon className="w-3.5 h-3.5" /> : isKiloanItem(item) ? <Scale className="w-3.5 h-3.5" /> : <Shirt className="w-3.5 h-3.5" />}
                 </span>
@@ -244,9 +243,9 @@ function DeliveryCard({ txn, tab, onOpen, onItemClick }) {
                   {item.service_name} · {Number(item.qty)} {item.unit}
                 </span>
                 <span className={`text-[9.5px] font-black flex-shrink-0 px-2 py-1 rounded-full ${
-                  isHold || !canQc ? 'bg-amber-200/60 text-amber-800' : 'bg-[#5f1340] text-white'
+                  isHold ? 'bg-amber-200/60 text-amber-800' : 'bg-[#5f1340] text-white'
                 }`}>
-                  {isHold ? 'HOLD' : !canQc ? 'LUNASI DULU' : 'QC →'}
+                  {isHold ? 'HOLD' : 'QC →'}
                 </span>
               </button>
             );
@@ -613,7 +612,7 @@ export default function Delivery() {
           <div className="mt-3 rounded-[14px] border border-slate-200 bg-white px-3.5 py-2.5 text-[11px] text-slate-600 font-medium leading-relaxed shadow-[0_4px_16px_rgba(0,0,0,0.04)]">
             {tab === 'pickup'
               ? 'Nota delivery masuk antrian. Lakukan QC seperti frontliner. Jika berhalangan, frontliner juga bisa QC dari Update Progress.'
-              : 'Hanya nota Lunas. QC final → Sedang Diantar. Item Sedang Diantar: ketuk → foto bukti → Tandai Selesai. Temuan fatal di QC final → kembalikan ke packing.'}
+              : 'Boleh antar meski belum lunas. QC final → Sedang Diantar. Item Sedang Diantar: ketuk → foto bukti → Tandai Selesai. Temuan fatal di QC final → kembalikan ke packing.'}
           </div>
         </div>
 
@@ -667,7 +666,7 @@ export default function Delivery() {
             <div className="bg-white rounded-[20px] border border-slate-100 p-8 text-center">
               <PackageSearch className="w-10 h-10 text-slate-200 mx-auto mb-2" />
               <p className="text-[12px] font-bold text-slate-400">
-                {tab === 'pickup' ? 'Tidak ada nota pickup' : 'Tidak ada nota delivery (Lunas)'}
+                {tab === 'pickup' ? 'Tidak ada nota pickup' : 'Tidak ada nota delivery'}
               </p>
             </div>
           ) : (

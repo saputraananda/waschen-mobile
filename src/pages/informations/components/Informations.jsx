@@ -110,9 +110,9 @@ const SECTIONS = [
     steps: [
       'Menu Delivery hanya muncul jika jabatan Anda Delivery Staff.',
       'Tab Pickup: nota antar yang baru masuk (belum diproses). Lakukan QC seperti frontliner.',
-      'Setelah cucian selesai packing dan berstatus Siap Diantar + sudah Lunas, nota masuk Tab Delivery.',
+      'Setelah cucian selesai packing dan berstatus Siap Diantar, nota masuk Tab Delivery (boleh outstanding / belum lunas).',
       'Di Tab Delivery, lakukan QC final. Aman atau temuan dengan catatan lanjut → status jadi Sedang Diantar (nota tetap di tab). Temuan fatal → dikembalikan ke packing.',
-      'Item Sedang Diantar bisa diketuk lagi untuk Serah Terima (tampilan seperti QC). Lampirkan foto bukti sudah diantar, lalu Tandai Selesai.',
+      'Item Sedang Diantar bisa diketuk lagi untuk Serah Terima (tampilan seperti QC). Lampirkan foto bukti sudah diantar, lalu Tandai Selesai. Nota boleh selesai meski masih Outstanding.',
       'Setelah Selesai, nota hilang dari Tab Delivery.',
       'Alamat lengkap, landmark, dan nomor HP customer ditampilkan supaya pengantaran lebih mudah.',
       'Gunakan kolom cari atau scan barcode bila ingin menemukan nota lebih cepat.'

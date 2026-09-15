@@ -194,7 +194,8 @@ export const searchDelivery = async (req, res) => {
 
 /**
  * GET /api/delivery/summary
- * Badge: Pickup (Antrean) & Delivery (Siap Diantar + Sedang Diantar, Lunas).
+ * Badge: Pickup (Antrean) & Delivery (Siap Diantar + Sedang Diantar).
+ * Delivery boleh outstanding — tidak wajib Lunas.
  */
 export const getSummary = async (req, res) => {
   try {
@@ -211,13 +212,8 @@ export const getSummary = async (req, res) => {
        JOIN tr_transaction t ON t.id = d.transaction_id
        WHERE t.outlet_id = ?
          AND d.fulfillment_type = ?
-         AND (
-           d.item_work_status = 'Antrean'
-           OR (
-             d.item_work_status IN ('Siap Diantar', 'Sedang Diantar')
-             AND t.payment_status = 'Lunas'
-           )
-         )
+         AND d.item_work_status IN ('Antrean', 'Siap Diantar', 'Sedang Diantar')
+         AND d.item_work_status != 'Dibatalkan'
        GROUP BY d.item_work_status`,
       [outletId, FULFILLMENT_DELIVERY]
     );
@@ -235,7 +231,6 @@ export const getSummary = async (req, res) => {
        WHERE t.outlet_id = ?
          AND d.fulfillment_type = ?
          AND d.item_work_status IN ('Siap Diantar', 'Sedang Diantar')
-         AND t.payment_status = 'Lunas'
          AND d.item_work_status != 'Dibatalkan'`,
       [outletId, FULFILLMENT_DELIVERY]
     );
@@ -290,13 +285,13 @@ export const getPickupList = async (req, res) => {
 
 /**
  * GET /api/delivery/ready
- * Siap Diantar + Sedang Diantar (Lunas) — tetap di tab Delivery setelah QC.
+ * Siap Diantar + Sedang Diantar — boleh outstanding (tidak wajib Lunas).
  */
 export const getReadyList = async (req, res) => {
   try {
     const result = await composeListQuery(req, {
       waitingStatuses: DELIVERY_TAB_STATUSES,
-      requireLunas: true
+      requireLunas: false
     });
     if (result.error) {
       return res.status(result.error.status).json({ success: false, message: result.error.message });

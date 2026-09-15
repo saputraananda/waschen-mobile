@@ -437,18 +437,6 @@ export const submitQC = async (req, res) => {
     }
     const detail = detailRows[0];
 
-    // QC final Delivery & serah terima hanya untuk nota yang sudah Lunas
-    if (stage === 'delivery' || stage === 'handover') {
-      const pay = String(detail.payment_status || '').trim();
-      if (pay !== 'Lunas') {
-        await cleanupFiles();
-        return res.status(422).json({
-          success: false,
-          message: `Nota ${detail.order_no || ''} belum Lunas. Lunasi dulu sebelum QC Delivery & antar.`
-        });
-      }
-    }
-
     if (detail.item_work_status !== STAGE_STATUS[stage]) {
       await cleanupFiles();
       return res.status(409).json({
