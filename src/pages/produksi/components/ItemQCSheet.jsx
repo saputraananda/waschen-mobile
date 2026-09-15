@@ -18,13 +18,14 @@ const RETURN_STAGE_OPTIONS = {
   washing: ['frontliner'],
   ironing: ['washing', 'frontliner'],
   packing: ['ironing', 'washing', 'frontliner'],
+  delivery: ['packing']
 };
 
 /**
  * Bottom-sheet QC per item: aman/temuan, rincian plastik (kiloan),
  * rincian packing (tahap packing), foto (kamera/galeri), keputusan lanjut/hold/kembali.
  */
-export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone }) {
+export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, roleUsed = null }) {
   const fileInputRef = useRef(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [qcStatus, setQcStatus] = useState('aman');
@@ -52,10 +53,12 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
   const kiloan = isKiloanItem(item);
   const carriedFinding = Number(item?.has_finding) === 1;
+  const isHandover = stage === 'handover';
   const needBags = kiloan && ['frontliner', 'washing'].includes(stage);
   const needPackings = kiloan && stage === 'packing';
   const showBagHistory = kiloan && prevBagStagesFor(stage).length > 0;
   const returnStageOptions = RETURN_STAGE_OPTIONS[stage] || ['frontliner'];
+  const photoRequired = qcStatus === 'temuan' || isHandover;
 
   useEffect(() => {
     if (!open) return;
@@ -152,8 +155,10 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
   const handleSubmit = async () => {
     setError(null);
 
-    if (qcStatus === 'temuan' && photos.length === 0) {
-      setError('Temuan wajib menyertakan minimal 1 foto bukti.');
+    if (photoRequired && photos.length === 0) {
+      setError(isHandover
+        ? 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran.'
+        : 'Temuan wajib menyertakan minimal 1 foto bukti.');
       return;
     }
     if (needBags) {
@@ -177,13 +182,15 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
       fd.append('transaction_detail_id', String(item.id));
       fd.append('stage', stage);
       fd.append('qc_status', qcStatus);
-      fd.append('qc_decision', qcStatus === 'aman' ? 'lanjut' : decision);
-      if (qcStatus === 'temuan' && decision === 'kembali') {
+      // Serah terima selalu lanjut → Selesai
+      fd.append('qc_decision', isHandover ? 'lanjut' : (qcStatus === 'aman' ? 'lanjut' : decision));
+      if (!isHandover && qcStatus === 'temuan' && decision === 'kembali') {
         fd.append('returned_to_stage', returnedStage);
       }
       if (notes.trim()) fd.append('notes', notes.trim());
       fd.append('wa_contacted', stage === 'frontliner' && waContacted ? '1' : '0');
       if (stage === 'frontliner') fd.append('requires_ironing', requiresIroning ? '1' : '0');
+      if (roleUsed) fd.append('role_used', roleUsed);
       if (needBags) {
         fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))));
       }
@@ -194,9 +201,9 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
       const res = await api.post('/progress/qc', fd);
       resetAndClose();
-      onDone(res.data?.message || 'QC tersimpan');
+      onDone(res.data?.message || (isHandover ? 'Serah terima tersimpan' : 'QC tersimpan'));
     } catch (e) {
-      setError(e.response?.data?.message || 'Gagal menyimpan QC');
+      setError(e.response?.data?.message || (isHandover ? 'Gagal menyimpan serah terima' : 'Gagal menyimpan QC'));
     } finally {
       setSubmitting(false);
     }
@@ -211,9 +218,12 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
         >
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
             <div className="min-w-0">
-              <div className="text-[14px] font-extrabold text-slate-900 truncate">QC — {item.service_name}</div>
+              <div className="text-[14px] font-extrabold text-slate-900 truncate">
+                {isHandover ? 'Serah Terima' : 'QC'} — {item.service_name}
+              </div>
               <div className="text-[10.5px] text-slate-400 font-semibold truncate">
                 {txn?.order_no} · {Number(item.qty)} {item.unit}
+                {isHandover ? ' · Sedang Diantar → Selesai' : ''}
               </div>
             </div>
             <button
@@ -332,7 +342,9 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
             {/* Hasil QC */}
             <div>
-              <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Hasil QC</label>
+              <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+                {isHandover ? 'Kondisi Serah Terima' : 'Hasil QC'}
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -344,7 +356,10 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setQcStatus('temuan'); setDecision(stage === 'frontliner' ? 'lanjut' : 'kembali'); }}
+                  onClick={() => {
+                    setQcStatus('temuan');
+                    setDecision(isHandover || stage === 'frontliner' ? 'lanjut' : 'kembali');
+                  }}
                   className={`py-3 rounded-2xl border flex flex-col items-center gap-1 ${qcStatus === 'temuan' ? 'bg-red-50 text-red-700 border-red-300' : 'bg-slate-50 text-slate-400 border-slate-200'}`}
                 >
                   <AlertTriangle className="w-5 h-5" />
@@ -362,7 +377,11 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder={qcStatus === 'temuan' ? 'Jelaskan temuan (noda, kerusakan, dll)…' : 'Catatan tambahan jika ada…'}
+                placeholder={
+                  isHandover
+                    ? (qcStatus === 'temuan' ? 'Catatan temuan saat serah terima…' : 'Mis. diterima customer / ditaruh di satpam…')
+                    : (qcStatus === 'temuan' ? 'Jelaskan temuan (noda, kerusakan, dll)…' : 'Catatan tambahan jika ada…')
+                }
                 className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
               />
             </div>
@@ -370,7 +389,11 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
             {/* Foto */}
             <div>
               <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
-                Foto {qcStatus === 'temuan' ? 'Bukti Temuan (wajib, maks 5)' : 'Hasil (opsional)'}
+                {isHandover
+                  ? 'Foto Bukti Diantar (wajib, maks 5)'
+                  : qcStatus === 'temuan'
+                    ? 'Foto Bukti Temuan (wajib, maks 5)'
+                    : 'Foto Hasil (opsional)'}
               </label>
               <input
                 ref={fileInputRef}
@@ -428,8 +451,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
               )}
             </div>
 
-            {/* Temuan: WA + keputusan */}
-            {qcStatus === 'temuan' && (
+            {/* Temuan: WA + keputusan (handover: cukup catatan, selalu lanjut) */}
+            {qcStatus === 'temuan' && !isHandover && (
               <>
                 {stage === 'frontliner' && txn?.customer_phone && (
                   <a
@@ -452,7 +475,11 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                       onClick={() => setDecision(stage === 'frontliner' ? 'hold' : 'kembali')}
                       className={`py-2.5 rounded-xl border text-[12px] font-extrabold ${decision !== 'lanjut' ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                     >
-                      {stage === 'frontliner' ? 'Hold (Tunggu Customer)' : 'Hold / Kembalikan'}
+                      {stage === 'frontliner'
+                        ? 'Hold (Tunggu Customer)'
+                        : stage === 'delivery'
+                          ? 'Kembalikan ke Packing'
+                          : 'Hold / Kembalikan'}
                     </button>
                     <button
                       type="button"
@@ -485,6 +512,12 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                   )}
                 </div>
               </>
+            )}
+
+            {qcStatus === 'temuan' && isHandover && (
+              <div className="bg-amber-50 border border-amber-200 rounded-[14px] p-3 text-[11px] text-amber-800 font-semibold">
+                Temuan tetap menandai Selesai. Catatan & foto tersimpan di riwayat Alsa.
+              </div>
             )}
 
             {/* Rincian packing (kiloan, tahap packing, aman) */}
@@ -543,7 +576,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                 disabled={submitting}
                 className="h-[44px] rounded-[12px] bg-[#5f1340] text-white text-[12.5px] font-extrabold disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simpan QC'}
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (isHandover ? 'Tandai Selesai' : 'Simpan QC')}
               </button>
             </div>
           </div>
@@ -552,7 +585,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
       <CameraCaptureModal
         open={cameraOpen}
-        title="Ambil Foto QC"
+        title={isHandover ? 'Ambil Foto Serah Terima' : 'Ambil Foto QC'}
         buildOverlayLines={buildPhotoOverlay}
         onCapture={(file) => { addPhoto(file, { alreadyStamped: true }); setCameraOpen(false); }}
         onClose={() => setCameraOpen(false)}

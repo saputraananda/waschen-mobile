@@ -13,6 +13,7 @@ import TransactionDetailModal from './TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
 import ConfirmModal from '../../../components/ConfirmModal.jsx';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 
 export default function Produksi() {
   const navigate = useNavigate();
@@ -55,7 +56,7 @@ export default function Produksi() {
 
   // Init user + default tab dari role
   useEffect(() => {
-    document.title = 'Progres Pengerjaan - Waschen Mobile';
+    setPageTitle('Progres Pengerjaan');
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');

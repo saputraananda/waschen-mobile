@@ -7,6 +7,7 @@ import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 import {
   Sun,
   Calendar,
@@ -123,7 +124,7 @@ export default function Leave() {
   }, [navigate]);
 
   useEffect(() => {
-    document.title = 'Pengajuan Izin & Cuti - Waschen Mobile';
+    setPageTitle('Pengajuan Izin & Cuti');
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');

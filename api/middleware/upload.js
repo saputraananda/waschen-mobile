@@ -249,18 +249,23 @@ export const uploadKasbonProof = multer({
 
 /**
  * Produksi QC photo uploader — images only, multiple (max 5)
- * Path: assets/produksi/{stage}/  (frontliner | washing | ironing | packing | delivery)
+ * Path: assets/produksi/{stage}/
+ * Serah terima (handover) → folder "delivery" (sama lokasi bukti antar)
  */
 export const PRODUKSI_UPLOAD_BASE = 'assets/produksi';
-export const PRODUKSI_STAGES = ['frontliner', 'washing', 'ironing', 'packing', 'delivery'];
+export const PRODUKSI_STAGES = ['frontliner', 'washing', 'ironing', 'packing', 'delivery', 'handover'];
 
 export const normalizeProduksiStage = (stage) => {
   const s = String(stage || '').toLowerCase();
   return PRODUKSI_STAGES.includes(s) ? s : 'frontliner';
 };
 
-export const getProduksiUploadSubfolder = (stage) =>
-  `${PRODUKSI_UPLOAD_BASE}/${normalizeProduksiStage(stage)}`;
+/** Folder disk/public: handover disimpan di produksi/delivery */
+export const getProduksiUploadSubfolder = (stage) => {
+  const s = normalizeProduksiStage(stage);
+  const folder = s === 'handover' ? 'delivery' : s;
+  return `${PRODUKSI_UPLOAD_BASE}/${folder}`;
+};
 
 export const getProduksiPhotoPublicPath = (stage) =>
   `/uploads/${getProduksiUploadSubfolder(stage)}`;
@@ -275,9 +280,10 @@ export const buildProduksiPhotoFileName = (req, file, index = 0) => {
   const ext = path.extname(file?.originalname || '').toLowerCase() || '.jpg';
   const detailId = safe(req.body?.transaction_detail_id || 'item');
   const stage = normalizeProduksiStage(req.body?.stage);
+  const folderTag = stage === 'handover' ? 'delivery' : stage;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const rand = Math.round(Math.random() * 1e4) + index;
-  return `produksi_${detailId}_${stage}_${ts}_${rand}${ext}`;
+  return `produksi_${detailId}_${folderTag}_${ts}_${rand}${ext}`;
 };
 
 /** Simpan buffer foto ke disk — dipanggil SETELAH record QC tersimpan di DB */

@@ -7,6 +7,7 @@ import Banner from './components/Banner.jsx';
 import MenuSection from './components/MenuSection.jsx';
 import AlertOvertime from './components/AlertOvertime.jsx';
 import useActiveOvertime from '../../hooks/useActiveOvertime.js';
+import { setPageTitle } from '../../utils/pageTitle.js';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    document.title = 'Dasbor Utama';
+    setPageTitle('Dasbor Utama');
     resetPageView();
 
     const token = localStorage.getItem('token');
@@ -85,7 +86,7 @@ export default function Home() {
   };
 
   const handleMenuClick = (path) => {
-    if (locked && !['/overtime', '/history', '/profile'].includes(path)) {
+    if (locked && !['/overtime', '/history', '/profile', '/informations'].includes(path)) {
       setForceOtModal(true);
       return;
     }
@@ -100,7 +101,7 @@ export default function Home() {
             currentUser={currentUser}
             currentTime={currentTime}
             onNavigateProfile={() => navigate('/profile')}
-            onInfoClick={() => handleMenuClick('/notifikasi')}
+            onInfoClick={() => handleMenuClick('/informations')}
             getInitials={getInitials}
             formatTime={formatTime}
             formatDate={formatDate}
@@ -117,7 +118,7 @@ export default function Home() {
             />
           )}
 
-          <MenuSection onMenuClick={handleMenuClick} menusLocked={locked} />
+          <MenuSection onMenuClick={handleMenuClick} menusLocked={locked} currentUser={currentUser} />
         </div>
 
         <Navbar />

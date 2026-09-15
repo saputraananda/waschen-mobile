@@ -8,13 +8,16 @@ import { findCoveringOvertime } from '../overtime/overtime.controller.js';
 import { emitDataChange } from '../../socket/io.js';
 
 const STAGES = ['frontliner', 'washing', 'ironing', 'packing'];
+const ALL_QC_STAGES = [...STAGES, 'delivery', 'handover'];
 
 // Mapping tahap → item_work_status yang sedang menunggu di tahap tsb
 const STAGE_STATUS = {
   frontliner: 'Antrean',
   washing: 'Pencucian',
   ironing: 'Penyetrikaan',
-  packing: 'Pengemasan'
+  packing: 'Pengemasan',
+  delivery: 'Siap Diantar',
+  handover: 'Sedang Diantar'
 };
 
 // Persentase progress per item_work_status (mengikuti mst_work_status)
@@ -25,6 +28,7 @@ const STATUS_PERCENT = {
   'Pengemasan': 75,
   'Siap Diambil': 90,
   'Siap Diantar': 90,
+  'Sedang Diantar': 95,
   'Selesai': 100,
   'Dibatalkan': 0
 };
@@ -40,6 +44,8 @@ const nextStatusFor = (stage, detail) => {
   if (stage === 'washing') return Number(detail.requires_ironing) === 0 ? 'Pengemasan' : 'Penyetrikaan';
   if (stage === 'ironing') return 'Pengemasan';
   if (stage === 'packing') return detail.fulfillment_type === 'Delivery_Kurir' ? 'Siap Diantar' : 'Siap Diambil';
+  if (stage === 'delivery') return 'Sedang Diantar';
+  if (stage === 'handover') return 'Selesai';
   return null;
 };
 
@@ -177,8 +183,17 @@ export const getList = async (req, res) => {
     const [txns] = await myWaschenPool.query(
       `SELECT DISTINCT t.id, t.order_no, t.barcode, t.customer_id, t.order_category,
               t.total_weight_kg, t.total_pcs, t.work_status, t.order_date,
-              t.estimated_finished_at, t.special_notes, t.is_delivery,
-              c.name AS customer_name, c.phone AS customer_phone
+              t.estimated_finished_at, t.special_notes, t.is_delivery, t.delivery_address,
+              t.delivery_notes,
+              c.name AS customer_name, c.phone AS customer_phone,
+              c.full_address, c.address, c.block, c.house_number,
+              c.sub_district, c.district, c.city, c.postal_code, c.landmark,
+              COALESCE(
+                NULLIF(TRIM(t.delivery_address), ''),
+                NULLIF(TRIM(c.full_address), ''),
+                NULLIF(TRIM(c.address), ''),
+                '-'
+              ) AS delivery_address_full
        FROM tr_transaction t
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
@@ -211,8 +226,11 @@ export const getList = async (req, res) => {
       const items = details.filter((d) => d.transaction_id === t.id);
       const stageItems = stageStatus ? items.filter((d) => d.item_work_status === stageStatus) : [];
       const clearedItems = items.length - stageItems.length;
+      const isDeliveryItem = items.some((d) => d.fulfillment_type === 'Delivery_Kurir');
       return {
         ...t,
+        // Badge Pickup Delivery: utamakan fulfillment_type item, fallback header is_delivery
+        is_delivery: isDeliveryItem || Number(t.is_delivery) === 1 ? 1 : 0,
         has_finding: items.some((d) => Number(d.has_finding) === 1),
         has_hold: items.some((d) => Number(d.is_on_hold) === 1),
         total_items: items.length,
@@ -338,7 +356,7 @@ export const submitQC = async (req, res) => {
       role_used
     } = req.body;
 
-    if (!STAGES.includes(stage)) {
+    if (!ALL_QC_STAGES.includes(stage)) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Tahap tidak valid' });
     }
@@ -354,10 +372,43 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Temuan wajib menyertakan minimal 1 foto bukti' });
     }
-    if (qc_decision === 'kembali' && !STAGES.includes(returned_to_stage)) {
+    // Serah terima delivery (handover) wajib foto bukti sudah diantar
+    if (stage === 'handover' && incomingPhotos.length === 0) {
       await cleanupFiles();
-      return res.status(422).json({ success: false, message: 'Tahap tujuan pengembalian tidak valid' });
+      return res.status(422).json({
+        success: false,
+        message: 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran'
+      });
     }
+    if (qc_decision === 'kembali') {
+      if (stage === 'handover') {
+        await cleanupFiles();
+        return res.status(422).json({
+          success: false,
+          message: 'Serah terima tidak mendukung pengembalian. Gunakan lanjut dengan catatan jika ada temuan.'
+        });
+      }
+      if (stage === 'delivery') {
+        // QC final delivery selalu kembali ke packing — fall through
+      } else if (!['frontliner', 'washing', 'ironing', 'packing'].includes(returned_to_stage)) {
+        await cleanupFiles();
+        return res.status(422).json({ success: false, message: 'Tahap tujuan pengembalian tidak valid' });
+      }
+    }
+
+    // Serah terima hanya mendukung lanjut (aman/temuan + foto) → Selesai
+    if (stage === 'handover' && qc_decision !== 'lanjut') {
+      await cleanupFiles();
+      return res.status(422).json({
+        success: false,
+        message: 'Serah terima hanya mendukung keputusan lanjut (tandai selesai).'
+      });
+    }
+
+    const resolvedReturnStage =
+      qc_decision === 'kembali'
+        ? (stage === 'delivery' ? 'packing' : returned_to_stage)
+        : null;
 
     let bags = [];
     let packings = [];
@@ -371,7 +422,7 @@ export const submitQC = async (req, res) => {
 
     // Ambil item + validasi posisi
     const [detailRows] = await myWaschenPool.query(
-      `SELECT d.*, t.outlet_id, t.id AS txn_id,
+      `SELECT d.*, t.outlet_id, t.id AS txn_id, t.payment_status, t.order_no,
               cat.code AS category_code
        FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
@@ -385,6 +436,18 @@ export const submitQC = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Item tidak ditemukan' });
     }
     const detail = detailRows[0];
+
+    // QC final Delivery & serah terima hanya untuk nota yang sudah Lunas
+    if (stage === 'delivery' || stage === 'handover') {
+      const pay = String(detail.payment_status || '').trim();
+      if (pay !== 'Lunas') {
+        await cleanupFiles();
+        return res.status(422).json({
+          success: false,
+          message: `Nota ${detail.order_no || ''} belum Lunas. Lunasi dulu sebelum QC Delivery & antar.`
+        });
+      }
+    }
 
     if (detail.item_work_status !== STAGE_STATUS[stage]) {
       await cleanupFiles();
@@ -446,7 +509,7 @@ export const submitQC = async (req, res) => {
         detail.outlet_id,
         qc_status,
         qc_decision,
-        qc_decision === 'kembali' ? returned_to_stage : null,
+        qc_decision === 'kembali' ? resolvedReturnStage : null,
         notes?.trim() || null,
         stage === 'frontliner' && (wa_contacted === '1' || wa_contacted === 1) ? 1 : 0,
         progressStatus,
@@ -499,17 +562,29 @@ export const submitQC = async (req, res) => {
       });
       detailUpdates.push('item_work_status = ?');
       detailParams.push(nextStatus);
-      if (['Siap Diambil', 'Siap Diantar'].includes(nextStatus)) {
+      if (['Siap Diambil', 'Siap Diantar', 'Sedang Diantar', 'Selesai'].includes(nextStatus)) {
         detailUpdates.push('item_completed_at = NOW()');
       }
       if (qc_status === 'temuan') {
         detailUpdates.push('has_finding = 1', 'finding_note = ?');
         detailParams.push(notes?.trim() || 'Temuan dilanjutkan dengan catatan');
       }
+    } else if (qc_decision === 'kembali' && stage === 'delivery') {
+      // QC final delivery gagal / temuan → kembalikan ke packing
+      detailUpdates.push(
+        "item_work_status = 'Pengemasan'",
+        'item_completed_at = NULL',
+        'is_on_hold = 0',
+        'hold_stage = NULL'
+      );
+      if (qc_status === 'temuan') {
+        detailUpdates.push('has_finding = 1', 'finding_note = ?');
+        detailParams.push(notes?.trim() || 'Dikembalikan ke packing dari QC delivery');
+      }
     } else {
-      // hold / kembali → item tetap di posisi, ditandai hold
+      // hold / kembali (tahap lain) → item tetap di posisi, ditandai hold
       detailUpdates.push('is_on_hold = 1', 'hold_stage = ?');
-      detailParams.push(stage);
+      detailParams.push(stage === 'delivery' ? 'packing' : stage);
       if (qc_status === 'temuan') {
         detailUpdates.push('finding_note = ?');
         detailParams.push(notes?.trim() || 'Temuan menunggu konfirmasi');
@@ -527,9 +602,15 @@ export const submitQC = async (req, res) => {
       detailParams
     );
 
-    // Log mencatat tahap yang DIKERJAKAN, bukan tujuan berikutnya.
-    const logStatus =
-      qc_decision === 'batal' ? 'Dibatalkan' : (STAGE_STATUS[stage] || detail.item_work_status);
+    // Log: tahap dikerjakan. Delivery lanjut → Sedang Diantar; handover lanjut → Selesai.
+    let logStatus = STAGE_STATUS[stage] || detail.item_work_status;
+    if (stage === 'delivery' && qc_decision === 'lanjut') {
+      logStatus = 'Sedang Diantar';
+    } else if (stage === 'delivery' && qc_decision === 'kembali') {
+      logStatus = 'Pengemasan';
+    } else if (stage === 'handover' && qc_decision === 'lanjut') {
+      logStatus = 'Selesai';
+    }
     await conn.query(
       `INSERT INTO tr_transaction_status_log (transaction_id, transaction_detail_id, status, employee_id, notes)
        VALUES (?, ?, ?, ?, ?)`,
@@ -544,11 +625,37 @@ export const submitQC = async (req, res) => {
 
     await recalcWorkStatus(conn, detail.txn_id);
 
+    // Semua item aktif sudah Selesai → tandai picked_up_at (filter POS: Diambil)
+    if (qc_decision === 'lanjut' && stage === 'handover') {
+      const [activeItems] = await conn.query(
+        `SELECT item_work_status FROM tr_transaction_detail
+         WHERE transaction_id = ?
+           AND COALESCE(item_work_status, '') != 'Dibatalkan'`,
+        [detail.txn_id]
+      );
+      const allDone =
+        activeItems.length > 0 &&
+        activeItems.every((it) => it.item_work_status === 'Selesai');
+      if (allDone) {
+        await conn.query(
+          `UPDATE tr_transaction
+           SET picked_up_at = COALESCE(picked_up_at, NOW())
+           WHERE id = ?`,
+          [detail.txn_id]
+        );
+      }
+    }
+
     // Simpan foto ke disk SETELAH data QC siap — baru catat path di DB
     if (incomingPhotos.length > 0) {
       const savedPhotos = await saveProduksiPhotoBuffers(stage, incomingPhotos, req);
       savedPhotoPaths.push(...savedPhotos);
-      const photoType = qc_status === 'temuan' ? 'temuan' : 'qc';
+      const photoType =
+        stage === 'handover' && qc_status !== 'temuan'
+          ? 'hasil'
+          : qc_status === 'temuan'
+            ? 'temuan'
+            : 'qc';
       const publicPath = getProduksiPhotoPublicPath(stage);
       const photoValues = savedPhotos.map(({ fileName }) => [
         progressId,
@@ -576,15 +683,28 @@ export const submitQC = async (req, res) => {
       action: 'qc',
       meta: { stage, transaction_id: detail.txn_id }
     });
+    if (stage === 'delivery' || stage === 'handover' || stage === 'frontliner') {
+      emitDataChange({
+        domain: 'delivery',
+        outletId: detail.outlet_id,
+        employeeId,
+        action: 'qc',
+        meta: { stage, transaction_id: detail.txn_id }
+      });
+    }
 
-    return res.status(201).json({
-      success: true,
-      message:
-        qc_decision === 'lanjut'
+    const successMessage =
+      stage === 'handover' && qc_decision === 'lanjut'
+        ? 'Serah terima tersimpan, item selesai diantar'
+        : qc_decision === 'lanjut'
           ? 'QC tersimpan, item lanjut ke tahap berikutnya'
           : qc_decision === 'hold'
             ? 'QC tersimpan, item di-hold menunggu konfirmasi'
-            : 'QC tersimpan, item dikembalikan untuk konfirmasi',
+            : 'QC tersimpan, item dikembalikan untuk konfirmasi';
+
+    return res.status(201).json({
+      success: true,
+      message: successMessage,
       data: { progress_id: progressId, item: verify[0] }
     });
   } catch (error) {

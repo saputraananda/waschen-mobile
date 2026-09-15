@@ -9,7 +9,8 @@ const STAGE_LABEL = {
   washing: 'Cuci',
   ironing: 'Setrika',
   packing: 'Packing',
-  delivery: 'Antar'
+  delivery: 'Antar',
+  handover: 'Serah Terima'
 };
 
 /**

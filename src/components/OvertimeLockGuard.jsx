@@ -10,6 +10,9 @@ const ALLOWED_WHEN_LOCKED = new Set([
   '/riwayat',
   '/profile',
   '/edit-profile',
+  '/informations',
+  '/info',
+  '/guideline',
   '/login'
 ]);
 

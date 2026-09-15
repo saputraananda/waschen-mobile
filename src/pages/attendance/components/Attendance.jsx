@@ -6,6 +6,7 @@ import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 import {
   Calendar,
   Clock,
@@ -162,7 +163,7 @@ export default function Attendance() {
   }, [navigate]);
 
   useEffect(() => {
-    document.title = 'Presensi Absensi - Waschen Mobile';
+    setPageTitle('Presensi Absensi');
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');

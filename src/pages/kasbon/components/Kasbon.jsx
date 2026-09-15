@@ -7,6 +7,7 @@ import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 import {
   CreditCard,
   Banknote,
@@ -135,7 +136,7 @@ export default function Kasbon() {
   }, [navigate]);
 
   useEffect(() => {
-    document.title = 'Kasbon & Pinjaman - Waschen Mobile';
+    setPageTitle('Kasbon & Pinjaman');
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');

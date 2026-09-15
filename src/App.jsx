@@ -12,6 +12,8 @@ const Leave = lazy(() => import('./pages/leave/index.jsx'));
 const Kasbon = lazy(() => import('./pages/kasbon/index.jsx'));
 const Overtime = lazy(() => import('./pages/overtime/index.jsx'));
 const Produksi = lazy(() => import('./pages/produksi/index.jsx'));
+const Delivery = lazy(() => import('./pages/delivery/index.jsx'));
+const Informations = lazy(() => import('./pages/informations/index.jsx'));
 const Profile = lazy(() => import('./pages/profile/index.jsx'));
 const EditProfile = lazy(() => import('./pages/profile/components/EditProfile.jsx'));
 
@@ -142,6 +144,10 @@ export default function App() {
         <Route path="/kasbon" element={<Kasbon />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/produksi" element={<Produksi />} />
+        <Route path="/delivery" element={<Delivery />} />
+        <Route path="/informations" element={<Informations />} />
+        <Route path="/info" element={<Navigate to="/informations" replace />} />
+        <Route path="/guideline" element={<Navigate to="/informations" replace />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
 

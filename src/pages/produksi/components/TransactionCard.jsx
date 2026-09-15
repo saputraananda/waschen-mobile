@@ -48,6 +48,11 @@ export default function TransactionCard({ txn, activeStage, onOpen, onItemClick 
         </div>
 
         <div className="mt-3 flex items-center gap-2 flex-wrap">
+          {Number(txn.is_delivery) === 1 && activeStage === 'frontliner' && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
+              Pickup Delivery{txn.customer_name ? ` · ${formatName(txn.customer_name)}` : ''}
+            </span>
+          )}
           {(txn.items || []).map((item) => (
             <span
               key={item.id}

@@ -98,16 +98,21 @@ export const getProfileDetail = async (req, res) => {
     let isLeader = 0;
     let assignedOutletId = null;
     let assignedOutletName = null;
+    let assignedCodePin = null;
 
     try {
       const [roleRows] = await myWaschenPool.query(
-        'SELECT role, is_leader, outlet_id, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
+        'SELECT role, is_leader, outlet_id, employee_name, code_pin FROM mst_role WHERE employee_id = ? LIMIT 1',
         [employeeRow.employee_id]
       );
       if (roleRows.length > 0) {
         assignedRole = roleRows[0].role;
         isLeader = roleRows[0].is_leader || 0;
         assignedOutletId = roleRows[0].outlet_id;
+        assignedCodePin =
+          roleRows[0].code_pin != null && String(roleRows[0].code_pin).trim() !== ''
+            ? String(roleRows[0].code_pin).trim()
+            : null;
         if (roleRows[0].employee_name && !employeeRow.full_name) {
           employeeRow.full_name = roleRows[0].employee_name;
         }
@@ -139,7 +144,9 @@ export const getProfileDetail = async (req, res) => {
       is_leader: isLeader,
       isLeader: isLeader,
       outlet_id: assignedOutletId,
-      assignedOutletName: assignedOutletName || 'Waschen Head Office'
+      assignedOutletName: assignedOutletName || 'Waschen Head Office',
+      code_pin: assignedCodePin,
+      has_pin: Boolean(assignedCodePin)
     };
 
     return res.status(200).json({
@@ -231,6 +238,57 @@ export const updateProfile = async (req, res) => {
       } catch (e) {
         console.warn('sync mst_role.employee_name warning:', e.message);
       }
+    }
+
+    // Update PIN kasir/POS di mst_role.code_pin (maks 8 digit, unik)
+    if (data.code_pin !== undefined) {
+      const rawPin = data.code_pin;
+      let cleanPin = null;
+      if (rawPin !== null && rawPin !== '' && rawPin !== 'null') {
+        const digits = String(rawPin).replace(/\D/g, '');
+        if (!digits) {
+          return res.status(422).json({
+            success: false,
+            message: 'PIN harus berupa angka.'
+          });
+        }
+        if (digits.length > 8) {
+          return res.status(422).json({
+            success: false,
+            message: 'PIN maksimal 8 digit.'
+          });
+        }
+        cleanPin = digits;
+
+        const [dup] = await myWaschenPool.query(
+          `SELECT employee_id FROM mst_role
+           WHERE TRIM(CAST(code_pin AS CHAR)) = ?
+             AND employee_id != ?
+           LIMIT 1`,
+          [cleanPin, empId]
+        );
+        if (dup.length > 0) {
+          return res.status(409).json({
+            success: false,
+            message: 'Pin telah digunakan, harap ganti'
+          });
+        }
+      }
+
+      const [roleExist] = await myWaschenPool.query(
+        'SELECT employee_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+        [empId]
+      );
+      if (roleExist.length === 0) {
+        return res.status(422).json({
+          success: false,
+          message: 'Role outlet belum ditetapkan. Hubungi admin untuk set unit/bagian dulu.'
+        });
+      }
+      await myWaschenPool.query(
+        'UPDATE mst_role SET code_pin = ? WHERE employee_id = ?',
+        [cleanPin, empId]
+      );
     }
 
     // Optionally sync full_name / phone / address back to users table if matching email

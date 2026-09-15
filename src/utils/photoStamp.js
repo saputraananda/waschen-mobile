@@ -11,7 +11,8 @@ export const STAGE_PROCESS_LABEL = {
   washing: 'Pencucian',
   ironing: 'Penyetrikaan',
   packing: 'Pengemasan',
-  delivery: 'Pengantaran'
+  delivery: 'Pengantaran',
+  handover: 'Serah Terima'
 };
 
 /** Contoh: Jumat, 13 April 2023, 20:30 WIB */

@@ -43,6 +43,7 @@ export const ITEM_STATUS_ORDER = [
   'Pengemasan',
   'Siap Diambil',
   'Siap Diantar',
+  'Sedang Diantar',
   'Selesai',
 ];
 
@@ -51,6 +52,8 @@ export const STAGE_ITEM_STATUS = {
   washing: 'Pencucian',
   ironing: 'Penyetrikaan',
   packing: 'Pengemasan',
+  delivery: 'Siap Diantar',
+  handover: 'Sedang Diantar',
 };
 
 const statusIndex = (status) => {
@@ -67,6 +70,7 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
   const targetIdx = statusIndex(targetStatus);
   const items = (txn?.items || []).filter((it) => it.item_work_status !== 'Dibatalkan');
   const orderNo = txn?.order_no || txn?.barcode || '—';
+  const paymentStatus = String(txn?.payment_status || '').trim();
 
   if (!items.length) {
     return {
@@ -75,6 +79,39 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
       message: `Nota ${orderNo} tidak memiliki item pengerjaan.`,
       variant: 'warning',
     };
+  }
+
+  // Tab Delivery: Siap Diantar (QC) + Sedang Diantar (tetap tampil). Wajib Lunas.
+  if (stageKey === 'delivery') {
+    const pendingQc = items.filter((it) => it.item_work_status === 'Siap Diantar');
+    const inTransit = items.filter((it) => it.item_work_status === 'Sedang Diantar');
+
+    if (pendingQc.length > 0 && paymentStatus !== 'Lunas') {
+      return {
+        ok: false,
+        title: 'Belum Lunas',
+        message: `Nota ${orderNo} sudah Siap Diantar, tetapi belum Lunas. Lunasi dulu di POS sebelum QC Delivery & antar.`,
+        variant: 'warning',
+      };
+    }
+
+    if (pendingQc.length > 0) {
+      return {
+        ok: true,
+        title: 'Nota Siap QC Delivery',
+        message: `${pendingQc.length} item menunggu QC final. Setelah aman/temuan+catatan lanjut → Sedang Diantar.`,
+        variant: 'success',
+      };
+    }
+
+    if (inTransit.length > 0) {
+      return {
+        ok: true,
+        title: 'Sedang Diantar — Siap Serah Terima',
+        message: `Nota ${orderNo}: ${inTransit.length} item sedang diantar. Ketuk item → foto bukti → Tandai Selesai.`,
+        variant: 'info',
+      };
+    }
   }
 
   const atStage = items.filter((it) => it.item_work_status === targetStatus);

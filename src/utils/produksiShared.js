@@ -67,7 +67,8 @@ export const STAGE_LABEL = {
   washing: 'Tim Cuci',
   ironing: 'Tim Setrika',
   packing: 'Packing',
-  delivery: 'Antar'
+  delivery: 'Antar',
+  handover: 'Serah Terima'
 };
 
 /** Tahap yang mengisi rincian plastik kiloan */

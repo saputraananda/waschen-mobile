@@ -56,7 +56,9 @@ export default function Banner({
         </div>
 
         <button
+          type="button"
           onClick={onInfoClick}
+          aria-label="Petunjuk penggunaan"
           className="w-10 h-10 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md text-white flex items-center justify-center flex-shrink-0 transition-all active:scale-95 shadow-sm"
         >
           <Info className="w-5 h-5" />

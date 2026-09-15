@@ -4,6 +4,7 @@ import axios from 'axios';
 import Navbar from '../../../components/Navbar';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 import {
   Calendar,
   Clock,
@@ -120,7 +121,7 @@ export default function History() {
   useLockBodyScroll(showPickerModal || showRequestModal);
 
   useEffect(() => {
-    document.title = 'Riwayat Absensi Karyawan - Waschen Mobile';
+    setPageTitle('Riwayat Absensi Karyawan');
     const token = localStorage.getItem('token');
     if (!token) { navigate('/login'); return; }
   }, [navigate]);

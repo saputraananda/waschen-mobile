@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import formatName from '../../../utils/FormatName.js';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 
 const api = axios.create({
     baseURL: '/api',
@@ -351,10 +352,12 @@ export default function ProfileEditPage() {
     const [banks, setBanks] = useState([]);
     const [educationLevels, setEducationLevels] = useState([]);
     const [phoneErrors, setPhoneErrors] = useState({});
+    const [pinError, setPinError] = useState(null);
+    const [showPin, setShowPin] = useState(false);
     const [preview, setPreview] = useState(null); // { url, label }
     const profileFileRef = useRef(null);
 
-    useEffect(() => { document.title = 'Edit Profil | Waschen Mobile'; }, []);
+    useEffect(() => { setPageTitle('Edit Profil'); }, []);
 
     useEffect(() => {
         api.get('/employee/banks').then(r => setBanks(r.data.data || [])).catch(() => {});
@@ -387,6 +390,8 @@ export default function ProfileEditPage() {
                 marital_status: d.marital_status || '',
                 bank_id: d.bank_id ? String(d.bank_id) : '',
                 bank_account_number: d.bank_account_number || '',
+                code_pin: d.code_pin ? String(d.code_pin) : '',
+                code_pin_confirm: d.code_pin ? String(d.code_pin) : '',
             });
         }).catch(() => {
             const stored = localStorage.getItem('user');
@@ -413,12 +418,19 @@ export default function ProfileEditPage() {
     }, []);
 
     const handleChange = useCallback((name, value) => {
-        setForm(prev => ({ ...prev, [name]: value }));
+        let next = value;
+        if (name === 'code_pin' || name === 'code_pin_confirm') {
+            next = String(value || '').replace(/\D/g, '').slice(0, 8);
+        }
+        setForm(prev => ({ ...prev, [name]: next }));
         if (name === 'phone_number' || name === 'emergency_contact') {
             setPhoneErrors(prev => ({
                 ...prev,
-                [name]: value && !isValidPhone(value) ? 'Gunakan format lokal, cth. 087770597000' : null,
+                [name]: next && !isValidPhone(next) ? 'Gunakan format lokal, cth. 087770597000' : null,
             }));
+        }
+        if (name === 'code_pin' || name === 'code_pin_confirm') {
+            setPinError(null);
         }
     }, []);
 
@@ -435,12 +447,47 @@ export default function ProfileEditPage() {
                 return;
             }
         }
+
+        const pin = String(form.code_pin || '').replace(/\D/g, '');
+        const pinConfirm = String(form.code_pin_confirm || '').replace(/\D/g, '');
+        if (pin || pinConfirm) {
+            if (!pin) {
+                setPinError('Isi PIN terlebih dahulu.');
+                showToast('Isi PIN terlebih dahulu.', false);
+                return;
+            }
+            if (pin.length > 8) {
+                setPinError('PIN maksimal 8 digit.');
+                showToast('PIN maksimal 8 digit.', false);
+                return;
+            }
+            if (pin !== pinConfirm) {
+                setPinError('Konfirmasi PIN tidak cocok.');
+                showToast('Konfirmasi PIN tidak cocok.', false);
+                return;
+            }
+        }
+
         setSaving(true);
+        setPinError(null);
         try {
-            await api.put('/employee/update-profile', form);
+            const payload = { ...form };
+            delete payload.code_pin_confirm;
+            // Kirim code_pin hanya jika diisi (kosong = tidak ubah PIN)
+            if (!pin) delete payload.code_pin;
+            else payload.code_pin = pin;
+
+            await api.put('/employee/update-profile', payload);
             showToast('Profil berhasil disimpan.');
+            if (pin) {
+                setDetail(prev => (prev ? { ...prev, code_pin: pin, has_pin: true } : prev));
+            }
         } catch (e) {
-            showToast(e.response?.data?.message || 'Gagal menyimpan.', false);
+            const msg = e.response?.data?.message || 'Gagal menyimpan.';
+            if (/pin telah digunakan/i.test(msg)) {
+                setPinError(msg);
+            }
+            showToast(msg, false);
         }
         setSaving(false);
     };
@@ -572,6 +619,51 @@ export default function ProfileEditPage() {
                     <Section title="Rekening Bank">
                         <FieldRow label="Nama Bank" name="bank_id" value={form.bank_id} onChange={handleChange} options={bankOpts} />
                         <FieldRow label="No. Rekening" name="bank_account_number" value={form.bank_account_number} onChange={handleChange} placeholder="Nomor rekening" />
+                    </Section>
+
+                    {/* PIN Kasir / POS */}
+                    <Section title="PIN Kasir (POS)">
+                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed -mt-1 mb-1">
+                            PIN dipakai saat buat nota / pelunasan di POS. Angka saja, maksimal 8 digit, harus unik.
+                            {detail?.has_pin ? ' PIN Anda sudah terisi — ubah jika perlu.' : ' Belum ada PIN — isi untuk bisa verifikasi di POS.'}
+                        </p>
+                        <div className="w-full min-w-0">
+                            <div className="text-[10.5px] font-semibold text-slate-400 mb-1.5">PIN Baru</div>
+                            <div className="relative">
+                                <input
+                                    type={showPin ? 'text' : 'password'}
+                                    inputMode="numeric"
+                                    autoComplete="new-password"
+                                    name="code_pin"
+                                    value={form.code_pin || ''}
+                                    onChange={e => handleChange('code_pin', e.target.value)}
+                                    placeholder="cth. 1234"
+                                    maxLength={8}
+                                    className={`block w-full min-w-0 box-border appearance-none text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] pl-3 pr-11 h-[42px] focus:outline-none focus:ring-2 transition placeholder:text-slate-300 ${
+                                        pinError
+                                            ? 'border-red-400 focus:ring-red-200'
+                                            : 'border-slate-200 focus:ring-[#5f1340]/30 focus:border-[#5f1340]'
+                                    }`}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPin(v => !v)}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-[9px] text-slate-400 grid place-items-center hover:bg-slate-100"
+                                    aria-label={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
+                                >
+                                    <IconEye />
+                                </button>
+                            </div>
+                        </div>
+                        <FieldRow
+                            label="Konfirmasi PIN"
+                            name="code_pin_confirm"
+                            type={showPin ? 'text' : 'password'}
+                            value={form.code_pin_confirm}
+                            onChange={handleChange}
+                            placeholder="Ulangi PIN"
+                            error={pinError}
+                        />
                     </Section>
 
                     {/* Dokumen */}

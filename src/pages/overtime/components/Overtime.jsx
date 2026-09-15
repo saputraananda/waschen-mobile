@@ -6,6 +6,7 @@ import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 import {
   ArrowLeft,
   Plus,
@@ -121,7 +122,7 @@ export default function Overtime() {
   }, [navigate]);
 
   useEffect(() => {
-    document.title = 'Lembur - Waschen Mobile';
+    setPageTitle('Lembur');
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');

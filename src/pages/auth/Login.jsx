@@ -7,6 +7,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { resetPageView } from '../../utils/resetPageView.js';
 import { Eye, EyeOff, Lock, User as UserIcon, ScanFace, Fingerprint } from 'lucide-react';
 import { BIOMETRICS_UI_ENABLED } from '../../utils/featureFlags.js';
+import { setPageTitle } from '../../utils/pageTitle.js';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -32,7 +33,7 @@ export default function Login() {
 
     // Check WebAuthn support & Redirect to dashboard if token exists
     useEffect(() => {
-        document.title = 'Masuk Akun';
+        setPageTitle('Masuk Akun');
         const token = localStorage.getItem('token');
         if (token) {
             goToHomeFresh();

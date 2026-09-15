@@ -1,7 +1,32 @@
 import React from 'react';
 import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock } from 'lucide-react';
+import getDisplayRole from '../../../utils/getDisplayRole.js';
 
-export default function MenuSection({ onMenuClick, menusLocked = false }) {
+function MotorbikeIcon({ className = 'w-5 h-5' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="5.5" cy="17.5" r="2.5" />
+      <circle cx="18.5" cy="17.5" r="2.5" />
+      <path d="M8 17.5h5.5l1.2-3.2H18" />
+      <path d="M12 8.5h3.2L18 14.3" />
+      <path d="M8.2 14.3 10 10h2.8" />
+      <path d="M5.5 15.2 8 10.5l1.2-2H12" />
+    </svg>
+  );
+}
+
+export default function MenuSection({ onMenuClick, menusLocked = false, currentUser = null }) {
+  const role = getDisplayRole(currentUser);
+  const isDeliveryStaff = role === 'Delivery Staff';
   const lockBadge = menusLocked ? (
     <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-black text-rose-700">
       <Lock className="w-2.5 h-2.5" /> Lock
@@ -109,12 +134,12 @@ export default function MenuSection({ onMenuClick, menusLocked = false }) {
         disabled={menusLocked}
         onClick={() => !menusLocked && onMenuClick('/produksi', 'Update Progress')}
         className={`mt-3.5 w-full bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex items-center gap-4 min-h-[88px] group ${
-          menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.12)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+          menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
         }`}
       >
-        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#5f1340]/10 to-transparent rounded-bl-[48px] pointer-events-none" />
+        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#5f1340]/15 to-transparent rounded-bl-[48px] pointer-events-none" />
         {lockBadge}
-        <div className="w-12 h-12 rounded-2xl bg-[#5f1340]/10 text-[#5f1340] flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#5f1340]/15 to-[#8c2060]/10 text-[#5f1340] border border-[#5f1340]/10 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
           <RefreshCw className="w-5 h-5" />
         </div>
         <div className="min-w-0 flex-1 relative z-10">
@@ -126,6 +151,32 @@ export default function MenuSection({ onMenuClick, menusLocked = false }) {
           </span>
         </div>
       </button>
+
+      {isDeliveryStaff && (
+        <button
+          id="menu-delivery-btn"
+          type="button"
+          disabled={menusLocked}
+          onClick={() => !menusLocked && onMenuClick('/delivery', 'Delivery')}
+          className={`mt-3.5 w-full bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex items-center gap-4 min-h-[88px] group ${
+            menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(234,88,12,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+          }`}
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-orange-100/90 to-transparent rounded-bl-[48px] pointer-events-none" />
+          {lockBadge}
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-100/80 text-orange-600 border border-orange-100 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+            <MotorbikeIcon className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1 relative z-10">
+            <h4 className="text-[14px] font-black text-slate-800 group-hover:text-orange-600 transition-colors leading-tight">
+              Delivery
+            </h4>
+            <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+              {menusLocked ? 'Tutup lembur dulu' : 'Pickup QC & pengantaran nota delivery'}
+            </span>
+          </div>
+        </button>
+      )}
     </div>
   );
 }

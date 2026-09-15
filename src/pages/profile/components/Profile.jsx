@@ -17,6 +17,7 @@ import {
 } from '../../../utils/pwaInstall.js';
 import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw, Download, Smartphone } from 'lucide-react';
 import { BIOMETRICS_UI_ENABLED } from '../../../utils/featureFlags.js';
+import { setPageTitle } from '../../../utils/pageTitle.js';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -150,7 +151,7 @@ export default function Profile() {
     }, []);
 
     useEffect(() => {
-        document.title = 'Profil Saya';
+        setPageTitle('Profil Saya');
         const token = localStorage.getItem('token');
         if (!token) {
             navigate('/login');
