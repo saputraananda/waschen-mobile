@@ -193,7 +193,7 @@ export default function Login() {
                                 <input
                                     id="login-username-input"
                                     type="text"
-                                    placeholder="Contoh : username"
+                                    placeholder="Username"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                     disabled={isSubmitting}
@@ -214,7 +214,7 @@ export default function Login() {
                                 <input
                                     id="login-password-input"
                                     type={showPassword ? "text" : "password"}
-                                    placeholder="Contoh : kata sandi"
+                                    placeholder="Kata sandi"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     disabled={isSubmitting}
