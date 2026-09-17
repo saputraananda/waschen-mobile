@@ -275,7 +275,10 @@ export const startOvertime = async (req, res) => {
     const startAt = formatSqlDateTime(now);
     const overtimeDate = toDateOnly(now);
     const startTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
-    const reason = String(req.body.reason || '').trim() || 'Sesi lembur';
+    const reason = String(req.body.reason || '').trim().slice(0, 255);
+    if (reason.length < 5) {
+      return res.status(422).json({ success: false, message: 'Alasan lembur wajib diisi minimal 5 karakter' });
+    }
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_overtime

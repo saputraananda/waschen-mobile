@@ -111,8 +111,11 @@ export default function Overtime() {
   const [reviewNote, setReviewNote] = useState('');
   const [activeSession, setActiveSession] = useState(null);
   const [sessionBusy, setSessionBusy] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
+  const [startReason, setStartReason] = useState('');
+  const [startError, setStartError] = useState(null);
 
-  useLockBodyScroll(formOpen || !!cancelTarget || !!reviewTarget);
+  useLockBodyScroll(formOpen || startOpen || !!cancelTarget || !!reviewTarget);
 
   const handleAuthError = useCallback((error) => {
     if (error?.response?.status === 401) {
@@ -211,18 +214,39 @@ export default function Overtime() {
 
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(fetchList);
 
-  const handleStartSession = async () => {
+  const openStartModal = () => {
+    setStartReason('');
+    setStartError(null);
+    setStartOpen(true);
+  };
+
+  const closeStartModal = () => {
     if (sessionBusy) return;
+    setStartOpen(false);
+    setStartError(null);
+  };
+
+  const handleStartSession = async (e) => {
+    e?.preventDefault?.();
+    if (sessionBusy) return;
+    const reason = startReason.trim();
+    if (reason.length < 5) {
+      setStartError('Alasan lembur wajib diisi minimal 5 karakter');
+      return;
+    }
     setSessionBusy(true);
+    setStartError(null);
     setListError(null);
     try {
-      const res = await api.post('/overtime/start');
+      const res = await api.post('/overtime/start', { reason });
       setActiveSession(res.data?.data || null);
       setInfoBanner(res.data?.message || 'Sesi lembur dimulai');
+      setStartOpen(false);
+      setStartReason('');
       fetchList();
     } catch (err) {
       if (handleAuthError(err)) return;
-      setListError(err.response?.data?.message || 'Gagal start lembur');
+      setStartError(err.response?.data?.message || 'Gagal start lembur');
     } finally {
       setSessionBusy(false);
     }
@@ -554,7 +578,7 @@ export default function Overtime() {
                   <button
                     type="button"
                     disabled={sessionBusy}
-                    onClick={handleStartSession}
+                    onClick={openStartModal}
                     className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {sessionBusy ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Plus className="w-4.5 h-4.5" />}
@@ -821,6 +845,64 @@ export default function Overtime() {
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
                 Simpan Perubahan
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* START MODAL — alasan lembur sebelum sesi dimulai */}
+      {startOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-safe-overlay"
+          onClick={closeStartModal}
+        >
+          <div
+            className="w-full max-w-[430px] bg-white rounded-[20px] overflow-hidden shadow-[0_12px_60px_rgba(0,0,0,.35)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <div className="text-[14px] font-extrabold text-slate-900">Alasan Lembur</div>
+              <button
+                type="button"
+                onClick={closeStartModal}
+                className="w-9 h-9 rounded-[12px] grid place-items-center border border-slate-200 bg-white text-slate-600"
+                aria-label="Tutup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStartSession} className="p-4 space-y-3">
+              <p className="text-[11.5px] text-slate-500 font-medium leading-relaxed">
+                Jelaskan singkat kenapa Anda lembur. Sesi dimulai setelah alasan disimpan.
+              </p>
+
+              {startError && (
+                <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  <span className="text-[11.5px] text-rose-700 font-semibold">{startError}</span>
+                </div>
+              )}
+
+              <textarea
+                required
+                rows={3}
+                maxLength={255}
+                autoFocus
+                value={startReason}
+                onChange={(e) => setStartReason(e.target.value)}
+                placeholder="Contoh : Tambahan shift closing outlet"
+                className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
+              />
+
+              <button
+                type="submit"
+                disabled={sessionBusy}
+                className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {sessionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Timer className="w-4 h-4" />}
+                Mulai Lembur
               </button>
             </form>
           </div>
