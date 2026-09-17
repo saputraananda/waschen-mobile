@@ -555,7 +555,7 @@ export default function Delivery() {
               inputMode="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nota, nama, HP, atau barcode…"
+              placeholder="Contoh : WLCG202609150001 / Budi / 0877…"
               className="flex-1 min-w-0 text-[12.5px] font-semibold text-slate-700 placeholder:text-slate-300 outline-none bg-transparent"
             />
             {searchQuery && (

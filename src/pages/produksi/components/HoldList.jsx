@@ -146,7 +146,7 @@ export default function HoldList({ holds, loading, stage, onResolved }) {
 
             <input
               type="text"
-              placeholder={isFrontliner ? 'Catatan konfirmasi frontliner (opsional)…' : 'Catatan konfirmasi (opsional)…'}
+              placeholder={isFrontliner ? 'Contoh : Sudah konfirmasi ke customer' : 'Contoh : Item sudah siap diambil'}
               value={noteMap[h.detail_id] || ''}
               onChange={(e) => setNoteMap((prev) => ({ ...prev, [h.detail_id]: e.target.value }))}
               className="mt-3 w-full text-[12px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none"

@@ -620,7 +620,7 @@ export default function History() {
                 value={requestReason}
                 onChange={(e) => setRequestReason(e.target.value)}
                 rows={4}
-                placeholder="Alasan libur (wajib diisi)..."
+                placeholder="Contoh : Libur tahun baru keluarga"
                 className="w-full rounded-2xl border border-slate-200 p-3 text-[13px] font-medium text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400/40"
               />
               {requestError && <p className="text-[11px] text-red-600 font-bold">{requestError}</p>}

@@ -666,7 +666,7 @@ export default function Kasbon() {
                   value={form.purpose}
                   onChange={(e) => setForm((prev) => ({ ...prev, purpose: e.target.value }))}
                   rows={3}
-                  placeholder="Jelaskan keperluan atau tujuan pengajuan (min. 5 karakter)"
+                  placeholder="Contoh : Biaya sekolah anak"
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>
@@ -680,7 +680,7 @@ export default function Kasbon() {
                     type="number"
                     min="1"
                     step="1"
-                    placeholder="0"
+                    placeholder="Contoh : 500.000"
                     value={form.amountStr}
                     onChange={(e) => setForm((prev) => ({ ...prev, amountStr: e.target.value }))}
                     className="w-full text-[12.5px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 outline-none"
@@ -698,7 +698,7 @@ export default function Kasbon() {
                   value={form.notes}
                   onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
                   rows={2}
-                  placeholder="Catatan tambahan jika ada…"
+                  placeholder="Contoh : Perlu cair sebelum tanggal 25"
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>

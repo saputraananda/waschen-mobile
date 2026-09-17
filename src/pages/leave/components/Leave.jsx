@@ -609,7 +609,7 @@ export default function Leave() {
                   value={form.reason}
                   onChange={(e) => setForm((prev) => ({ ...prev, reason: e.target.value }))}
                   rows={3}
-                  placeholder="Jelaskan alasan pengajuan (min. 5 karakter)"
+                  placeholder="Contoh : Cuti urusan keluarga urgent"
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>

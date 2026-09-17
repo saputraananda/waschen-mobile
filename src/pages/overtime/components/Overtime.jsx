@@ -795,7 +795,7 @@ export default function Overtime() {
                   rows={3}
                   value={form.reason}
                   onChange={(e) => setForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Jelaskan alasan lembur (min. 5 karakter)"
+                  placeholder="Contoh : Tambahan shift closing outlet"
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>
@@ -877,7 +877,7 @@ export default function Overtime() {
                   rows={3}
                   value={reviewNote}
                   onChange={(e) => setReviewNote(e.target.value)}
-                  placeholder={reviewTarget.mode === 'approve' ? 'Catatan untuk karyawan...' : 'Alasan penolakan...'}
+                  placeholder={reviewTarget.mode === 'approve' ? 'Contoh : Disetujui, terima kasih' : 'Contoh : Jadwal sudah penuh'}
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>

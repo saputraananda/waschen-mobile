@@ -594,16 +594,16 @@ export default function ProfileEditPage() {
                     {/* Data Pribadi */}
                     <Section title="Data Pribadi">
                         <FieldRow label="Jenis Kelamin" name="gender" value={form.gender} onChange={handleChange} options={GENDER_OPTS} />
-                        <FieldRow label="Tempat Lahir" name="birth_place" value={form.birth_place} onChange={handleChange} placeholder="cth. Jakarta" />
+                        <FieldRow label="Tempat Lahir" name="birth_place" value={form.birth_place} onChange={handleChange} placeholder="Contoh : Jakarta" />
                         <FieldRow label="Tanggal Lahir" name="birth_date" value={form.birth_date} onChange={handleChange} type="date" />
-                        <FieldRow label="No. HP" name="phone_number" value={form.phone_number} onChange={handleChange} placeholder="cth. 087770597000" error={phoneErrors.phone_number} />
-                        <FieldRow label="Email Pribadi" name="private_email" value={form.private_email} onChange={handleChange} placeholder="cth. nama@email.com" type="email" />
-                        <FieldRow label="No. KTP" name="ktp_number" value={form.ktp_number} onChange={handleChange} placeholder="16 digit NIK" />
-                        <FieldRow label="Alamat" name="address" value={form.address} onChange={handleChange} placeholder="Alamat lengkap" />
+                        <FieldRow label="No. HP" name="phone_number" value={form.phone_number} onChange={handleChange} placeholder="Contoh : 087770597000" error={phoneErrors.phone_number} />
+                        <FieldRow label="Email Pribadi" name="private_email" value={form.private_email} onChange={handleChange} placeholder="Contoh : nama@email.com" type="email" />
+                        <FieldRow label="No. KTP" name="ktp_number" value={form.ktp_number} onChange={handleChange} placeholder="Contoh : 3174012345678901" />
+                        <FieldRow label="Alamat" name="address" value={form.address} onChange={handleChange} placeholder="Contoh : Pondok Bambu Asri" />
                         <FieldRow label="Status Pernikahan" name="marital_status" value={form.marital_status} onChange={handleChange} options={MARITAL_OPTS} />
                         <FieldRow label="Agama" name="religion_id" value={form.religion_id} onChange={handleChange} options={RELIGION_OPTS} />
-                        <FieldRow label="Nama Ibu Kandung" name="mother_name" value={form.mother_name} onChange={handleChange} placeholder="Nama ibu kandung" />
-                        <FieldRow label="Nomor Darurat (Yang Dapat Dihubungi)" name="emergency_contact" value={form.emergency_contact} onChange={handleChange} placeholder="cth. 087770597000" error={phoneErrors.emergency_contact} />
+                        <FieldRow label="Nama Ibu Kandung" name="mother_name" value={form.mother_name} onChange={handleChange} placeholder="Contoh : Siti Aminah" />
+                        <FieldRow label="Nomor Darurat (Yang Dapat Dihubungi)" name="emergency_contact" value={form.emergency_contact} onChange={handleChange} placeholder="Contoh : 087770597000" error={phoneErrors.emergency_contact} />
                     </Section>
 
                     {/* Data Pekerjaan */}
@@ -611,14 +611,14 @@ export default function ProfileEditPage() {
                         <FieldRow label="Tanggal Bergabung" name="join_date" value={form.join_date} onChange={handleChange} type="date" />
                         <FieldRow label="Tanggal Kontrak Berakhir" name="contract_end_date" value={form.contract_end_date} onChange={handleChange} type="date" />
                         <FieldRow label="Pendidikan Terakhir" name="education_level_id" value={form.education_level_id} onChange={handleChange} options={educationOpts} />
-                        <FieldRow label="Nama Instansi" name="school_name" value={form.school_name} onChange={handleChange} placeholder="Nama sekolah/universitas" />
-                        <FieldRow label="Jurusan (Opsional)" name="major_name" value={form.major_name} onChange={handleChange} placeholder="Nama jurusan" />
+                        <FieldRow label="Nama Instansi" name="school_name" value={form.school_name} onChange={handleChange} placeholder="Contoh : Universitas Indonesia" />
+                        <FieldRow label="Jurusan (Opsional)" name="major_name" value={form.major_name} onChange={handleChange} placeholder="Contoh : Teknik Informatika" />
                     </Section>
 
                     {/* Rekening Bank */}
                     <Section title="Rekening Bank">
                         <FieldRow label="Nama Bank" name="bank_id" value={form.bank_id} onChange={handleChange} options={bankOpts} />
-                        <FieldRow label="No. Rekening" name="bank_account_number" value={form.bank_account_number} onChange={handleChange} placeholder="Nomor rekening" />
+                        <FieldRow label="No. Rekening" name="bank_account_number" value={form.bank_account_number} onChange={handleChange} placeholder="Contoh : 1234567890" />
                     </Section>
 
                     {/* PIN Kasir / POS */}
@@ -637,7 +637,7 @@ export default function ProfileEditPage() {
                                     name="code_pin"
                                     value={form.code_pin || ''}
                                     onChange={e => handleChange('code_pin', e.target.value)}
-                                    placeholder="cth. 1234"
+                                    placeholder="Contoh : 1234"
                                     maxLength={8}
                                     className={`block w-full min-w-0 box-border appearance-none text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] pl-3 pr-11 h-[42px] focus:outline-none focus:ring-2 transition placeholder:text-slate-300 ${
                                         pinError
@@ -661,7 +661,7 @@ export default function ProfileEditPage() {
                             type={showPin ? 'text' : 'password'}
                             value={form.code_pin_confirm}
                             onChange={handleChange}
-                            placeholder="Ulangi PIN"
+                            placeholder="Contoh : 1234"
                             error={pinError}
                         />
                     </Section>

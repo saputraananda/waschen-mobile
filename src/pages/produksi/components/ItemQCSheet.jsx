@@ -282,7 +282,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
                         <input
                           type="number"
                           min="1"
-                          placeholder="Jumlah pakaian"
+                          placeholder="Contoh : 10"
                           value={b.qty_pcs}
                           onChange={(e) => setBags((prev) => prev.map((x, xi) => (xi === i ? { ...x, qty_pcs: e.target.value } : x)))}
                           className="flex-1 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
@@ -379,8 +379,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
                 rows={2}
                 placeholder={
                   isHandover
-                    ? (qcStatus === 'temuan' ? 'Catatan temuan saat serah terima…' : 'Mis. diterima customer / ditaruh di satpam…')
-                    : (qcStatus === 'temuan' ? 'Jelaskan temuan (noda, kerusakan, dll)…' : 'Catatan tambahan jika ada…')
+                    ? (qcStatus === 'temuan' ? 'Contoh : Customer tidak di rumah' : 'Contoh : Diterima customer / ditaruh di satpam')
+                    : (qcStatus === 'temuan' ? 'Contoh : Noda pada kemeja bagian depan' : 'Contoh : Semua item lengkap')
                 }
                 className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
               />
@@ -533,7 +533,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
                       <input
                         type="number"
                         min="1"
-                        placeholder="Jumlah pcs"
+                        placeholder="Contoh : 5"
                         value={p.qty_pcs}
                         onChange={(e) => setPackings((prev) => prev.map((x, xi) => (xi === i ? { ...x, qty_pcs: e.target.value } : x)))}
                         className="flex-1 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
