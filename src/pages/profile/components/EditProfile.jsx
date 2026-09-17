@@ -4,6 +4,8 @@ import axios from 'axios';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import formatName from '../../../utils/FormatName.js';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 
 const api = axios.create({
     baseURL: '/api',
@@ -367,33 +369,37 @@ export default function ProfileEditPage() {
         api.get('/employee/education-levels').then(r => setEducationLevels(r.data.data || [])).catch(() => {});
     }, []);
 
-    useEffect(() => {
-        api.get('/employee/profile-detail').then(r => {
-            const d = r.data.data || {};
-            setDetail(d);
-            setForm({
-                gender: d.gender || '',
-                birth_place: d.birth_place || '',
-                birth_date: d.birth_date ? d.birth_date.slice(0, 10) : '',
-                address: d.address || '',
-                ktp_number: d.ktp_number || '',
-                phone_number: d.phone_number || '',
-                private_email: d.private_email || '',
-                mother_name: d.mother_name || '',
-                emergency_contact: d.emergency_contact || '',
-                join_date: d.join_date ? d.join_date.slice(0, 10) : '',
-                contract_end_date: d.contract_end_date ? d.contract_end_date.slice(0, 10) : '',
-                education_level_id: d.education_level_id ? String(d.education_level_id) : '',
-                school_name: d.school_name || '',
-                major_name: d.major_name || '',
-                religion_id: d.religion_id ? String(d.religion_id) : '',
-                marital_status: d.marital_status || '',
-                bank_id: d.bank_id ? String(d.bank_id) : '',
-                bank_account_number: d.bank_account_number || '',
-                code_pin: d.code_pin ? String(d.code_pin) : '',
-                code_pin_confirm: d.code_pin ? String(d.code_pin) : '',
-            });
-        }).catch(() => {
+    const applyProfileDetail = useCallback((d) => {
+        setDetail(d);
+        setForm({
+            gender: d.gender || '',
+            birth_place: d.birth_place || '',
+            birth_date: d.birth_date ? d.birth_date.slice(0, 10) : '',
+            address: d.address || '',
+            ktp_number: d.ktp_number || '',
+            phone_number: d.phone_number || '',
+            private_email: d.private_email || '',
+            mother_name: d.mother_name || '',
+            emergency_contact: d.emergency_contact || '',
+            join_date: d.join_date ? d.join_date.slice(0, 10) : '',
+            contract_end_date: d.contract_end_date ? d.contract_end_date.slice(0, 10) : '',
+            education_level_id: d.education_level_id ? String(d.education_level_id) : '',
+            school_name: d.school_name || '',
+            major_name: d.major_name || '',
+            religion_id: d.religion_id ? String(d.religion_id) : '',
+            marital_status: d.marital_status || '',
+            bank_id: d.bank_id ? String(d.bank_id) : '',
+            bank_account_number: d.bank_account_number || '',
+            code_pin: d.code_pin ? String(d.code_pin) : '',
+            code_pin_confirm: d.code_pin ? String(d.code_pin) : '',
+        });
+    }, []);
+
+    const loadProfileDetail = useCallback(async () => {
+        try {
+            const r = await api.get('/employee/profile-detail');
+            applyProfileDetail(r.data.data || {});
+        } catch {
             const stored = localStorage.getItem('user');
             if (stored) {
                 try {
@@ -414,8 +420,14 @@ export default function ProfileEditPage() {
                     }));
                 } catch (e) {}
             }
-        });
-    }, []);
+        }
+    }, [applyProfileDetail]);
+
+    useEffect(() => {
+        loadProfileDetail();
+    }, [loadProfileDetail]);
+
+    const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(loadProfileDetail);
 
     const handleChange = useCallback((name, value) => {
         let next = value;
@@ -550,6 +562,19 @@ export default function ProfileEditPage() {
                             className="w-9 h-9 rounded-[11px] bg-white/10 border border-white/12 text-white grid place-items-center flex-shrink-0 transition hover:bg-white/20 no-underline backdrop-blur-xl">
                             <IconBack />
                         </Link>
+                        <button
+                            type="button"
+                            onClick={handleRefresh}
+                            disabled={refreshing}
+                            className="w-9 h-9 rounded-[11px] bg-white/10 border border-white/12 text-white grid place-items-center flex-shrink-0 transition hover:bg-white/20 backdrop-blur-xl disabled:opacity-60"
+                            aria-label="Muat ulang"
+                        >
+                            <svg className={refreshing ? 'animate-spin' : ''} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="23 4 23 10 17 10" />
+                                <polyline points="1 20 1 14 7 14" />
+                                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                            </svg>
+                        </button>
                     </div>
 
                     {/* Avatar */}
@@ -693,6 +718,7 @@ export default function ProfileEditPage() {
                         {toast.text}
                     </div>
                 )}
+                <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
 
                 {/* ── Bottom save button ── */}
                 <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center pointer-events-none">

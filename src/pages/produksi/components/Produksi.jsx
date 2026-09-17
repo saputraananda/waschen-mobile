@@ -14,6 +14,8 @@ import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
 import ConfirmModal from '../../../components/ConfirmModal.jsx';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 
 export default function Produksi() {
   const navigate = useNavigate();
@@ -128,6 +130,13 @@ export default function Produksi() {
       setSearching(false);
     }
   }, [handleAuthError]);
+
+  const softRefresh = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (q) await runSearch(q);
+    else await loadData(activeStage);
+  }, [searchQuery, runSearch, loadData, activeStage]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useRealtimeRefresh('progress', () => {
     loadData(activeStage, { silent: true });
@@ -296,11 +305,12 @@ export default function Produksi() {
             </div>
             <button
               type="button"
-              onClick={() => loadData(activeStage)}
-              className="ml-auto w-9 h-9 rounded-[12px] bg-white/10 grid place-items-center text-white"
+              onClick={handleRefresh}
+              disabled={refreshing || loading || searching}
+              className="ml-auto w-9 h-9 rounded-[12px] bg-white/10 grid place-items-center text-white disabled:opacity-60"
               aria-label="Muat ulang"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${refreshing || loading || searching ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -498,6 +508,7 @@ export default function Produksi() {
           cancelText="Batal"
           variant="warning"
         />
+        <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
       </div>
     </div>
   );

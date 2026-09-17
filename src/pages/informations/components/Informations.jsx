@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -20,6 +20,8 @@ import {
 import formatName from '../../../utils/FormatName.js';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 
 const SECTIONS = [
   {
@@ -200,6 +202,15 @@ export default function Informations() {
   const [currentUser, setCurrentUser] = useState({ fullName: 'Karyawan Waschen' });
   const [openId, setOpenId] = useState('awal');
 
+  const loadUser = useCallback(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (_) { /* ignore */ }
+    }
+  }, []);
+
   useEffect(() => {
     setPageTitle('Petunjuk Penggunaan');
     const token = localStorage.getItem('token');
@@ -207,13 +218,10 @@ export default function Informations() {
       navigate('/login');
       return;
     }
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      try {
-        setCurrentUser(JSON.parse(stored));
-      } catch (_) { /* ignore */ }
-    }
-  }, [navigate]);
+    loadUser();
+  }, [navigate, loadUser]);
+
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(loadUser);
 
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans">
@@ -235,7 +243,7 @@ export default function Informations() {
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="text-[15px] font-bold text-white leading-snug truncate tracking-tight">
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
@@ -243,6 +251,15 @@ export default function Informations() {
                 {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center flex-shrink-0 active:scale-95 transition-all disabled:opacity-60"
+              aria-label="Muat ulang"
+            >
+              <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           <div className="relative z-10 text-center py-2">
@@ -304,6 +321,7 @@ export default function Informations() {
           </p>
         </div>
       </div>
+      <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
     </div>
   );
 }

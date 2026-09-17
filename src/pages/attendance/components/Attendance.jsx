@@ -7,6 +7,8 @@ import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import {
   Calendar,
   Clock,
@@ -217,6 +219,18 @@ export default function Attendance() {
   useRealtimeRefresh(['attendance', 'leave'], () => {
     fetchToday();
   });
+
+  const softRefresh = useCallback(async () => {
+    const [outletResult] = await Promise.allSettled([
+      api.get('/attendance/outlets'),
+      fetchToday()
+    ]);
+    if (outletResult.status === 'fulfilled') {
+      setOutlets(outletResult.value.data?.data || []);
+    }
+    setGpsRefreshKey((k) => k + 1);
+  }, [fetchToday]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -581,7 +595,7 @@ export default function Attendance() {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="text-[15px] font-bold text-white leading-snug truncate tracking-tight">
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
@@ -589,6 +603,15 @@ export default function Attendance() {
                 {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center flex-shrink-0 active:scale-95 transition-all disabled:opacity-60"
+              aria-label="Muat ulang"
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           <div className="relative z-10 text-center py-2">
@@ -1049,6 +1072,7 @@ export default function Attendance() {
           </div>
         </div>
       )}
+      <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
     </div>
   );
 }

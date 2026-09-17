@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { resetPageView } from '../../utils/resetPageView.js';
@@ -7,11 +7,13 @@ import Banner from './components/Banner.jsx';
 import MenuSection from './components/MenuSection.jsx';
 import AlertOvertime from './components/AlertOvertime.jsx';
 import useActiveOvertime from '../../hooks/useActiveOvertime.js';
+import useSoftRefresh from '../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../components/DataUpdatedModal.jsx';
 import { setPageTitle } from '../../utils/pageTitle.js';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { active, locked, isActive } = useActiveOvertime(true);
+  const { active, locked, isActive, refresh: refreshOvertime } = useActiveOvertime(true);
   const [forceOtModal, setForceOtModal] = useState(true);
 
   const [currentUser, setCurrentUser] = useState({
@@ -25,6 +27,27 @@ export default function Home() {
   });
 
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const softRefresh = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        setCurrentUser((prev) => ({
+          ...prev,
+          ...parsed,
+          assignedOutletName: parsed.assignedOutletName || prev.assignedOutletName || 'Waschen Head Office'
+        }));
+      } catch (_) { /* ignore */ }
+    }
+    if (token) {
+      const role = await fetchAssignedRole(token);
+      if (role) setCurrentUser((prev) => ({ ...prev, assignedRole: role }));
+    }
+    await refreshOvertime();
+  }, [refreshOvertime]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useEffect(() => {
     setPageTitle('Dasbor Utama');
@@ -102,6 +125,8 @@ export default function Home() {
             currentTime={currentTime}
             onNavigateProfile={() => navigate('/profile')}
             onInfoClick={() => handleMenuClick('/informations')}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
             getInitials={getInitials}
             formatTime={formatTime}
             formatDate={formatDate}
@@ -122,6 +147,7 @@ export default function Home() {
         </div>
 
         <Navbar />
+        <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
       </div>
     </div>
   );

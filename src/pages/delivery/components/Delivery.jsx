@@ -18,8 +18,10 @@ import ItemQCSheet from '../../produksi/components/ItemQCSheet.jsx';
 import TransactionDetailModal from '../../produksi/components/TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
 import ConfirmModal from '../../../components/ConfirmModal.jsx';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 
 const DELIVERY_ROLE = 'Delivery Staff';
 
@@ -381,6 +383,13 @@ export default function Delivery() {
     }
   }, [handleAuthError]);
 
+  const softRefresh = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (q) await runSearch(q);
+    else await loadData();
+  }, [searchQuery, runSearch, loadData]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
+
   useEffect(() => {
     if (role === DELIVERY_ROLE) {
       setSearchQuery('');
@@ -537,11 +546,12 @@ export default function Delivery() {
             </div>
             <button
               type="button"
-              onClick={() => (isSearchMode ? runSearch(searchQuery.trim()) : loadData())}
-              className="ml-auto w-9 h-9 rounded-[12px] bg-white/10 grid place-items-center text-white"
+              onClick={handleRefresh}
+              disabled={refreshing || loading || searching}
+              className="ml-auto w-9 h-9 rounded-[12px] bg-white/10 grid place-items-center text-white disabled:opacity-60"
               aria-label="Muat ulang"
             >
-              <RefreshCw className={`w-4 h-4 ${loading || searching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${refreshing || loading || searching ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -718,6 +728,7 @@ export default function Delivery() {
           cancelText=""
           variant={scanNotice?.variant || 'info'}
         />
+        <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
       </div>
     </div>
   );

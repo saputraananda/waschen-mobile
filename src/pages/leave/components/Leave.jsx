@@ -8,6 +8,8 @@ import getDisplayRole from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import {
   Sun,
   Calendar,
@@ -23,6 +25,7 @@ import {
   Trash2,
   Pencil,
   ImagePlus,
+  RefreshCw,
   Camera,
   Images,
   Eye
@@ -196,6 +199,11 @@ export default function Leave() {
     fetchStats();
   });
 
+  const softRefresh = useCallback(async () => {
+    await Promise.all([fetchList(), fetchStats(), fetchYears()]);
+  }, [fetchList, fetchStats, fetchYears]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
+
   // Sync endDate for non-cuti / half-day requests (single day only)
   useEffect(() => {
     if (form.leaveType !== 'cuti' || form.durationType !== 'full_day') {
@@ -339,7 +347,7 @@ export default function Leave() {
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="text-[15px] font-bold text-white leading-snug truncate tracking-tight">
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
@@ -347,6 +355,15 @@ export default function Leave() {
                 {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center flex-shrink-0 active:scale-95 transition-all disabled:opacity-60"
+              aria-label="Muat ulang"
+            >
+              <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           <div className="relative z-10 text-center py-2">
@@ -758,6 +775,7 @@ export default function Leave() {
         onCapture={handleCameraCapture}
         onClose={() => setCameraOpen(false)}
       />
+      <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
     </div>
   );
 }

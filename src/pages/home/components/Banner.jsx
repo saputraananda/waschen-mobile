@@ -9,6 +9,8 @@ export default function Banner({
   currentTime,
   onNavigateProfile,
   onInfoClick,
+  onRefresh,
+  refreshing = false,
   getInitials,
   formatTime,
   formatDate,
@@ -55,14 +57,25 @@ export default function Banner({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onInfoClick}
-          aria-label="Petunjuk penggunaan"
-          className="w-10 h-10 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md text-white flex items-center justify-center flex-shrink-0 transition-all active:scale-95 shadow-sm"
-        >
-          <Info className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="Muat ulang"
+            className="w-10 h-10 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md text-white flex items-center justify-center transition-all active:scale-95 shadow-sm disabled:opacity-60"
+          >
+            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={onInfoClick}
+            aria-label="Petunjuk penggunaan"
+            className="w-10 h-10 rounded-[18px] bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md text-white flex items-center justify-center transition-all active:scale-95 shadow-sm"
+          >
+            <Info className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex justify-between items-end relative z-10 pt-1">

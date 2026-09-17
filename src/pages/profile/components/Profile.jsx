@@ -18,6 +18,8 @@ import {
 import { User, Mail, Phone, MapPin, Edit3, LogOut, ChevronRight, CreditCard, Home, Building2, ScanFace, ShieldCheck, Trash2, CheckCircle2, Sparkles, Shirt, Droplets, Waves, Wind, RefreshCw, Download, Smartphone } from 'lucide-react';
 import { BIOMETRICS_UI_ENABLED } from '../../../utils/featureFlags.js';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -118,36 +120,37 @@ export default function Profile() {
         };
     }, []);
 
-    const refreshProfile = useCallback((email, empId, token) => {
+    const refreshProfile = useCallback(async (email, empId, token) => {
         const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-        axios.get(`/api/employee/profile-detail?email=${encodeURIComponent(email || '')}&employeeId=${empId || 0}`, config)
-            .then(res => {
-                if (res.data?.success && res.data?.data) {
-                    const dbData = res.data.data;
-                    setCurrentUser(prev => ({
-                        ...prev,
-                        ...dbData,
-                        fullName: dbData.full_name || dbData.fullName || prev.fullName,
-                        employee_code: dbData.employee_code || dbData.employeeCode || prev.employee_code,
-                        employeeCode: dbData.employee_code || dbData.employeeCode || prev.employeeCode,
-                        join_date: dbData.join_date || prev.join_date,
-                        phone: dbData.phone_number || prev.phone,
-                        phone_number: dbData.phone_number || prev.phone_number,
-                        address: dbData.address || prev.address,
-                        position: dbData.position_name || dbData.position || prev.position,
-                        department: dbData.department_name || dbData.department || prev.department
-                    }));
-                    const storedUser = localStorage.getItem('user');
-                    if (storedUser) {
-                        try {
-                            const parsed = JSON.parse(storedUser);
-                            Object.assign(parsed, dbData);
-                            localStorage.setItem('user', JSON.stringify(parsed));
-                        } catch (e) { /* ignore */ }
-                    }
+        try {
+            const res = await axios.get(`/api/employee/profile-detail?email=${encodeURIComponent(email || '')}&employeeId=${empId || 0}`, config);
+            if (res.data?.success && res.data?.data) {
+                const dbData = res.data.data;
+                setCurrentUser(prev => ({
+                    ...prev,
+                    ...dbData,
+                    fullName: dbData.full_name || dbData.fullName || prev.fullName,
+                    employee_code: dbData.employee_code || dbData.employeeCode || prev.employee_code,
+                    employeeCode: dbData.employee_code || dbData.employeeCode || prev.employeeCode,
+                    join_date: dbData.join_date || prev.join_date,
+                    phone: dbData.phone_number || prev.phone,
+                    phone_number: dbData.phone_number || prev.phone_number,
+                    address: dbData.address || prev.address,
+                    position: dbData.position_name || dbData.position || prev.position,
+                    department: dbData.department_name || dbData.department || prev.department
+                }));
+                const storedUser = localStorage.getItem('user');
+                if (storedUser) {
+                    try {
+                        const parsed = JSON.parse(storedUser);
+                        Object.assign(parsed, dbData);
+                        localStorage.setItem('user', JSON.stringify(parsed));
+                    } catch (e) { /* ignore */ }
                 }
-            })
-            .catch(() => { });
+            }
+        } catch {
+            /* ignore */
+        }
     }, []);
 
     useEffect(() => {
@@ -198,6 +201,25 @@ export default function Profile() {
         } catch (_) { /* ignore */ }
         if (token) refreshProfile(email, empId, token);
     });
+
+    const softRefresh = useCallback(async () => {
+        const token = localStorage.getItem('token');
+        const storedUser = localStorage.getItem('user');
+        let email = '';
+        let empId = 0;
+        let userId = null;
+        try {
+            const parsed = JSON.parse(storedUser || '{}');
+            email = parsed.email || parsed.user_email || '';
+            empId = parsed.employeeId || parsed.employee_id || 0;
+            userId = parsed.userId || parsed.user_id;
+        } catch (_) { /* ignore */ }
+        if (BIOMETRICS_UI_ENABLED && token) {
+            await fetchBiometricStatus(token, userId);
+        }
+        await refreshProfile(email, empId, token);
+    }, [refreshProfile]);
+    const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
     // Handler to register Face ID / Biometrics
     const handleRegisterBiometric = async () => {
@@ -466,6 +488,16 @@ export default function Profile() {
 
                     {/* Ambient Glow Spot */}
                     <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-gradient-to-br from-pink-500/20 to-transparent rounded-full blur-2xl pointer-events-none z-0" />
+
+                    <button
+                        type="button"
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="absolute top-[max(12px,env(safe-area-inset-top))] right-4 z-30 w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all disabled:opacity-60"
+                        aria-label="Muat ulang"
+                    >
+                        <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
 
                     {/* Laundry & Profile Floating Watermark Icons - Placed above background at z-10 */}
                     <div className="absolute inset-0 opacity-[0.12] pointer-events-none z-10 overflow-hidden select-none">
@@ -774,6 +806,7 @@ export default function Profile() {
 
                 {/* ===== BOTTOM NAVBAR ===== */}
                 <Navbar />
+                <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
 
                 {/* ===== CONFIRM LOGOUT MODAL ===== */}
                 <ConfirmModal

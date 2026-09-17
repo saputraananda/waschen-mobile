@@ -5,6 +5,8 @@ import Navbar from '../../../components/Navbar';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
+import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import {
   Calendar,
   Clock,
@@ -18,7 +20,8 @@ import {
   Loader2,
   Palmtree,
   Send,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
@@ -172,6 +175,11 @@ export default function History() {
     fetchDayOffs();
   });
 
+  const softRefresh = useCallback(async () => {
+    await Promise.all([fetchCalendar(), fetchDayOffs()]);
+  }, [fetchCalendar, fetchDayOffs]);
+  const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
+
   const firstDay = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const calCells = [];
@@ -273,6 +281,15 @@ export default function History() {
           <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-gradient-to-br from-pink-500/20 to-transparent rounded-full blur-2xl pointer-events-none z-0" />
 
           <div className="relative z-10 text-center mb-5 pt-1">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="absolute right-0 top-0 w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all disabled:opacity-60"
+              aria-label="Muat ulang"
+            >
+              <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
             <h1 className="text-[17.5px] font-black text-white tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
               Riwayat Absensi Karyawan
             </h1>
@@ -636,6 +653,7 @@ export default function History() {
           </div>
         )}
 
+        <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
         <Navbar />
       </div>
     </div>
