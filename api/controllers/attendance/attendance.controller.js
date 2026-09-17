@@ -194,6 +194,11 @@ export const checkLocation = async (req, res) => {
  * Fields: punch_type (in|out), lat, lng, outlet_id, selfie(file)
  */
 export const punchSelfie = async (req, res) => {
+  const uploadedName = req.file?.filename || null;
+  const cleanupUpload = async () => {
+    if (uploadedName) await deleteAttendancePhotoFile(uploadedName);
+  };
+
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Foto selfie wajib diambil dari kamera.' });
@@ -204,21 +209,25 @@ export const punchSelfie = async (req, res) => {
     const { punch_type, lat, lng, outlet_id } = req.body;
 
     if (!['in', 'out'].includes(punch_type)) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Parameter punch_type tidak valid' });
     }
 
     const timeStatus = getTimeStatus();
     if (!timeStatus.isOpen) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: timeStatus.lockReason });
     }
 
     const outletId = outlet_id || req.user.assignedOutletId;
     if (!outletId) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Outlet absensi belum dipilih.' });
     }
 
     const locCheck = await validateLocation(lat, lng, outletId);
     if (!locCheck.ok) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: locCheck.message });
     }
 
@@ -233,6 +242,7 @@ export const punchSelfie = async (req, res) => {
 
     if (punch_type === 'in') {
       if (rows.length > 0 && rows[0].check_in_time) {
+        await cleanupUpload();
         return res.status(400).json({ success: false, message: 'Anda sudah absen masuk hari ini.' });
       }
 
@@ -244,12 +254,16 @@ export const punchSelfie = async (req, res) => {
           [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name]
         );
       } else {
+        const oldInPhoto = rows[0].check_in_photo_name;
         await myWaschenPool.query(
           `UPDATE tr_attendance
            SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?, check_in_photo_path=?, check_in_photo_name=?
            WHERE employee_id=? AND work_date=?`,
           [userId, outletId, lat, lng, photo_path, photo_name, employeeId, workDate]
         );
+        if (oldInPhoto && oldInPhoto !== photo_name) {
+          await deleteAttendancePhotoFile(oldInPhoto);
+        }
       }
 
       emitDataChange({
@@ -263,18 +277,24 @@ export const punchSelfie = async (req, res) => {
     }
 
     if (rows.length === 0 || !rows[0].check_in_time) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Anda belum absen masuk hari ini.' });
     }
     if (rows[0].check_out_time) {
+      await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Anda sudah absen keluar hari ini.' });
     }
 
+    const oldOutPhoto = rows[0].check_out_photo_name;
     await myWaschenPool.query(
       `UPDATE tr_attendance
        SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?, check_out_photo_path=?, check_out_photo_name=?, outlet_id=?
        WHERE employee_id=? AND work_date=?`,
       [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
     );
+    if (oldOutPhoto && oldOutPhoto !== photo_name) {
+      await deleteAttendancePhotoFile(oldOutPhoto);
+    }
 
     emitDataChange({
       domain: 'attendance',
@@ -286,6 +306,7 @@ export const punchSelfie = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Absen keluar berhasil dicatat.' });
   } catch (error) {
     console.error('punchSelfie error:', error);
+    await cleanupUpload();
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,

@@ -205,7 +205,9 @@ export const getKasbonProofFilePath = (fileName) => {
   return path.join(ensureUploadFolder(KASBON_UPLOAD_SUBFOLDER), fileName);
 };
 
-export const deleteKasbonProofFile = async (fileName) => {
+export const deleteKasbonProofFile = async (fileNameOrPath) => {
+  if (!fileNameOrPath) return;
+  const fileName = path.basename(String(fileNameOrPath).replace(/\\/g, '/'));
   const filePath = getKasbonProofFilePath(fileName);
   if (!filePath) return;
   try {
