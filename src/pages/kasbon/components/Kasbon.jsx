@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
+import { todayWibISO, formatWibDateLong } from '../../../utils/wib.js';
 import {
   CreditCard,
   Banknote,
@@ -53,19 +54,28 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => todayWibISO();
 
-const formatDateShort = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-};
+const formatDateShort = (v) => formatWibDateLong(v) || '';
 
 const formatDateTime = (v) => {
   if (!v) return '';
-  const d = new Date(v);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // formatWibDateTime is dd/mm/yyyy HH:mm — for list we want short month
+  const d = valueToDate(v);
+  if (!d) return '';
+  return d.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
+
+function valueToDate(v) {
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 const formatRupiah = (n) => {
   const num = Number(n);

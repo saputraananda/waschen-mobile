@@ -1,14 +1,8 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { emitDataChange } from '../../socket/io.js';
+import { toWibDateKey, formatWibTime, getWibYearMonth } from '../../utils/wib.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
-
-const toDateKey = (d) => {
-  if (!d) return null;
-  const x = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(x.getTime())) return String(d).slice(0, 10);
-  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
-};
 
 const leaveLabel = (type) => {
   if (type === 'sakit') return 'Sakit';
@@ -21,10 +15,13 @@ const dayOffLabel = (status) => (status === 'pengajuan' ? 'Pengajuan Libur' : 'J
 /** Expand date range inclusive → array of YYYY-MM-DD */
 const expandDateRange = (start, end) => {
   const out = [];
-  const s = new Date(`${toDateKey(start)}T12:00:00`);
-  const e = new Date(`${toDateKey(end)}T12:00:00`);
-  for (let cur = new Date(s); cur <= e; cur.setDate(cur.getDate() + 1)) {
-    out.push(toDateKey(cur));
+  const startKey = toWibDateKey(start);
+  const endKey = toWibDateKey(end);
+  if (!startKey || !endKey) return out;
+  const s = new Date(`${startKey}T12:00:00+07:00`);
+  const e = new Date(`${endKey}T12:00:00+07:00`);
+  for (let cur = new Date(s); cur <= e; cur.setUTCDate(cur.getUTCDate() + 1)) {
+    out.push(toWibDateKey(cur));
   }
   return out;
 };
@@ -33,7 +30,7 @@ const monthBounds = (year, month) => {
   const y = Number(year);
   const m = Number(month);
   const start = `${y}-${pad2(m)}-01`;
-  const lastDay = new Date(y, m, 0).getDate();
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const end = `${y}-${pad2(m)}-${pad2(lastDay)}`;
   return { start, end, year: y, month: m };
 };
@@ -42,13 +39,6 @@ const buildPhotoUrl = (req, photoPath, photoName) => {
   if (!photoPath || !photoName) return null;
   const normalized = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
   return `${req.protocol}://${req.get('host')}${normalized}/${encodeURIComponent(photoName)}`;
-};
-
-const formatTime = (dt) => {
-  if (!dt) return null;
-  const d = new Date(dt);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
 async function getDayOffPolicy() {
@@ -77,9 +67,9 @@ async function countDayOffInMonth(employeeId, year, month, statuses = ['pengajua
 export const getCalendar = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const now = new Date();
-    const year = parseInt(req.query.year || now.getFullYear(), 10);
-    const month = parseInt(req.query.month || now.getMonth() + 1, 10);
+    const { year: wibYear, month: wibMonth } = getWibYearMonth();
+    const year = parseInt(req.query.year || wibYear, 10);
+    const month = parseInt(req.query.month || wibMonth, 10);
 
     if (month < 1 || month > 12 || year < 2000) {
       return res.status(422).json({ success: false, message: 'Bulan/tahun tidak valid' });
@@ -117,15 +107,15 @@ export const getCalendar = async (req, res) => {
     const stats = { hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 };
 
     attendanceRows[0].forEach((row) => {
-      const key = toDateKey(row.work_date);
+      const key = toWibDateKey(row.work_date);
       if (!key) return;
       if (!row.check_in_time) return;
       days[key] = {
         date: key,
         kind: 'hadir',
         label: 'Hadir',
-        check_in: formatTime(row.check_in_time),
-        check_out: formatTime(row.check_out_time),
+        check_in: formatWibTime(row.check_in_time),
+        check_out: formatWibTime(row.check_out_time),
         check_in_photo_url: buildPhotoUrl(req, row.check_in_photo_path, row.check_in_photo_name),
         check_out_photo_url: buildPhotoUrl(req, row.check_out_photo_path, row.check_out_photo_name),
         outlet_id: row.outlet_id
@@ -155,7 +145,7 @@ export const getCalendar = async (req, res) => {
     });
 
     dayOffRows[0].forEach((row) => {
-      const key = toDateKey(row.off_date);
+      const key = toWibDateKey(row.off_date);
       if (!key || key < start || key > end) return;
       if (days[key]?.kind === 'hadir' || days[key]?.kind === 'leave') return;
 
@@ -167,7 +157,7 @@ export const getCalendar = async (req, res) => {
         reason: row.reason,
         day_off_id: row.day_off_id,
         day_off_status: row.status,
-        requested_date: toDateKey(row.requested_date),
+        requested_date: toWibDateKey(row.requested_date),
         source: row.source
       };
       if (isPending) stats.pengajuan_libur += 1;
@@ -175,8 +165,8 @@ export const getCalendar = async (req, res) => {
     });
 
     // Hari lampau tanpa absensi / izin / libur → tidak masuk (alpha / lupa absen)
-    const today = toDateKey(new Date());
-    const lastDayNum = new Date(year, month, 0).getDate();
+    const today = toWibDateKey(new Date());
+    const lastDayNum = new Date(Date.UTC(year, month, 0)).getUTCDate();
     for (let d = 1; d <= lastDayNum; d++) {
       const key = `${year}-${pad2(month)}-${pad2(d)}`;
       if (key >= today) continue;
@@ -213,9 +203,9 @@ export const getCalendar = async (req, res) => {
 export const getDayOffs = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const now = new Date();
-    const year = parseInt(req.query.year || now.getFullYear(), 10);
-    const month = parseInt(req.query.month || now.getMonth() + 1, 10);
+    const { year: wibYear, month: wibMonth } = getWibYearMonth();
+    const year = parseInt(req.query.year || wibYear, 10);
+    const month = parseInt(req.query.month || wibMonth, 10);
     const status = req.query.status || 'disetujui';
 
     let statusClause = "status IN ('disetujui', 'pengajuan')";
@@ -252,24 +242,24 @@ export const requestDayOff = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
     const { off_date: offDateRaw, reason } = req.body;
-    const offDate = toDateKey(offDateRaw);
+    const offDate = toWibDateKey(offDateRaw);
     const reasonTrim = String(reason || '').trim();
 
     if (!offDate || !reasonTrim) {
       return res.status(422).json({ success: false, message: 'Tanggal dan alasan libur wajib diisi' });
     }
 
-    const d = new Date(`${offDate}T12:00:00`);
-    const scheduleYear = d.getFullYear();
-    const scheduleMonth = d.getMonth() + 1;
+    const d = new Date(`${offDate}T12:00:00+07:00`);
+    const scheduleYear = d.getUTCFullYear();
+    const scheduleMonth = d.getUTCMonth() + 1;
 
     const policy = await getDayOffPolicy();
-    const today = toDateKey(new Date());
+    const today = toWibDateKey(new Date());
     if (offDate < today && !policy.allow_past_date_request) {
       return res.status(422).json({ success: false, message: 'Tidak dapat mengajukan libur untuk tanggal lampau' });
     }
 
-    const diffDays = Math.floor((d - new Date(`${today}T12:00:00`)) / 86400000);
+    const diffDays = Math.floor((d - new Date(`${today}T12:00:00+07:00`)) / 86400000);
     if (diffDays >= 0 && diffDays < Number(policy.min_notice_days || 0)) {
       return res.status(422).json({
         success: false,

@@ -23,6 +23,7 @@ import {
   Trash2,
   RefreshCw
 } from 'lucide-react';
+import { todayWibISO } from '../../../utils/wib.js';
 
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
 api.interceptors.request.use((config) => {
@@ -98,10 +99,14 @@ const mapDayRecord = (raw) => {
 
 export default function History() {
   const navigate = useNavigate();
-  const now = new Date();
+  const todayKey = todayWibISO();
+  const [ty, tm, td] = todayKey.split('-').map(Number);
+  const nowMonth = tm - 1;
+  const nowYear = ty;
+  const nowDate = td;
 
-  const [calMonth, setCalMonth] = useState(now.getMonth());
-  const [calYear, setCalYear] = useState(now.getFullYear());
+  const [calMonth, setCalMonth] = useState(nowMonth);
+  const [calYear, setCalYear] = useState(nowYear);
   const [selectedDate, setSelectedDate] = useState(null);
 
   const [calendarDays, setCalendarDays] = useState({});
@@ -118,8 +123,8 @@ export default function History() {
   const [requestLoading, setRequestLoading] = useState(false);
   const [requestError, setRequestError] = useState('');
 
-  const [tempPickerMonth, setTempPickerMonth] = useState(now.getMonth());
-  const [tempPickerYear, setTempPickerYear] = useState(now.getFullYear());
+  const [tempPickerMonth, setTempPickerMonth] = useState(nowMonth);
+  const [tempPickerYear, setTempPickerYear] = useState(nowYear);
 
   useLockBodyScroll(showPickerModal || showRequestModal);
 
@@ -215,7 +220,7 @@ export default function History() {
     setShowPickerModal(false);
   };
 
-  const isToday = (d) => d === now.getDate() && calMonth === now.getMonth() && calYear === now.getFullYear();
+  const isToday = (d) => d === nowDate && calMonth === nowMonth && calYear === nowYear;
 
   const openRequestModal = () => {
     setRequestReason('');
@@ -261,7 +266,6 @@ export default function History() {
     ? monthLogKeys.filter((k) => ['libur', 'libur_pengajuan'].includes(calendarDays[k]?.kind))
     : monthLogKeys;
 
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const canRequestDayOff = selectedKey && selectedKey >= todayKey && !selectedRecord && !loading;
 
   const liburUsed = (stats.libur || 0) + (stats.pengajuan_libur || 0);

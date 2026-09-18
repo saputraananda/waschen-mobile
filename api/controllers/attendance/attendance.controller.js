@@ -1,26 +1,14 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
+import { getAttendanceWorkDate, getWibHoursMinutes } from '../../utils/wib.js';
 
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 const MAX_DIST_M = 1000;
-
-const getWibNow = () => new Date(Date.now() + WIB_OFFSET_MS);
-
-/** Work-date: 00:00–03:59 WIB masih dihitung hari sebelumnya */
-const getWorkDate = () => {
-  const wib = getWibNow();
-  const totalMin = wib.getUTCHours() * 60 + wib.getUTCMinutes();
-  if (totalMin < 240) {
-    return new Date(wib.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  }
-  return wib.toISOString().slice(0, 10);
-};
 
 /** Jam absen terkunci 01:00–03:59 WIB; buka 05:00–23:59 & 00:00–00:59 */
 export const getTimeStatus = () => {
-  const wib = getWibNow();
-  const totalMin = wib.getUTCHours() * 60 + wib.getUTCMinutes();
+  const { hours, minutes } = getWibHoursMinutes();
+  const totalMin = hours * 60 + minutes;
 
   const isLocked = totalMin >= 60 && totalMin < 240;
   const isOpen = (totalMin >= 300 && totalMin <= 1439) || (totalMin >= 0 && totalMin < 60);
@@ -32,7 +20,7 @@ export const getTimeStatus = () => {
     lockReason = 'Absensi hanya dapat dilakukan pukul 05:00–24:00 WIB.';
   }
 
-  return { isOpen: isOpen && !isLocked, isLocked, lockReason, workDate: getWorkDate() };
+  return { isOpen: isOpen && !isLocked, isLocked, lockReason, workDate: getAttendanceWorkDate() };
 };
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -95,7 +83,7 @@ async function validateLocation(lat, lng, outletId) {
 export const getTodayAttendance = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const workDate = getWorkDate();
+    const workDate = getAttendanceWorkDate();
     const timeStatus = getTimeStatus();
 
     const [rows] = await myWaschenPool.query(
@@ -231,7 +219,7 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: locCheck.message });
     }
 
-    const workDate = getWorkDate();
+    const workDate = getAttendanceWorkDate();
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
     const photo_name = req.file.filename;
 
@@ -331,7 +319,7 @@ export const deletePunch = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Parameter punch_type tidak valid' });
     }
 
-    const workDate = getWorkDate();
+    const workDate = getAttendanceWorkDate();
     let photoName = null;
 
     if (punch_type === 'in') {

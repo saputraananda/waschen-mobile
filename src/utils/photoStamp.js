@@ -1,11 +1,5 @@
 import formatName from './FormatName.js';
 
-const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-const BULAN = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-];
-
 export const STAGE_PROCESS_LABEL = {
   frontliner: 'Frontliner',
   washing: 'Pencucian',
@@ -18,9 +12,20 @@ export const STAGE_PROCESS_LABEL = {
 /** Contoh: Jumat, 13 April 2023, 20:30 WIB */
 export function formatPhotoTimestampWib(date = new Date()) {
   const d = new Date(date);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${HARI[d.getDay()]}, ${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm} WIB`;
+  const parts = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  const hh = get('hour');
+  const mm = get('minute');
+  return `${get('weekday')}, ${get('day')} ${get('month')} ${get('year')}, ${hh}:${mm} WIB`;
 }
 
 export function getCurrentUserName() {

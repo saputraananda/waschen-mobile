@@ -1,5 +1,6 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { emitDataChange } from '../../socket/io.js';
+import { toWibDateKey, formatWibSqlDateTime } from '../../utils/wib.js';
 
 /**
  * =============================================================================
@@ -23,14 +24,7 @@ import { emitDataChange } from '../../socket/io.js';
 
 const CLOSED_ACTIVE = ['pengajuan', 'disetujui'];
 
-const toDateOnly = (v) => {
-  if (!v) return null;
-  if (v instanceof Date) {
-    return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`;
-  }
-  const s = String(v);
-  return s.length >= 10 ? s.slice(0, 10) : s;
-};
+const toDateOnly = (v) => toWibDateKey(v);
 
 const toTimeOnly = (v) => {
   if (!v) return null;
@@ -43,18 +37,16 @@ const toTimeOnly = (v) => {
   return `${hh}:${mm}:${ss}`;
 };
 
-const pad2 = (n) => String(n).padStart(2, '0');
+const formatSqlDateTime = (d = new Date()) => formatWibSqlDateTime(d);
 
-const formatSqlDateTime = (d = new Date()) => {
-  const x = d instanceof Date ? d : new Date(d);
-  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())} ${pad2(x.getHours())}:${pad2(x.getMinutes())}:${pad2(x.getSeconds())}`;
-};
+const wibTimeOf = (d = new Date()) => formatWibSqlDateTime(d).slice(11); // HH:mm:ss
 
 const parseSqlDateTime = (v) => {
   if (!v) return null;
   if (v instanceof Date) return v;
   const s = String(v).replace('T', ' ').slice(0, 19);
-  const d = new Date(s.replace(' ', 'T'));
+  // Anggap wall-clock WIB jika tidak ada offset
+  const d = new Date(s.includes('+') || s.endsWith('Z') ? s.replace(' ', 'T') : `${s.replace(' ', 'T')}+07:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
@@ -62,9 +54,7 @@ const isSameCalendarDay = (a, b = new Date()) => {
   const da = a instanceof Date ? a : parseSqlDateTime(a);
   const db = b instanceof Date ? b : parseSqlDateTime(b);
   if (!da || !db) return true;
-  return da.getFullYear() === db.getFullYear()
-    && da.getMonth() === db.getMonth()
-    && da.getDate() === db.getDate();
+  return toWibDateKey(da) === toWibDateKey(db);
 };
 
 const mapRow = (row) => {
@@ -274,7 +264,7 @@ export const startOvertime = async (req, res) => {
     const now = new Date();
     const startAt = formatSqlDateTime(now);
     const overtimeDate = toDateOnly(now);
-    const startTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    const startTime = wibTimeOf(now);
     const reason = String(req.body.reason || '').trim().slice(0, 255);
     if (reason.length < 5) {
       return res.status(422).json({ success: false, message: 'Alasan lembur wajib diisi minimal 5 karakter' });
@@ -313,7 +303,7 @@ export const endOvertime = async (req, res) => {
 
     const now = new Date();
     const endAt = formatSqlDateTime(now);
-    const endTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    const endTime = wibTimeOf(now);
     const reasonRaw = String(req.body.reason || active.reason || '').trim();
     const reason = reasonRaw.length >= 5 ? reasonRaw : (active.reason || 'Sesi lembur');
 

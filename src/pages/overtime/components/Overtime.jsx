@@ -9,6 +9,7 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
+import { todayWibISO, formatWibDateLong } from '../../../utils/wib.js';
 import {
   ArrowLeft,
   Plus,
@@ -53,21 +54,21 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const todayISO = () => todayWibISO();
 
-const formatDateShort = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-};
+const formatDateShort = (v) => formatWibDateLong(v) || '';
 
 const formatDateTime = (v) => {
   if (!v) return '';
   const d = new Date(v);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
 
 const fmtTime = (t) => {

@@ -9,6 +9,7 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
+import { formatWibTime, formatWibDateTime } from '../../../utils/wib.js';
 import {
   Calendar,
   Clock,
@@ -47,21 +48,11 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 }
 
 function formatTime(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  return formatWibTime(v);
 }
 
 function formatDateFull(v) {
-  if (!v) return '';
-  const d = new Date(v);
-  return d.toLocaleString('id-ID', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return formatWibDateTime(v);
 }
 
 function getPhotoUrl(record, type) {

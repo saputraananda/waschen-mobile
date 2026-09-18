@@ -1,14 +1,12 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { LEAVE_UPLOAD_PUBLIC_PATH, deleteLeaveDocFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
+import { toWibDateKey, getWibYearMonth } from '../../utils/wib.js';
 
 const LEAVE_TYPES = ['izin', 'sakit', 'cuti'];
 const DURATION_TYPES = ['full_day', 'half_day_morning', 'half_day_afternoon'];
 
-const getTodayDate = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const getTodayDate = () => toWibDateKey(new Date());
 
 const buildDoctorNoteUrl = (req, row) => {
   if (!row?.doctor_note_path || !row?.doctor_note_name) return null;
@@ -69,7 +67,7 @@ export const getLeaveYears = async (req, res) => {
       `SELECT DISTINCT YEAR(start_date) AS yr FROM tr_leave WHERE employee_id = ? ORDER BY yr DESC`,
       [employeeId]
     );
-    const currentYear = new Date().getFullYear();
+    const currentYear = getWibYearMonth().year;
     const years = rows.map((r) => Number(r.yr));
     if (!years.includes(currentYear)) years.unshift(currentYear);
     return res.status(200).json({ success: true, message: 'OK', data: years });

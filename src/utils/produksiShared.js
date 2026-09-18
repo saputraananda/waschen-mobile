@@ -26,13 +26,21 @@ export const isKiloanItem = (item) =>
 export const formatDateTime = (v) => {
   if (!v) return '';
   const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
   });
 };
 
 export const getGreeting = () => {
-  const h = new Date().getHours();
+  const h = Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      hour12: false
+    }).formatToParts(new Date()).find((p) => p.type === 'hour')?.value || 0
+  );
   if (h < 11) return 'pagi';
   if (h < 15) return 'siang';
   return 'sore';

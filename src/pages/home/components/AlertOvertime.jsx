@@ -16,7 +16,11 @@ export default function AlertOvertime({
   if (!active) return null;
 
   const startLabel = active.start_at
-    ? new Date(String(active.start_at).replace(' ', 'T')).toLocaleString('id-ID', {
+    ? new Date(String(active.start_at).includes('T') || String(active.start_at).includes('+') || String(active.start_at).endsWith('Z')
+      ? active.start_at
+      : String(active.start_at).replace(' ', 'T') + '+07:00'
+    ).toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
       day: 'numeric',
       month: 'short',
       hour: '2-digit',

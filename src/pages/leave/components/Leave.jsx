@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
+import { todayWibISO, formatWibDateLong } from '../../../utils/wib.js';
 import {
   Sun,
   Calendar,
@@ -61,13 +62,9 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => todayWibISO();
 
-const formatDateShort = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-};
+const formatDateShort = (v) => formatWibDateLong(v) || '';
 
 const countDays = (start, end) => {
   if (!start || !end) return 0;
