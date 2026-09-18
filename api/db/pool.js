@@ -10,6 +10,7 @@ export const mainPool = mysql.createPool({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '',
   database: process.env.DB_NAME || 'waschen',
+  timezone: '+07:00', // WIB — tanpa ini DATETIME dianggap UTC lalu tampil +7 jam di UI
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -23,6 +24,7 @@ export const myWaschenPool = mysql.createPool({
   user: process.env.DB_USER_MY_WASCHEN || process.env.DB_USER || 'root',
   password: process.env.DB_PASS_MY_WASCHEN || process.env.DB_PASS || '',
   database: process.env.DB_NAME_MY_WASCHEN || 'my_waschen_prod',
+  timezone: '+07:00', // WIB — tanpa ini DATETIME dianggap UTC lalu tampil +7 jam di UI
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
