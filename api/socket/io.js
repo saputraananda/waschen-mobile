@@ -62,7 +62,9 @@ export function initSocket(httpServer) {
     });
   });
 
-  console.log('[socket.io] realtime ready');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[socket.io] realtime ready');
+  }
   return io;
 }
 

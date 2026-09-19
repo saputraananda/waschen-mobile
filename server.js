@@ -59,10 +59,12 @@ if (process.env.NODE_ENV === 'production') {
 initSocket(server);
 
 server.listen(PORT, () => {
-  console.log(`=========================================`);
-  console.log(`  Waschen Mobile API + Socket.IO`);
-  console.log(`  Port:   http://localhost:${PORT}`);
-  console.log(`=========================================`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`=========================================`);
+    console.log(`  Waschen Mobile API + Socket.IO`);
+    console.log(`  Port:   http://localhost:${PORT}`);
+    console.log(`=========================================`);
+  }
 });
 
 export default app;
