@@ -10,6 +10,8 @@ import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import { formatWibTime, formatWibDateTime } from '../../../utils/wib.js';
+import GroomingSection from './GroomingSection.jsx';
+import CleanlinessTab from './CleanlinessTab.jsx';
 import {
   Calendar,
   Clock,
@@ -25,7 +27,8 @@ import {
   Eye,
   Trash2,
   LogIn,
-  LogOut
+  LogOut,
+  Sparkles
 } from 'lucide-react';
 
 const MAX_DIST_M = 1000;
@@ -107,7 +110,7 @@ export default function Attendance() {
   const [videoReady, setVideoReady] = useState(false);
   const [facingMode, setFacingMode] = useState('user');
   const [cameraStreamTick, setCameraStreamTick] = useState(0);
-  const [pendingPunch, setPendingPunch] = useState(null);
+  const [pendingCapture, setPendingCapture] = useState(null); // { kind: 'punch'|'grooming'|'cleanliness', punchType?, stepCode?, stepLabel?, coord? }
 
   const [openingCamera, setOpeningCamera] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,6 +121,8 @@ export default function Attendance() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deletingPunch, setDeletingPunch] = useState(null);
+  const [activeTab, setActiveTab] = useState('absensi');
+  const [gcData, setGcData] = useState(null);
 
   const canUseCamera = useMemo(
     () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
@@ -143,6 +148,17 @@ export default function Attendance() {
     setPageError(null);
     setSelectedOutletId((prev) => prev || data?.assignedOutletId || null);
     return data;
+  }, []);
+
+  const fetchGc = useCallback(async () => {
+    try {
+      const res = await api.get('/attendance/grooming-cleanliness');
+      setGcData(res.data?.data || null);
+      return res.data?.data;
+    } catch (_) {
+      setGcData(null);
+      return null;
+    }
   }, []);
 
   const handleAuthError = useCallback((error) => {
@@ -187,7 +203,8 @@ export default function Attendance() {
     const loadPage = async () => {
       const [outletResult, todayResult] = await Promise.allSettled([
         api.get('/attendance/outlets'),
-        fetchToday()
+        fetchToday(),
+        fetchGc()
       ]);
 
       if (outletResult.status === 'fulfilled') {
@@ -205,22 +222,24 @@ export default function Attendance() {
     };
 
     loadPage();
-  }, [navigate, fetchToday, handleAuthError]);
+  }, [navigate, fetchToday, fetchGc, handleAuthError]);
 
   useRealtimeRefresh(['attendance', 'leave'], () => {
     fetchToday();
+    fetchGc();
   });
 
   const softRefresh = useCallback(async () => {
     const [outletResult] = await Promise.allSettled([
       api.get('/attendance/outlets'),
-      fetchToday()
+      fetchToday(),
+      fetchGc()
     ]);
     if (outletResult.status === 'fulfilled') {
       setOutlets(outletResult.value.data?.data || []);
     }
     setGpsRefreshKey((k) => k + 1);
-  }, [fetchToday]);
+  }, [fetchToday, fetchGc]);
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useEffect(() => {
@@ -440,19 +459,64 @@ export default function Attendance() {
     }
 
     setOpeningCamera(true);
-    setPendingPunch({ punchType, coord });
+    setPendingCapture({ kind: 'punch', punchType, coord });
     const ok = await openCamera(facingMode);
     setOpeningCamera(false);
     if (!ok) {
       setMsg({ text: 'Kamera tidak bisa dibuka.', type: 'error' });
-      setPendingPunch(null);
+      setPendingCapture(null);
     }
   };
 
+  const startGroomingCapture = async (stepCode, stepLabel, opts = {}) => {
+    if (opts.retake) {
+      setConfirmDelete({
+        kind: 'grooming',
+        stepCode,
+        stepLabel,
+        photoId: opts.photoId || null,
+        label: stepLabel || stepCode
+      });
+      return;
+    }
+    setOpeningCamera(true);
+    setPendingCapture({ kind: 'grooming', stepCode, stepLabel, coord: gpsCoord });
+    const ok = await openCamera('environment');
+    setOpeningCamera(false);
+    if (!ok) {
+      setPendingCapture(null);
+    }
+  };
+
+  const startCleanlinessCapture = async () => {
+    setOpeningCamera(true);
+    setPendingCapture({ kind: 'cleanliness', coord: gpsCoord });
+    const ok = await openCamera('environment');
+    setOpeningCamera(false);
+    if (!ok) {
+      setPendingCapture(null);
+    }
+  };
+
+  const requestDeleteCleanliness = (photo) => {
+    setConfirmDelete({
+      kind: 'cleanliness',
+      photoId: photo.id,
+      label: photo.uploaded_by_name || 'Kebersihan'
+    });
+  };
+
+  const submitGroomingReason = async (reason) => {
+    await api.post('/attendance/grooming-reason', { reason });
+    await fetchGc();
+  };
+
   const confirmSelfie = async () => {
-    if (!pendingPunch || isSubmitting) return;
-    const { punchType, coord: cachedCoord } = pendingPunch;
-    const setMsg = punchType === 'in' ? setMsgIn : setMsgOut;
+    if (!pendingCapture || isSubmitting) return;
+    const kind = pendingCapture.kind;
+    const setMsg = kind === 'punch'
+      ? (pendingCapture.punchType === 'in' ? setMsgIn : setMsgOut)
+      : null;
 
     try {
       if (!videoReady) {
@@ -469,31 +533,52 @@ export default function Attendance() {
         return;
       }
 
-      const coord = (await getFreshCoord(cachedCoord)) || cachedCoord;
-      if (!coord) {
-        setCameraErr('GPS tidak tersedia. Aktifkan lokasi lalu coba lagi.');
-        return;
+      const coord = (await getFreshCoord(pendingCapture.coord)) || pendingCapture.coord || gpsCoord;
+
+      if (kind === 'punch') {
+        if (!coord) {
+          setCameraErr('GPS tidak tersedia. Aktifkan lokasi lalu coba lagi.');
+          return;
+        }
+        const form = new FormData();
+        form.append('punch_type', pendingCapture.punchType);
+        form.append('lat', String(coord.lat));
+        form.append('lng', String(coord.lng));
+        form.append('outlet_id', String(activeOutletId));
+        form.append('selfie', blob, 'selfie.jpg');
+        const res = await api.post('/attendance/punch-selfie', form);
+        setMsg?.({ text: res.data.message, type: 'success' });
+        await Promise.all([fetchToday(), fetchGc()]);
+      } else if (kind === 'grooming') {
+        const form = new FormData();
+        form.append('step_code', pendingCapture.stepCode);
+        if (coord) {
+          form.append('lat', String(coord.lat));
+          form.append('lng', String(coord.lng));
+        }
+        form.append('selfie', blob, 'grooming.jpg');
+        await api.post('/attendance/grooming-photo', form);
+        await fetchGc();
+      } else if (kind === 'cleanliness') {
+        const form = new FormData();
+        if (coord) {
+          form.append('lat', String(coord.lat));
+          form.append('lng', String(coord.lng));
+        }
+        form.append('photos', blob, 'cleanliness.jpg');
+        await api.post('/attendance/cleanliness-photos', form);
+        await fetchGc();
       }
 
-      const form = new FormData();
-      form.append('punch_type', punchType);
-      form.append('lat', String(coord.lat));
-      form.append('lng', String(coord.lng));
-      form.append('outlet_id', String(activeOutletId));
-      form.append('selfie', blob, 'selfie.jpg');
-
-      const res = await api.post('/attendance/punch-selfie', form);
-      setMsg({ text: res.data.message, type: 'success' });
-      await fetchToday();
       stopCamera();
       setCameraOpen(false);
-      setPendingPunch(null);
+      setPendingCapture(null);
     } catch (e) {
       if (handleAuthError(e)) return;
       const errMsg = e.code === 'ECONNABORTED'
         ? 'Koneksi timeout. Periksa jaringan lalu coba lagi.'
-        : (e.response?.data?.message || e.message || 'Gagal menyimpan absensi');
-      setMsg({ text: errMsg, type: 'error' });
+        : (e.response?.data?.message || e.message || 'Gagal menyimpan foto');
+      setMsg?.({ text: errMsg, type: 'error' });
       setCameraErr(errMsg);
     } finally {
       setIsSubmitting(false);
@@ -503,7 +588,7 @@ export default function Attendance() {
   const cancelCamera = () => {
     stopCamera();
     setCameraOpen(false);
-    setPendingPunch(null);
+    setPendingCapture(null);
     setIsSubmitting(false);
     setOpeningCamera(false);
     setCameraErr(null);
@@ -526,6 +611,61 @@ export default function Attendance() {
 
   const handleDeletePunch = async () => {
     if (!confirmDelete || deletingPunch) return;
+
+    if (confirmDelete.kind === 'grooming') {
+      const { stepCode, stepLabel, photoId } = confirmDelete;
+      setDeletingPunch('grooming');
+      try {
+        await api.post('/attendance/grooming-photo/delete', {
+          step_code: stepCode,
+          grooming_photo_id: photoId || undefined
+        });
+        setConfirmDelete(null);
+        await fetchGc();
+        setOpeningCamera(true);
+        setPendingCapture({
+          kind: 'grooming',
+          stepCode,
+          stepLabel,
+          coord: gpsCoord
+        });
+        const ok = await openCamera('environment');
+        setOpeningCamera(false);
+        if (!ok) setPendingCapture(null);
+      } catch (e) {
+        if (handleAuthError(e)) return;
+        setMsgIn({
+          text: e.response?.data?.message || 'Gagal menghapus foto grooming',
+          type: 'error'
+        });
+        setConfirmDelete(null);
+      } finally {
+        setDeletingPunch(null);
+      }
+      return;
+    }
+
+    if (confirmDelete.kind === 'cleanliness') {
+      setDeletingPunch('cleanliness');
+      try {
+        await api.post('/attendance/cleanliness-photos/delete', {
+          cleanliness_photo_id: confirmDelete.photoId
+        });
+        setConfirmDelete(null);
+        await fetchGc();
+      } catch (e) {
+        if (handleAuthError(e)) return;
+        setMsgIn({
+          text: e.response?.data?.message || 'Gagal menghapus foto kebersihan',
+          type: 'error'
+        });
+        setConfirmDelete(null);
+      } finally {
+        setDeletingPunch(null);
+      }
+      return;
+    }
+
     const { punchType } = confirmDelete;
     const setMsg = punchType === 'in' ? setMsgIn : setMsgOut;
 
@@ -535,6 +675,7 @@ export default function Attendance() {
       setMsg({ text: res.data.message, type: 'success' });
       setConfirmDelete(null);
       await fetchToday();
+      await fetchGc();
     } catch (e) {
       if (handleAuthError(e)) return;
       setMsg({
@@ -618,11 +759,46 @@ export default function Attendance() {
 
         {/* Content */}
         <div className="w-full relative z-10 px-4 -mt-6 pb-2">
+          {!pageLoading && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1 mb-3 flex gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('absensi')}
+                className={`flex-1 h-9 rounded-xl text-[12px] font-extrabold transition ${
+                  activeTab === 'absensi' ? 'bg-[#5f1340] text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Absensi
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('kebersihan')}
+                className={`flex-1 h-9 rounded-xl text-[12px] font-extrabold transition flex items-center justify-center gap-1 ${
+                  activeTab === 'kebersihan' ? 'bg-[#5f1340] text-white' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Kebersihan
+              </button>
+            </div>
+          )}
+
           {pageLoading ? (
             <div className="bg-white rounded-[24px] shadow border border-slate-100 p-8 flex flex-col items-center gap-3">
               <Loader2 className="w-8 h-8 text-[#5f1340] animate-spin" />
               <span className="text-[12px] text-slate-400 font-bold">Memuat data absensi...</span>
             </div>
+          ) : activeTab === 'kebersihan' ? (
+            <CleanlinessTab
+              cleanliness={gcData?.cleanliness}
+              hasCheckIn={!!record?.check_in_time}
+              canUseCamera={canUseCamera}
+              openingCamera={openingCamera}
+              isSubmitting={isSubmitting || !!deletingPunch}
+              onCapture={startCleanlinessCapture}
+              onPreview={setPhotoPreview}
+              onDeletePhoto={requestDeleteCleanliness}
+            />
           ) : (
             <>
               <div className="bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 p-5 flex flex-col items-center gap-4 text-center">
@@ -632,7 +808,10 @@ export default function Attendance() {
                     <div className="min-w-0">
                       <span className="text-[11.5px] text-rose-700 font-bold block">{pageError}</span>
                       <button
-                        onClick={() => { setPageLoading(true); fetchToday().finally(() => setPageLoading(false)); }}
+                        onClick={() => {
+                          setPageLoading(true);
+                          Promise.all([fetchToday(), fetchGc()]).finally(() => setPageLoading(false));
+                        }}
                         className="text-[10.5px] text-rose-600 font-extrabold mt-1 underline"
                       >
                         Coba muat ulang
@@ -851,11 +1030,29 @@ export default function Attendance() {
                 </p>
               </div>
 
+              {gcData?.grooming?.required && (
+                <GroomingSection
+                  grooming={gcData.grooming}
+                  hasCheckIn={!!record?.check_in_time}
+                  canUseCamera={canUseCamera}
+                  openingCamera={openingCamera}
+                  onCaptureStep={startGroomingCapture}
+                  onSubmitReason={submitGroomingReason}
+                  onPreview={setPhotoPreview}
+                />
+              )}
+
               <div className="mt-5 bg-white border border-slate-100 rounded-[22px] shadow-[0_4px_16px_rgba(0,0,0,0.03)] p-4">
                 <h4 className="text-[13px] font-black text-slate-800 mb-1">Catatan Presensi</h4>
                 <p className="text-[11.5px] text-slate-400 font-medium leading-relaxed">
-                  Absensi dibuka pukul <strong className="text-slate-600">05:00–24:00 WIB</strong>.
-                  Pastikan Anda berada dalam radius <strong className="text-slate-600">500 Meter</strong> dari outlet yang ditetapkan.
+                  Absensi dibuka pukul{' '}
+                  <strong className="text-slate-600">
+                    {timeStatus?.windows?.open || '05:00'}–{timeStatus?.windows?.close || '23:59'} WIB
+                  </strong>
+                  {timeStatus?.windows?.lockEnabled
+                    ? <> (terkunci {timeStatus.windows.lockStart}–{timeStatus.windows.lockEnd})</>
+                    : null}
+                  . Pastikan Anda berada dalam radius <strong className="text-slate-600">500 Meter</strong> dari outlet yang ditetapkan.
                 </p>
               </div>
             </>
@@ -907,10 +1104,29 @@ export default function Attendance() {
               <div className="w-14 h-14 rounded-[16px] bg-red-50 border-2 border-red-200 grid place-items-center mx-auto mb-3">
                 <Trash2 className="w-6 h-6 text-red-500" />
               </div>
-              <div className="text-[15px] font-extrabold text-slate-900 mb-1.5">Hapus & Ulang Absen?</div>
+              <div className="text-[15px] font-extrabold text-slate-900 mb-1.5">
+                {confirmDelete.kind === 'grooming'
+                  ? 'Hapus & Ulang Foto Grooming?'
+                  : confirmDelete.kind === 'cleanliness'
+                    ? 'Hapus Foto Kebersihan?'
+                    : 'Hapus & Ulang Absen?'}
+              </div>
               <div className="text-[12.5px] text-slate-500 leading-[1.6] font-medium">
-                Data absen <span className="font-bold text-slate-700">{confirmDelete.label}</span> dan foto di server akan dihapus.
-                Anda perlu foto selfie ulang. Lanjutkan?
+                {confirmDelete.kind === 'grooming' ? (
+                  <>
+                    Foto <span className="font-bold text-slate-700">{confirmDelete.label}</span> akan dihapus dari server,
+                    lalu kamera dibuka untuk foto ulang.
+                  </>
+                ) : confirmDelete.kind === 'cleanliness' ? (
+                  <>
+                    Foto kebersihan akan dihapus dari server. Lanjutkan?
+                  </>
+                ) : (
+                  <>
+                    Data absen <span className="font-bold text-slate-700">{confirmDelete.label}</span> dan foto di server akan dihapus.
+                    Anda perlu foto selfie ulang. Lanjutkan?
+                  </>
+                )}
               </div>
             </div>
             <div className="px-5 pb-5 pt-2 grid grid-cols-2 gap-2">
@@ -974,7 +1190,11 @@ export default function Attendance() {
           <div className="w-full max-w-[430px] max-h-safe-sheet bg-white rounded-[18px] overflow-hidden shadow-[0_12px_60px_rgba(0,0,0,.35)] flex flex-col">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
               <div className="text-[13px] font-extrabold text-slate-900">
-                Selfie — Absen {pendingPunch?.punchType === 'in' ? 'Masuk' : 'Pulang'}
+                {pendingCapture?.kind === 'grooming'
+                  ? `Grooming — ${pendingCapture.stepLabel || ''}`
+                  : pendingCapture?.kind === 'cleanliness'
+                    ? 'Foto Kebersihan'
+                    : `Selfie — Absen ${pendingCapture?.punchType === 'in' ? 'Masuk' : 'Pulang'}`}
               </div>
               <button
                 type="button"
@@ -1053,7 +1273,7 @@ export default function Attendance() {
                 <button
                   type="button"
                   onClick={confirmSelfie}
-                  disabled={!pendingPunch || !videoReady || isSubmitting}
+                  disabled={!pendingCapture || !videoReady || isSubmitting}
                   className="h-[42px] rounded-[12px] bg-[#5f1340] text-white text-[12px] font-extrabold disabled:opacity-50"
                 >
                   {isSubmitting ? 'Mengirim…' : videoReady ? 'Ambil & Kirim' : 'Menyiapkan...'}

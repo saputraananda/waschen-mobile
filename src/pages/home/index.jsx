@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { resetPageView } from '../../utils/resetPageView.js';
 import fetchAssignedRole from '../../utils/fetchAssignedRole.js';
@@ -15,6 +16,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { active, locked, isActive, refresh: refreshOvertime } = useActiveOvertime(true);
   const [forceOtModal, setForceOtModal] = useState(true);
+  const [progressGate, setProgressGate] = useState({ unlocked: true, message: null });
 
   const [currentUser, setCurrentUser] = useState({
     fullName: 'Ananda Saputra',
@@ -27,6 +29,23 @@ export default function Home() {
   });
 
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const fetchProgressGate = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const res = await axios.get('/api/attendance/progress-gate', {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 12000
+      });
+      const data = res.data?.data;
+      setProgressGate({
+        unlocked: data?.unlocked !== false,
+        message: data?.message || null
+      });
+    } catch (_) {
+      setProgressGate({ unlocked: true, message: null });
+    }
+  }, []);
 
   const softRefresh = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -44,9 +63,10 @@ export default function Home() {
     if (token) {
       const role = await fetchAssignedRole(token);
       if (role) setCurrentUser((prev) => ({ ...prev, assignedRole: role }));
+      await fetchProgressGate(token);
     }
     await refreshOvertime();
-  }, [refreshOvertime]);
+  }, [refreshOvertime, fetchProgressGate]);
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useEffect(() => {
@@ -71,11 +91,12 @@ export default function Home() {
             if (role) setCurrentUser((prev) => ({ ...prev, assignedRole: role }));
           });
         }
+        fetchProgressGate(token);
       } catch (e) {
         console.error('Failed to parse user data:', e);
       }
     }
-  }, [navigate]);
+  }, [navigate, fetchProgressGate]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -113,6 +134,9 @@ export default function Home() {
       setForceOtModal(true);
       return;
     }
+    if (path === '/produksi' && !progressGate.unlocked) {
+      return;
+    }
     navigate(path);
   };
 
@@ -143,7 +167,13 @@ export default function Home() {
             />
           )}
 
-          <MenuSection onMenuClick={handleMenuClick} menusLocked={locked} currentUser={currentUser} />
+          <MenuSection
+            onMenuClick={handleMenuClick}
+            menusLocked={locked}
+            progressLocked={!progressGate.unlocked}
+            progressLockMessage={progressGate.message}
+            currentUser={currentUser}
+          />
         </div>
 
         <Navbar />

@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../../middleware/auth.js';
+import { requireCleanlinessForProgress } from '../../middleware/cleanlinessGate.js';
 import { uploadProduksiPhotos } from '../../middleware/upload.js';
 import {
   getSummary,
@@ -14,6 +15,7 @@ import {
 const router = express.Router();
 
 router.use(requireAuth);
+router.use(requireCleanlinessForProgress);
 
 const uploadProduksiPhotosWithErrorHandling = (req, res, next) => {
   uploadProduksiPhotos.array('photos', 5)(req, res, (err) => {

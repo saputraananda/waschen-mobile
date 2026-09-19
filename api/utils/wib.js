@@ -68,14 +68,17 @@ export function getWibHoursMinutes(date = new Date()) {
 }
 
 /**
- * Work-date absensi: 00:00–03:59 WIB masih dihitung hari sebelumnya.
+ * Work-date absensi: sebelum cutoff (default 04:00 WIB) masih dihitung hari sebelumnya.
+ * @param {Date} [date]
+ * @param {number} [cutoffMin] menit dari tengah malam WIB
  * @returns {string} YYYY-MM-DD
  */
-export function getAttendanceWorkDate(date = new Date()) {
+export function getAttendanceWorkDate(date = new Date(), cutoffMin = 240) {
   const { hours, minutes } = getWibHoursMinutes(date);
   const totalMin = hours * 60 + minutes;
   const key = toWibDateKey(date);
-  if (totalMin < 240) {
+  const cut = Number.isFinite(Number(cutoffMin)) ? Number(cutoffMin) : 240;
+  if (totalMin < cut) {
     const [y, m, d] = key.split('-').map(Number);
     const prev = new Date(Date.UTC(y, m - 1, d - 1));
     return `${prev.getUTCFullYear()}-${pad2(prev.getUTCMonth() + 1)}-${pad2(prev.getUTCDate())}`;

@@ -1,26 +1,41 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
-import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile } from '../../middleware/upload.js';
+import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile, deleteGroomingPhotoFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
 import { getAttendanceWorkDate, getWibHoursMinutes } from '../../utils/wib.js';
+import { requiresGrooming } from '../../utils/groomingCleanliness.js';
+import {
+  getTimeMasterConfig,
+  evaluateAttendanceStatus,
+  timeToMinutes,
+  formatHm,
+  getWorkDateNow
+} from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
 
-/** Jam absen terkunci 01:00–03:59 WIB; buka 05:00–23:59 & 00:00–00:59 */
-export const getTimeStatus = () => {
+/** Jam absen dari mst_time_attendance (fallback hardcode di timeMaster) */
+export const getTimeStatus = async () => {
   const { hours, minutes } = getWibHoursMinutes();
   const totalMin = hours * 60 + minutes;
+  const cfg = await getTimeMasterConfig();
+  const att = cfg.attendance;
+  const evaluated = evaluateAttendanceStatus(att, totalMin);
+  const workDate = await getWorkDateNow();
 
-  const isLocked = totalMin >= 60 && totalMin < 240;
-  const isOpen = (totalMin >= 300 && totalMin <= 1439) || (totalMin >= 0 && totalMin < 60);
-
-  let lockReason = null;
-  if (isLocked) {
-    lockReason = 'Absensi terkunci pukul 01:00–03:59 WIB. Silakan coba lagi setelah jam 05:00.';
-  } else if (!isOpen) {
-    lockReason = 'Absensi hanya dapat dilakukan pukul 05:00–24:00 WIB.';
-  }
-
-  return { isOpen: isOpen && !isLocked, isLocked, lockReason, workDate: getAttendanceWorkDate() };
+  return {
+    isOpen: evaluated.isOpen,
+    isLocked: evaluated.isLocked,
+    lockReason: evaluated.lockReason,
+    workDate,
+    windows: {
+      open: formatHm(att.open_time),
+      close: formatHm(att.close_time),
+      lockEnabled: Number(att.lock_enabled) === 1,
+      lockStart: formatHm(att.lock_start_time),
+      lockEnd: formatHm(att.lock_end_time),
+      workDateCutoff: formatHm(att.work_date_cutoff_time)
+    }
+  };
 };
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -83,18 +98,33 @@ async function validateLocation(lat, lng, outletId) {
 export const getTodayAttendance = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const workDate = getAttendanceWorkDate();
-    const timeStatus = getTimeStatus();
+    const workDate = await getWorkDateNow();
+    const timeStatus = await getTimeStatus();
 
-    const [rows] = await myWaschenPool.query(
-      `SELECT attendance_id, outlet_id, work_date,
-              check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name,
-              check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name
-       FROM tr_attendance
-       WHERE employee_id = ? AND work_date = ?
-       LIMIT 1`,
-      [employeeId, workDate]
-    );
+    let rows;
+    try {
+      [rows] = await myWaschenPool.query(
+        `SELECT attendance_id, outlet_id, work_date,
+                check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name,
+                check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name,
+                grooming_status, grooming_incomplete_reason, grooming_locked_at
+         FROM tr_attendance
+         WHERE employee_id = ? AND work_date = ?
+         LIMIT 1`,
+        [employeeId, workDate]
+      );
+    } catch (colErr) {
+      if (colErr.code !== 'ER_BAD_FIELD_ERROR') throw colErr;
+      [rows] = await myWaschenPool.query(
+        `SELECT attendance_id, outlet_id, work_date,
+                check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name,
+                check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name
+         FROM tr_attendance
+         WHERE employee_id = ? AND work_date = ?
+         LIMIT 1`,
+        [employeeId, workDate]
+      );
+    }
 
     let record = null;
     if (rows.length > 0) {
@@ -201,7 +231,7 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Parameter punch_type tidak valid' });
     }
 
-    const timeStatus = getTimeStatus();
+    const timeStatus = await getTimeStatus();
     if (!timeStatus.isOpen) {
       await cleanupUpload();
       return res.status(400).json({ success: false, message: timeStatus.lockReason });
@@ -219,9 +249,19 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: locCheck.message });
     }
 
-    const workDate = getAttendanceWorkDate();
+    const workDate = await getWorkDateNow();
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
     const photo_name = req.file.filename;
+
+    let employeeRole = null;
+    try {
+      const [roleRows] = await myWaschenPool.query(
+        'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
+        [employeeId]
+      );
+      employeeRole = roleRows[0]?.role || null;
+    } catch (_) { /* optional */ }
+    const groomingStatus = requiresGrooming(employeeRole) ? 'kosong' : 'tidak_wajib';
 
     const [rows] = await myWaschenPool.query(
       'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
@@ -235,20 +275,43 @@ export const punchSelfie = async (req, res) => {
       }
 
       if (rows.length === 0) {
-        await myWaschenPool.query(
-          `INSERT INTO tr_attendance
-           (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name)
-           VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?)`,
-          [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name]
-        );
+        try {
+          await myWaschenPool.query(
+            `INSERT INTO tr_attendance
+             (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng,
+              check_in_photo_path, check_in_photo_name, grooming_status)
+             VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+            [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name, groomingStatus]
+          );
+        } catch (insErr) {
+          if (insErr.code !== 'ER_BAD_FIELD_ERROR') throw insErr;
+          await myWaschenPool.query(
+            `INSERT INTO tr_attendance
+             (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name)
+             VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?)`,
+            [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name]
+          );
+        }
       } else {
         const oldInPhoto = rows[0].check_in_photo_name;
-        await myWaschenPool.query(
-          `UPDATE tr_attendance
-           SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?, check_in_photo_path=?, check_in_photo_name=?
-           WHERE employee_id=? AND work_date=?`,
-          [userId, outletId, lat, lng, photo_path, photo_name, employeeId, workDate]
-        );
+        try {
+          await myWaschenPool.query(
+            `UPDATE tr_attendance
+             SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?,
+                 check_in_photo_path=?, check_in_photo_name=?,
+                 grooming_status=COALESCE(NULLIF(grooming_status,''), ?)
+             WHERE employee_id=? AND work_date=?`,
+            [userId, outletId, lat, lng, photo_path, photo_name, groomingStatus, employeeId, workDate]
+          );
+        } catch (updErr) {
+          if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
+          await myWaschenPool.query(
+            `UPDATE tr_attendance
+             SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?, check_in_photo_path=?, check_in_photo_name=?
+             WHERE employee_id=? AND work_date=?`,
+            [userId, outletId, lat, lng, photo_path, photo_name, employeeId, workDate]
+          );
+        }
         if (oldInPhoto && oldInPhoto !== photo_name) {
           await deleteAttendancePhotoFile(oldInPhoto);
         }
@@ -319,7 +382,7 @@ export const deletePunch = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Parameter punch_type tidak valid' });
     }
 
-    const workDate = getAttendanceWorkDate();
+    const workDate = await getWorkDateNow();
     let photoName = null;
 
     if (punch_type === 'in') {
@@ -343,6 +406,22 @@ export const deletePunch = async (req, res) => {
       }
 
       photoName = existing[0].check_in_photo_name;
+
+      // Hapus foto grooming milik absensi ini sebelum reset check-in
+      try {
+        const [gPhotos] = await myWaschenPool.query(
+          `SELECT photo_name FROM tr_attendance_grooming_photo
+           WHERE employee_id = ? AND work_date = ?`,
+          [employeeId, workDate]
+        );
+        for (const gp of gPhotos) {
+          await deleteGroomingPhotoFile(gp.photo_name);
+        }
+        await myWaschenPool.query(
+          `DELETE FROM tr_attendance_grooming_photo WHERE employee_id = ? AND work_date = ?`,
+          [employeeId, workDate]
+        );
+      } catch (_) { /* tabel mungkin belum ada */ }
 
       await myWaschenPool.query(
         `UPDATE tr_attendance

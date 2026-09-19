@@ -141,6 +141,87 @@ export const uploadAttendanceSelfie = multer({
   limits: { fileSize: 6 * 1024 * 1024 }
 });
 
+/** Grooming photos — assets/attendance/grooming */
+export const GROOMING_UPLOAD_SUBFOLDER = 'assets/attendance/grooming';
+export const GROOMING_UPLOAD_PUBLIC_PATH = '/uploads/assets/attendance/grooming';
+
+const groomingPhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    try {
+      cb(null, ensureUploadFolder(GROOMING_UPLOAD_SUBFOLDER));
+    } catch (err) {
+      cb(err, null);
+    }
+  },
+  filename: (req, file, cb) => {
+    const safe = (s) => String(s || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60);
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const employeeId = safe(req.user?.employee_id || 'unknown');
+    const step = safe(req.body?.step_code || 'step');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    cb(null, `grooming_${employeeId}_${step}_${ts}${ext}`);
+  }
+});
+
+export const uploadGroomingPhoto = multer({
+  storage: groomingPhotoStorage,
+  fileFilter: selfieFileFilter,
+  limits: { fileSize: 6 * 1024 * 1024, files: 1 }
+});
+
+export const deleteGroomingPhotoFile = async (fileName) => {
+  if (!fileName) return;
+  const filePath = path.join(ensureUploadFolder(GROOMING_UPLOAD_SUBFOLDER), path.basename(fileName));
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`Gagal menghapus foto grooming: ${filePath}`, err);
+    }
+  }
+};
+
+/** Cleanliness photos — assets/attendance/cleanliness */
+export const CLEANLINESS_UPLOAD_SUBFOLDER = 'assets/attendance/cleanliness';
+export const CLEANLINESS_UPLOAD_PUBLIC_PATH = '/uploads/assets/attendance/cleanliness';
+
+const cleanlinessPhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    try {
+      cb(null, ensureUploadFolder(CLEANLINESS_UPLOAD_SUBFOLDER));
+    } catch (err) {
+      cb(err, null);
+    }
+  },
+  filename: (req, file, cb) => {
+    const safe = (s) => String(s || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60);
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const employeeId = safe(req.user?.employee_id || 'unknown');
+    const role = safe(req.body?.role_code || 'role');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const rand = Math.round(Math.random() * 1e4);
+    cb(null, `clean_${employeeId}_${role}_${ts}_${rand}${ext}`);
+  }
+});
+
+export const uploadCleanlinessPhotos = multer({
+  storage: cleanlinessPhotoStorage,
+  fileFilter: selfieFileFilter,
+  limits: { fileSize: 6 * 1024 * 1024, files: 8 }
+});
+
+export const deleteCleanlinessPhotoFile = async (fileName) => {
+  if (!fileName) return;
+  const filePath = path.join(ensureUploadFolder(CLEANLINESS_UPLOAD_SUBFOLDER), path.basename(fileName));
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`Gagal menghapus foto kebersihan: ${filePath}`, err);
+    }
+  }
+};
+
 /**
  * Leave doctor-note uploader — images only, stored in assets/leave
  */

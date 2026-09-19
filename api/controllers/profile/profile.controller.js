@@ -282,7 +282,7 @@ export const updateProfile = async (req, res) => {
       if (roleExist.length === 0) {
         return res.status(422).json({
           success: false,
-          message: 'Role outlet belum ditetapkan. Hubungi admin untuk set unit/bagian dulu.'
+          message: 'Posisi outlet belum ditetapkan. Hubungi admin untuk set posisi dulu.'
         });
       }
       await myWaschenPool.query(

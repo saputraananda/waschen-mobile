@@ -24,12 +24,23 @@ function MotorbikeIcon({ className = 'w-5 h-5' }) {
   );
 }
 
-export default function MenuSection({ onMenuClick, menusLocked = false, currentUser = null }) {
+export default function MenuSection({
+  onMenuClick,
+  menusLocked = false,
+  progressLocked = false,
+  progressLockMessage = null,
+  currentUser = null
+}) {
   const role = getDisplayRole(currentUser);
   const isDeliveryStaff = role === 'Delivery Staff';
   const lockBadge = menusLocked ? (
     <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-black text-rose-700">
       <Lock className="w-2.5 h-2.5" /> Lock
+    </span>
+  ) : null;
+  const progressLockBadge = !menusLocked && progressLocked ? (
+    <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-black text-amber-800">
+      <Lock className="w-2.5 h-2.5" /> Kebersihan
     </span>
   ) : null;
 
@@ -131,14 +142,16 @@ export default function MenuSection({ onMenuClick, menusLocked = false, currentU
       <button
         id="menu-progress-btn"
         type="button"
-        disabled={menusLocked}
-        onClick={() => !menusLocked && onMenuClick('/produksi', 'Update Progress')}
+        disabled={menusLocked || progressLocked}
+        onClick={() => !menusLocked && !progressLocked && onMenuClick('/produksi', 'Update Progress')}
         className={`mt-3.5 w-full bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex items-center gap-4 min-h-[88px] group ${
-          menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+          menusLocked || progressLocked
+            ? 'opacity-55 cursor-not-allowed'
+            : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
         }`}
       >
         <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#5f1340]/15 to-transparent rounded-bl-[48px] pointer-events-none" />
-        {lockBadge}
+        {lockBadge || progressLockBadge}
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#5f1340]/15 to-[#8c2060]/10 text-[#5f1340] border border-[#5f1340]/10 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
           <RefreshCw className="w-5 h-5" />
         </div>
@@ -147,7 +160,11 @@ export default function MenuSection({ onMenuClick, menusLocked = false, currentU
             Update Progress
           </h4>
           <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
-            {menusLocked ? 'Tutup lembur dulu sebelum update progress' : 'Status Pipeline Pakaian — cuci, setrika, packing'}
+            {menusLocked
+              ? 'Tutup lembur dulu sebelum update progress'
+              : progressLocked
+                ? (progressLockMessage || 'Upload foto kebersihan dulu di Absensi')
+                : 'Status Pipeline Pakaian — cuci, setrika, packing'}
           </span>
         </div>
       </button>

@@ -5,7 +5,9 @@ import {
   deleteAttendancePhotoFile,
   deleteLeaveDocFile,
   deleteKasbonProofFile,
-  deleteProduksiPhotoFile
+  deleteProduksiPhotoFile,
+  deleteGroomingPhotoFile,
+  deleteCleanlinessPhotoFile
 } from '../../middleware/upload.js';
 
 const router = express.Router();
@@ -70,6 +72,12 @@ router.post('/delete-upload', async (req, res) => {
     if (type === 'attendance') {
       if (!fileName) return res.status(422).json({ success: false, message: 'fileName wajib' });
       await deleteAttendancePhotoFile(fileName);
+    } else if (type === 'grooming') {
+      if (!fileName) return res.status(422).json({ success: false, message: 'fileName wajib' });
+      await deleteGroomingPhotoFile(fileName);
+    } else if (type === 'cleanliness') {
+      if (!fileName) return res.status(422).json({ success: false, message: 'fileName wajib' });
+      await deleteCleanlinessPhotoFile(fileName);
     } else if (type === 'leave') {
       if (!fileName) return res.status(422).json({ success: false, message: 'fileName wajib' });
       await deleteLeaveDocFile(fileName);
