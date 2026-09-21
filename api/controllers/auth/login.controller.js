@@ -121,7 +121,9 @@ export const loginUser = async (req, res) => {
         assignedOutletId
       },
       process.env.SESSION_SECRET || 'waschensecret',
-      { expiresIn: '24h' }
+      // Sesi panjang: app terinstall (PWA) tidak perlu login ulang tiap hari.
+      // Logout manual di Profile tetap menghapus token.
+      { expiresIn: '365d' }
     );
 
     // Return success response with user and employee info

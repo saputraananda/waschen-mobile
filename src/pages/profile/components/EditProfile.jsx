@@ -432,7 +432,7 @@ export default function ProfileEditPage() {
     const handleChange = useCallback((name, value) => {
         let next = value;
         if (name === 'code_pin' || name === 'code_pin_confirm') {
-            next = String(value || '').replace(/\D/g, '').slice(0, 8);
+            next = String(value || '').replace(/\D/g, '').slice(0, 4);
         }
         setForm(prev => ({ ...prev, [name]: next }));
         if (name === 'phone_number' || name === 'emergency_contact') {
@@ -468,9 +468,9 @@ export default function ProfileEditPage() {
                 showToast('Isi PIN terlebih dahulu.', false);
                 return;
             }
-            if (pin.length > 8) {
-                setPinError('PIN maksimal 8 digit.');
-                showToast('PIN maksimal 8 digit.', false);
+            if (pin.length !== 4) {
+                setPinError('PIN harus 4 digit.');
+                showToast('PIN harus 4 digit.', false);
                 return;
             }
             if (pin !== pinConfirm) {
@@ -649,7 +649,7 @@ export default function ProfileEditPage() {
                     {/* PIN Kasir / POS */}
                     <Section title="PIN Kasir (POS)">
                         <p className="text-[11px] text-slate-500 font-medium leading-relaxed -mt-1 mb-1">
-                            PIN dipakai saat buat nota / pelunasan di POS. Angka saja, maksimal 8 digit, harus unik.
+                            PIN dipakai saat buat nota / pelunasan di POS. Angka saja, tepat 4 digit, harus unik.
                             {detail?.has_pin ? ' PIN Anda sudah terisi — ubah jika perlu.' : ' Belum ada PIN — isi untuk bisa verifikasi di POS.'}
                         </p>
                         <div className="w-full min-w-0">
@@ -663,7 +663,7 @@ export default function ProfileEditPage() {
                                     value={form.code_pin || ''}
                                     onChange={e => handleChange('code_pin', e.target.value)}
                                     placeholder="Contoh : 1234"
-                                    maxLength={8}
+                                    maxLength={4}
                                     className={`block w-full min-w-0 box-border appearance-none text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] pl-3 pr-11 h-[42px] focus:outline-none focus:ring-2 transition placeholder:text-slate-300 ${
                                         pinError
                                             ? 'border-red-400 focus:ring-red-200'

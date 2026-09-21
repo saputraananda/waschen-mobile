@@ -240,7 +240,7 @@ export const updateProfile = async (req, res) => {
       }
     }
 
-    // Update PIN kasir/POS di mst_role.code_pin (maks 8 digit, unik)
+    // Update PIN kasir/POS di mst_role.code_pin (4 digit, unik)
     if (data.code_pin !== undefined) {
       const rawPin = data.code_pin;
       let cleanPin = null;
@@ -252,10 +252,10 @@ export const updateProfile = async (req, res) => {
             message: 'PIN harus berupa angka.'
           });
         }
-        if (digits.length > 8) {
+        if (digits.length !== 4) {
           return res.status(422).json({
             success: false,
-            message: 'PIN maksimal 8 digit.'
+            message: 'PIN harus 4 digit.'
           });
         }
         cleanPin = digits;

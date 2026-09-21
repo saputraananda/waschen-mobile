@@ -130,7 +130,7 @@ const fetchUserLoginPayload = async (userId) => {
       role: user.user_role 
     },
     process.env.SESSION_SECRET || 'waschensecret',
-    { expiresIn: '24h' }
+    { expiresIn: '365d' }
   );
 
   return {
