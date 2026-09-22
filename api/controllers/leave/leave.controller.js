@@ -6,6 +6,17 @@ import { toWibDateKey, getWibYearMonth } from '../../utils/wib.js';
 const LEAVE_TYPES = ['izin', 'sakit', 'cuti'];
 const DURATION_TYPES = ['full_day', 'half_day_morning', 'half_day_afternoon'];
 
+// Izin libur panjang (izin sehari penuh lebih dari 1 hari) wajib diajukan
+// minimal 2 minggu sebelum tgl 25 -> paling lambat tgl 11 bulan berjalan.
+const LONG_LEAVE_DEADLINE_DAY = 11;
+
+const isLongLeave = (leaveType, durationType, startDate, endDate) =>
+  leaveType === 'izin' && durationType === 'full_day' && toWibDateKey(startDate) !== toWibDateKey(endDate);
+
+const longLeaveDeadlinePassed = () => Number(getTodayDate().slice(8, 10)) > LONG_LEAVE_DEADLINE_DAY;
+
+const LONG_LEAVE_MESSAGE = `Izin libur panjang wajib diajukan minimal 2 minggu sebelum tgl 25 (paling lambat tgl ${LONG_LEAVE_DEADLINE_DAY})`;
+
 const getTodayDate = () => toWibDateKey(new Date());
 
 const buildDoctorNoteUrl = (req, row) => {
@@ -210,6 +221,10 @@ export const submitLeave = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Izin setengah hari hanya berlaku untuk 1 hari' });
     }
+    if (isLongLeave(leave_type, duration_type, start_date, end_date) && longLeaveDeadlinePassed()) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: LONG_LEAVE_MESSAGE });
+    }
 
     const [overlap] = await myWaschenPool.query(
       `SELECT leave_id FROM tr_leave
@@ -300,9 +315,13 @@ export const updateLeave = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Keterangan wajib diisi minimal 5 karakter' });
     }
-    if (newDurationType !== 'full_day' && newStartDate !== newEndDate) {
+    if (newDurationType !== 'full_day' && toWibDateKey(newStartDate) !== toWibDateKey(newEndDate)) {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Izin setengah hari hanya berlaku untuk 1 hari' });
+    }
+    if (isLongLeave(newLeaveType, newDurationType, newStartDate, newEndDate) && longLeaveDeadlinePassed()) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: LONG_LEAVE_MESSAGE });
     }
     if (newLeaveType === 'sakit' && !req.file && !existing.doctor_note_name) {
       await cleanupFile();

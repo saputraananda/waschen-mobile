@@ -76,6 +76,23 @@ const fmtTime = (t) => {
   return String(t).slice(0, 5);
 };
 
+// 'YYYY-MM-DD HH:mm:ss' (wall-clock WIB) -> Date
+const parseWibDateTime = (v) => {
+  if (!v) return null;
+  const d = v instanceof Date
+    ? v
+    : new Date(`${String(v).replace(' ', 'T').slice(0, 19)}+07:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const formatElapsed = (startAt, nowMs) => {
+  const start = parseWibDateTime(startAt);
+  if (!start) return '00:00:00';
+  const total = Math.max(0, Math.floor((nowMs - start.getTime()) / 1000));
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+};
+
 const emptyForm = () => ({
   overtime_date: todayISO(),
   start_time: '19:00',
@@ -111,6 +128,7 @@ export default function Overtime() {
   const [reviewTarget, setReviewTarget] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [activeSession, setActiveSession] = useState(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [sessionBusy, setSessionBusy] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [startReason, setStartReason] = useState('');
@@ -178,6 +196,14 @@ export default function Overtime() {
       setActiveSession(null);
     }
   }, []);
+
+  // Stopwatch hanya berdetak saat ada sesi berlangsung
+  useEffect(() => {
+    if (!activeSession?.start_at) return undefined;
+    setNowTick(Date.now());
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [activeSession?.start_at]);
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
@@ -410,6 +436,7 @@ export default function Overtime() {
         : 'Riwayat Lembur Saya';
 
   const activePastMidnight = Boolean(activeSession?.past_midnight);
+  const activeElapsed = activeSession ? formatElapsed(activeSession.start_at, nowTick) : null;
 
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans">
@@ -560,6 +587,12 @@ export default function Overtime() {
                         Mulai {fmtTime(activeSession.start_time)}
                       </span>
                     </div>
+                    <div className="rounded-[14px] bg-white/70 border border-white px-3 py-2.5 mb-2.5 text-center">
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mb-0.5">Durasi Berjalan</div>
+                      <div className={`text-[30px] font-black leading-none tabular-nums ${activePastMidnight ? 'text-rose-700' : 'text-sky-800'}`}>
+                        {activeElapsed}
+                      </div>
+                    </div>
                     <p className="text-[11px] text-slate-600 font-medium mb-3 leading-relaxed">
                       Kerjaan Anda tercatat sebagai lembur sampai close. Setelah close bisa edit jam/alasan.
                     </p>
@@ -663,9 +696,13 @@ export default function Overtime() {
                       </div>
 
                       <div className="mt-3 bg-slate-50 rounded-[12px] p-3 border border-slate-100">
-                        <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mb-0.5">Jam Lembur</div>
-                        <div className="text-[18px] font-bold text-slate-900">
-                          {fmtTime(row.start_time)} – {fmtTime(row.end_time)}
+                        <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mb-0.5">
+                          {row.status === 'berlangsung' ? 'Berjalan Sejak' : 'Jam Lembur'}
+                        </div>
+                        <div className="text-[18px] font-bold text-slate-900 tabular-nums">
+                          {row.status === 'berlangsung'
+                            ? `${fmtTime(row.start_time)} · ${formatElapsed(row.start_at, nowTick)}`
+                            : `${fmtTime(row.start_time)} – ${fmtTime(row.end_time)}`}
                         </div>
                       </div>
 
@@ -834,7 +871,7 @@ export default function Overtime() {
                   rows={3}
                   value={form.reason}
                   onChange={(e) => setForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Contoh : Tambahan shift closing outlet"
+                  placeholder="Contoh : Backup delivery yang pulang kampung"
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>
@@ -893,7 +930,7 @@ export default function Overtime() {
                 autoFocus
                 value={startReason}
                 onChange={(e) => setStartReason(e.target.value)}
-                placeholder="Contoh : Tambahan shift closing outlet"
+                placeholder="Contoh : Backup delivery yang pulang kampung"
                 className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
               />
 

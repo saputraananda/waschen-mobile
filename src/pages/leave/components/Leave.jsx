@@ -40,9 +40,9 @@ api.interceptors.request.use((config) => {
 });
 
 const LEAVE_TYPES = {
-  izin: { key: 'izin', label: 'Izin', desc: 'Keperluan pribadi / keluarga', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: Sun },
-  sakit: { key: 'sakit', label: 'Sakit', desc: 'Wajib lampirkan surat dokter', color: 'text-red-700', bg: 'bg-red-50 border-red-100', icon: Stethoscope },
-  cuti: { key: 'cuti', label: 'Cuti', desc: 'Cuti tahunan, bisa multi-hari', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: Palmtree }
+  izin: { key: 'izin', label: 'Izin', desc: 'Keperluan pribadi / keluarga', placeholder: 'Contoh : Izin nikahan adik, ambil raport anak, dll', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: Sun },
+  sakit: { key: 'sakit', label: 'Sakit', desc: 'Wajib lampirkan surat dokter', placeholder: 'Contoh : Demam dan pusing kepala', color: 'text-red-700', bg: 'bg-red-50 border-red-100', icon: Stethoscope },
+  cuti: { key: 'cuti', label: 'Cuti', desc: 'Cuti tahunan, bisa multi-hari', placeholder: 'Contoh : Pulang kampung, dll.', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: Palmtree }
 };
 
 const DURATION_TYPES = {
@@ -61,6 +61,11 @@ const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
+
+// Izin libur panjang (izin sehari penuh > 1 hari) wajib diajukan
+// minimal 2 minggu sebelum tgl 25 -> paling lambat tgl 11 bulan berjalan.
+const LONG_LEAVE_DEADLINE_DAY = 11;
+const LONG_LEAVE_MESSAGE = `Izin libur panjang wajib diajukan minimal 2 minggu sebelum tgl 25 (paling lambat tgl ${LONG_LEAVE_DEADLINE_DAY})`;
 
 const todayISO = () => todayWibISO();
 
@@ -95,6 +100,7 @@ export default function Leave() {
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [yearOptions, setYearOptions] = useState([now.getFullYear()]);
   const [stats, setStats] = useState({ izin: 0, sakit: 0, cuti: 0 });
+  const [filterType, setFilterType] = useState(null);
 
   const [items, setItems] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -259,7 +265,9 @@ export default function Leave() {
     setCameraOpen(false);
   };
 
-  const isMultiDayAllowed = form.leaveType === 'cuti' && form.durationType === 'full_day';
+  const isMultiDayAllowed = form.durationType === 'full_day' && (form.leaveType === 'cuti' || form.leaveType === 'izin');
+  const isLongLeave = form.leaveType === 'izin' && form.durationType === 'full_day' && form.startDate !== form.endDate;
+  const longLeaveClosed = Number(todayISO().slice(8, 10)) > LONG_LEAVE_DEADLINE_DAY;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -271,6 +279,10 @@ export default function Leave() {
     }
     if (form.startDate > form.endDate) {
       setSubmitError('Tanggal selesai tidak boleh sebelum tanggal mulai');
+      return;
+    }
+    if (isLongLeave && longLeaveClosed) {
+      setSubmitError(LONG_LEAVE_MESSAGE);
       return;
     }
     if (form.leaveType === 'sakit' && !form.doctorFile && !form.existingDoctorNoteUrl) {
@@ -321,8 +333,15 @@ export default function Leave() {
   };
 
   const monthOptions = useMemo(
-    () => MONTH_NAMES.map((label, idx) => ({ value: idx + 1, label })),
+    () => [{ value: 0, label: 'Semua Periode' }, ...MONTH_NAMES.map((label, idx) => ({ value: idx + 1, label }))],
     []
+  );
+
+  // ponytail: filter jenis dilakukan client-side atas hasil list (limit 50).
+  // Pindahkan ke query backend kalau riwayat sudah butuh pagination.
+  const visibleItems = useMemo(
+    () => (filterType ? items.filter((i) => i.leave_type === filterType) : items),
+    [items, filterType]
   );
 
   return (
@@ -388,8 +407,9 @@ export default function Leave() {
               </select>
               <select
                 value={filterYear}
+                disabled={filterMonth === 0}
                 onChange={(e) => setFilterYear(Number(e.target.value))}
-                className="w-[92px] text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 outline-none"
+                className="w-[92px] text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 outline-none disabled:opacity-50"
               >
                 {yearOptions.map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -399,13 +419,18 @@ export default function Leave() {
 
             <div className="grid grid-cols-3 gap-2 mb-4">
               {Object.values(LEAVE_TYPES).map((t) => {
-                const Icon = t.icon;
+                const active = filterType === t.key;
                 return (
-                  <div key={t.key} className={`rounded-2xl border p-2.5 text-center ${t.bg}`}>
-                    <Icon className={`w-4 h-4 mx-auto mb-1 ${t.color}`} />
-                    <div className={`text-[16px] font-black ${t.color}`}>{stats[t.key] || 0}</div>
-                    <div className="text-[9.5px] text-slate-400 font-bold">{t.label}</div>
-                  </div>
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setFilterType(active ? null : t.key)}
+                    aria-pressed={active}
+                    className={`rounded-2xl border p-3 text-center transition-all active:scale-[0.97] ${t.bg} ${active ? 'border-current ring-2 ring-current/30' : ''} ${active ? t.color : ''}`}
+                  >
+                    <div className={`text-[26px] font-black leading-none ${t.color}`}>{stats[t.key] || 0}</div>
+                    <div className={`text-[12px] font-bold mt-1 ${active ? t.color : 'text-slate-500'}`}>{t.label}</div>
+                  </button>
                 );
               })}
             </div>
@@ -423,8 +448,18 @@ export default function Leave() {
           <div className="mx-4 mt-5">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider">Riwayat Pengajuan Saya</span>
-              <span className="text-[10px] text-slate-400 font-semibold">
-                {monthOptions.find((m) => m.value === filterMonth)?.label} {filterYear}
+              <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1.5">
+                {filterType && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterType(null)}
+                    className={`px-2 py-0.5 rounded-full border border-current font-extrabold ${LEAVE_TYPES[filterType]?.color} flex items-center gap-1`}
+                  >
+                    {LEAVE_TYPES[filterType]?.label}
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+                {filterMonth === 0 ? 'Semua Periode' : `${monthOptions.find((m) => m.value === filterMonth)?.label} ${filterYear}`}
               </span>
             </div>
 
@@ -443,13 +478,17 @@ export default function Leave() {
                   </button>
                 </div>
               </div>
-            ) : items.length === 0 ? (
+            ) : visibleItems.length === 0 ? (
               <div className="bg-white rounded-[20px] border border-slate-100 p-6 text-center">
-                <span className="text-[11.5px] text-slate-400 font-semibold">Belum ada pengajuan pada periode ini.</span>
+                <span className="text-[11.5px] text-slate-400 font-semibold">
+                  {filterType
+                    ? `Belum ada pengajuan ${LEAVE_TYPES[filterType]?.label} pada periode ini.`
+                    : 'Belum ada pengajuan pada periode ini.'}
+                </span>
               </div>
             ) : (
               <div className="flex flex-col gap-2.5">
-                {items.map((item) => {
+                {visibleItems.map((item) => {
                   const typeMeta = LEAVE_TYPES[item.leave_type] || LEAVE_TYPES.izin;
                   const statusMeta = STATUS_META[item.status] || STATUS_META.pengajuan;
                   const Icon = typeMeta.icon;
@@ -559,7 +598,11 @@ export default function Leave() {
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setForm((prev) => ({ ...prev, leaveType: t.key }))}
+                        onClick={() => setForm((prev) => ({
+                          ...prev,
+                          leaveType: t.key,
+                          endDate: t.key === 'sakit' ? prev.startDate : prev.endDate
+                        }))}
                         className={`rounded-2xl border p-2.5 text-center transition-all ${active ? `${t.bg} ${t.color} border-current` : 'border-slate-100 bg-slate-50 text-slate-400'}`}
                       >
                         <Icon className="w-4 h-4 mx-auto mb-1" />
@@ -576,7 +619,11 @@ export default function Leave() {
                 <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Durasi</label>
                 <select
                   value={form.durationType}
-                  onChange={(e) => setForm((prev) => ({ ...prev, durationType: e.target.value }))}
+                  onChange={(e) => setForm((prev) => ({
+                    ...prev,
+                    durationType: e.target.value,
+                    endDate: e.target.value === 'full_day' ? prev.endDate : prev.startDate
+                  }))}
                   className="w-full text-[12.5px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none"
                 >
                   {Object.values(DURATION_TYPES).map((d) => (
@@ -585,6 +632,11 @@ export default function Leave() {
                 </select>
                 {form.durationType !== 'full_day' && (
                   <p className="text-[10.5px] text-blue-600 font-semibold mt-1.5">Izin setengah hari hanya berlaku untuk 1 hari.</p>
+                )}
+                {form.leaveType === 'izin' && form.durationType === 'full_day' && (
+                  <p className={`text-[10.5px] font-semibold mt-1.5 ${isLongLeave && longLeaveClosed ? 'text-rose-600' : 'text-blue-600'}`}>
+                    Izin libur panjang (wajib diajukan minimal 2 minggu sebelum tgl 25).
+                  </p>
                 )}
               </div>
 
@@ -623,7 +675,7 @@ export default function Leave() {
                   value={form.reason}
                   onChange={(e) => setForm((prev) => ({ ...prev, reason: e.target.value }))}
                   rows={3}
-                  placeholder="Contoh : Cuti urusan keluarga urgent"
+                  placeholder={LEAVE_TYPES[form.leaveType]?.placeholder}
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>
@@ -688,7 +740,7 @@ export default function Leave() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || (isLongLeave && longLeaveClosed)}
                   className="h-[44px] rounded-[12px] bg-[#5f1340] text-white text-[12.5px] font-extrabold disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editTarget ? 'Simpan Perubahan' : 'Kirim Pengajuan')}
