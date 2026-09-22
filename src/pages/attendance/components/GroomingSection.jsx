@@ -25,24 +25,28 @@ export default function GroomingSection({
   onSubmitReason,
   onPreview
 }) {
-  const [reason, setReason] = useState(grooming?.incompleteReason || '');
+  const savedReason = String(grooming?.incompleteReason || '').trim();
+  const [reason, setReason] = useState(savedReason);
+  const [editingReason, setEditingReason] = useState(false);
   const [savingReason, setSavingReason] = useState(false);
-  const [reasonMsg, setReasonMsg] = useState(null);
+  const [reasonErr, setReasonErr] = useState(null);
 
   if (!grooming?.required) return null;
 
   const w = grooming.windows || {};
   const windowLabel = [w.window1, w.window2].filter(Boolean).join(' & ') || '—';
   const lockLabel = w.lockAfter || '—';
+  // Tersimpan & tidak sedang diedit → tampilkan ringkasan, bukan form kosong.
+  const showReasonForm = !savedReason || editingReason;
 
   const handleReason = async () => {
     setSavingReason(true);
-    setReasonMsg(null);
+    setReasonErr(null);
     try {
       await onSubmitReason(reason);
-      setReasonMsg({ type: 'success', text: 'Alasan tersimpan.' });
+      setEditingReason(false);
     } catch (e) {
-      setReasonMsg({ type: 'error', text: e?.response?.data?.message || e.message || 'Gagal simpan alasan' });
+      setReasonErr(e?.response?.data?.message || e.message || 'Gagal simpan alasan');
     } finally {
       setSavingReason(false);
     }
@@ -73,7 +77,10 @@ export default function GroomingSection({
         <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl p-2.5 flex items-start gap-2">
           <AlertCircle className="w-3.5 h-3.5 text-rose-600 mt-0.5 shrink-0" />
           <span className="text-[11px] text-rose-800 font-medium">
-            Grooming terkunci setelah {lockLabel}. Isi alasan jika belum lengkap.
+            Grooming terkunci setelah {lockLabel}.
+            {String(grooming.incompleteReason || '').trim()
+              ? ' Alasan sudah terisi.'
+              : ' Wajib isi alasan — tanpa alasan tidak bisa absen pulang.'}
           </span>
         </div>
       )}
@@ -142,31 +149,76 @@ export default function GroomingSection({
 
       {grooming.pastLock && grooming.status !== 'lengkap' && (
         <div className="mt-3 pt-3 border-t border-slate-100">
-          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
             Alasan belum lengkap
           </label>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            maxLength={1000}
-            placeholder={`Wajib diisi setelah ${lockLabel} jika grooming belum lengkap…`}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[12px] outline-none focus:border-[#5f1340]/40 resize-none"
-          />
-          {reasonMsg && (
-            <p className={`mt-1.5 text-[11px] font-semibold ${reasonMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {reasonMsg.text}
-            </p>
+
+          {showReasonForm ? (
+            <>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                autoFocus={editingReason}
+                placeholder={`Wajib diisi setelah ${lockLabel} jika grooming belum lengkap…`}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[12px] outline-none focus:border-[#5f1340]/40 resize-none"
+              />
+              {reasonErr && (
+                <p className="mt-1.5 text-[11px] font-semibold text-rose-700">{reasonErr}</p>
+              )}
+              <div className={`mt-2 grid gap-2 ${savedReason ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {savedReason && (
+                  <button
+                    type="button"
+                    disabled={savingReason}
+                    onClick={() => {
+                      setReason(savedReason);
+                      setReasonErr(null);
+                      setEditingReason(false);
+                    }}
+                    className="h-9 rounded-xl border border-slate-200 bg-white text-slate-700 text-[12px] font-extrabold disabled:opacity-40"
+                  >
+                    Batal
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={savingReason || !reason.trim()}
+                  onClick={handleReason}
+                  className="h-9 rounded-xl bg-amber-600 text-white text-[12px] font-extrabold disabled:opacity-40 flex items-center justify-center gap-1.5"
+                >
+                  {savingReason ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Simpan Alasan
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">
+                    Alasan tersimpan
+                  </p>
+                  <p className="mt-0.5 text-[12px] font-semibold text-emerald-900 leading-snug break-words whitespace-pre-wrap">
+                    {savedReason}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setReason(savedReason);
+                  setReasonErr(null);
+                  setEditingReason(true);
+                }}
+                className="mt-2 w-full h-8 rounded-lg border border-emerald-300 bg-white text-emerald-700 text-[11.5px] font-extrabold"
+              >
+                Ubah Alasan
+              </button>
+            </div>
           )}
-          <button
-            type="button"
-            disabled={savingReason || reason.trim().length < 5}
-            onClick={handleReason}
-            className="mt-2 w-full h-9 rounded-xl bg-amber-600 text-white text-[12px] font-extrabold disabled:opacity-40 flex items-center justify-center gap-1.5"
-          >
-            {savingReason ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-            Simpan Alasan
-          </button>
         </div>
       )}
     </div>

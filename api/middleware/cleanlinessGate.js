@@ -18,7 +18,15 @@ export async function requireCleanlinessForProgress(req, res, next) {
     const role = roleRows[0]?.role || null;
     if (!requiresCleanliness(role)) return next();
 
-    const outletId = req.user.assignedOutletId || roleRows[0]?.outlet_id || null;
+    const workDate = await getWorkDateNow();
+
+    // Foto kebersihan tersimpan memakai tr_attendance.outlet_id (bisa outlet
+    // pengganti). Samakan sumber outlet dengan getProgressGate.
+    const [attRows] = await myWaschenPool.query(
+      'SELECT outlet_id FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+      [employeeId, workDate]
+    );
+    const outletId = attRows[0]?.outlet_id || req.user.assignedOutletId || roleRows[0]?.outlet_id || null;
     if (!outletId) {
       return res.status(403).json({
         success: false,
@@ -26,7 +34,6 @@ export async function requireCleanlinessForProgress(req, res, next) {
       });
     }
 
-    const workDate = await getWorkDateNow();
     const [cnt] = await myWaschenPool.query(
       `SELECT COUNT(*) AS n FROM tr_attendance_cleanliness_photo
        WHERE outlet_id = ? AND role_code = ? AND work_date = ?`,

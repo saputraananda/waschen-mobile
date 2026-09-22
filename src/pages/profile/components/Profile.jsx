@@ -5,6 +5,8 @@ import { startRegistration } from '@simplewebauthn/browser';
 import Navbar from '../../../components/Navbar';
 import ConfirmModal from '../../../components/ConfirmModal';
 import formatName from '../../../utils/FormatName.js';
+import { getRoleLabel } from '../../../utils/getDisplayRole.js';
+import getAvatarUrl from '../../../utils/avatarUrl.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import {
     getDeferredInstallPrompt,
@@ -433,7 +435,7 @@ export default function Profile() {
             return 'Management';
         }
 
-        const roleName = user?.roleName || user?.role_name || user?.role || 'Frontliner';
+        const roleName = getRoleLabel(user?.roleName || user?.role_name || user?.role || 'Frontliner');
         const isLeader = user?.is_leader === 1 || user?.is_leader === true || user?.isLeader === 1 || user?.is_leader === '1';
 
         if (isLeader) {
@@ -547,8 +549,11 @@ export default function Profile() {
                     <div className="relative z-20 flex flex-col items-center text-center pt-2">
                         {/* Avatar ring */}
                         <div className="relative mb-3">
-                            <div className="w-[80px] h-[80px] rounded-full bg-gradient-to-br from-pink-300/50 via-[#8a1c5d] to-[#450d2e] border-[3px] border-white/40 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-                                <span className="text-[28px] font-black text-white">{getInitials(formatName(currentUser.fullName || currentUser.full_name))}</span>
+                            <div className="w-[80px] h-[80px] rounded-full overflow-hidden bg-gradient-to-br from-pink-300/50 via-[#8a1c5d] to-[#450d2e] border-[3px] border-white/40 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                                {getAvatarUrl(currentUser)
+                                    ? <img src={getAvatarUrl(currentUser)} alt="Foto profil" className="w-full h-full object-cover" />
+                                    : <span className="text-[28px] font-black text-white">{getInitials(formatName(currentUser.fullName || currentUser.full_name))}</span>
+                                }
                             </div>
                             <span className="absolute bottom-0.5 right-0.5 w-4.5 h-4.5 bg-emerald-400 rounded-full border-2 border-[#450d2e] shadow-sm" />
                         </div>

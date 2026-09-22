@@ -2,16 +2,111 @@ import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile, deleteGroomingPhotoFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
 import { getAttendanceWorkDate, getWibHoursMinutes } from '../../utils/wib.js';
-import { requiresGrooming } from '../../utils/groomingCleanliness.js';
+import { requiresGrooming, deriveGroomingStatus } from '../../utils/groomingCleanliness.js';
 import {
   getTimeMasterConfig,
   evaluateAttendanceStatus,
+  evaluateGroomingStatus,
   timeToMinutes,
   formatHm,
   getWorkDateNow
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
+
+/** Catatan absen masuk wajib bila absen lewat jam ini (menit dari 00:00 WIB). */
+const NOTE_REQUIRED_AFTER_MIN = 8 * 60; // 08:00
+const NOTE_MAX_LEN = 255;
+
+const NOTE_REQUIRED_AFTER_HM = `${String(Math.floor(NOTE_REQUIRED_AFTER_MIN / 60)).padStart(2, '0')}:${String(NOTE_REQUIRED_AFTER_MIN % 60).padStart(2, '0')}`;
+
+/** Menit WIB dari nilai DATETIME MySQL (Date maupun string 'YYYY-MM-DD HH:mm:ss'). */
+function wibMinutesOf(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const m = value.match(/(\d{1,2}):(\d{2})/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const { hours, minutes } = getWibHoursMinutes(d);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Catatan masuk wajib bila JAM ABSEN TERCATAT >= 08:00 WIB.
+ * Sengaja memakai check_in_time, bukan jam sekarang — karyawan mengisi catatan
+ * setelah absen, jadi jam pengisian tidak boleh mengubah kewajiban.
+ */
+const isCheckInNoteRequired = (checkInTime) => {
+  const min = wibMinutesOf(checkInTime);
+  return min != null && min >= NOTE_REQUIRED_AFTER_MIN;
+};
+
+/**
+ * Validasi + normalisasi catatan absen.
+ * Masuk: wajib bila absen masuk lewat 08:00 WIB. Pulang: selalu opsional.
+ * @returns {{ ok: true, value: string|null } | { ok: false, message: string }}
+ */
+function normalizeNote(raw, { punchType, checkInTime }) {
+  const text = String(raw ?? '').trim().replace(/\s+/g, ' ');
+
+  if (!text) {
+    if (punchType === 'in' && isCheckInNoteRequired(checkInTime)) {
+      return {
+        ok: false,
+        message: `Absen masuk setelah pukul ${NOTE_REQUIRED_AFTER_HM} WIB wajib disertai catatan.`
+      };
+    }
+    return { ok: true, value: null };
+  }
+
+  if (text.length > NOTE_MAX_LEN) {
+    return { ok: false, message: `Catatan maksimal ${NOTE_MAX_LEN} karakter.` };
+  }
+  return { ok: true, value: text };
+}
+
+/**
+ * Gate absen pulang: Frontliner / Delivery Staff yang grooming-nya belum lengkap
+ * wajib mengisi alasan dulu. Tanpa alasan, absen keluar ditolak.
+ * @returns {{ ok: true } | { ok: false, message: string }}
+ */
+async function checkGroomingGateForCheckout(attendanceRow, role) {
+  if (!requiresGrooming(role)) return { ok: true };
+
+  const cfg = await getTimeMasterConfig();
+  const gCfg = cfg.grooming;
+  if (Number(gCfg.feature_enabled) !== 1) return { ok: true };
+
+  const { hours, minutes } = getWibHoursMinutes();
+  const gEval = evaluateGroomingStatus(gCfg, hours * 60 + minutes);
+  // Sebelum jam kunci karyawan masih bisa melengkapi foto; jangan blokir dulu.
+  if (!gEval.pastLock || Number(gCfg.require_reason_after_lock) !== 1) return { ok: true };
+
+  let photoCount = 0;
+  try {
+    const [cnt] = await myWaschenPool.query(
+      'SELECT COUNT(*) AS n FROM tr_attendance_grooming_photo WHERE attendance_id = ?',
+      [attendanceRow.attendance_id]
+    );
+    photoCount = Number(cnt[0]?.n || 0);
+  } catch (err) {
+    // Tabel grooming belum ada → jangan kunci absen pulang.
+    if (err.code === 'ER_NO_SUCH_TABLE') return { ok: true };
+    throw err;
+  }
+
+  if (deriveGroomingStatus(photoCount, role) === 'lengkap') return { ok: true };
+
+  const reason = String(attendanceRow.grooming_incomplete_reason || '').trim();
+  if (reason) return { ok: true };
+
+  return {
+    ok: false,
+    message: `Grooming belum lengkap dan terkunci sejak pukul ${formatHm(gCfg.lock_after_time)} WIB. Isi alasan grooming dulu sebelum absen pulang.`
+  };
+}
 
 /** Jam absen dari mst_time_attendance (fallback hardcode di timeMaster) */
 export const getTimeStatus = async () => {
@@ -27,6 +122,12 @@ export const getTimeStatus = async () => {
     isLocked: evaluated.isLocked,
     lockReason: evaluated.lockReason,
     workDate,
+    // Catatan diisi setelah absen; wajib/tidaknya dihitung dari jam absen tercatat,
+    // jadi di sini cukup kirim ambang + batas panjang.
+    note: {
+      requiredAfter: formatHm(NOTE_REQUIRED_AFTER_HM),
+      maxLength: NOTE_MAX_LEN
+    },
     windows: {
       open: formatHm(att.open_time),
       close: formatHm(att.close_time),
@@ -105,8 +206,8 @@ export const getTodayAttendance = async (req, res) => {
     try {
       [rows] = await myWaschenPool.query(
         `SELECT attendance_id, outlet_id, work_date,
-                check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name,
-                check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name,
+                check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name, check_in_note,
+                check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name, check_out_note,
                 grooming_status, grooming_incomplete_reason, grooming_locked_at
          FROM tr_attendance
          WHERE employee_id = ? AND work_date = ?
@@ -298,7 +399,7 @@ export const punchSelfie = async (req, res) => {
           await myWaschenPool.query(
             `UPDATE tr_attendance
              SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?,
-                 check_in_photo_path=?, check_in_photo_name=?,
+                 check_in_photo_path=?, check_in_photo_name=?, check_in_note=NULL,
                  grooming_status=COALESCE(NULLIF(grooming_status,''), ?)
              WHERE employee_id=? AND work_date=?`,
             [userId, outletId, lat, lng, photo_path, photo_name, groomingStatus, employeeId, workDate]
@@ -336,13 +437,30 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Anda sudah absen keluar hari ini.' });
     }
 
+    const groomingGate = await checkGroomingGateForCheckout(rows[0], employeeRole);
+    if (!groomingGate.ok) {
+      await cleanupUpload();
+      return res.status(422).json({ success: false, message: groomingGate.message, code: 'GROOMING_REASON_REQUIRED' });
+    }
+
     const oldOutPhoto = rows[0].check_out_photo_name;
-    await myWaschenPool.query(
-      `UPDATE tr_attendance
-       SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?, check_out_photo_path=?, check_out_photo_name=?, outlet_id=?
-       WHERE employee_id=? AND work_date=?`,
-      [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
-    );
+    try {
+      await myWaschenPool.query(
+        `UPDATE tr_attendance
+         SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?,
+             check_out_photo_path=?, check_out_photo_name=?, check_out_note=NULL, outlet_id=?
+         WHERE employee_id=? AND work_date=?`,
+        [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
+      );
+    } catch (updErr) {
+      if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
+      await myWaschenPool.query(
+        `UPDATE tr_attendance
+         SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?, check_out_photo_path=?, check_out_photo_name=?, outlet_id=?
+         WHERE employee_id=? AND work_date=?`,
+        [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
+      );
+    }
     if (oldOutPhoto && oldOutPhoto !== photo_name) {
       await deleteAttendancePhotoFile(oldOutPhoto);
     }
@@ -365,6 +483,59 @@ export const punchSelfie = async (req, res) => {
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal menyimpan absensi', error: error.message });
+  }
+};
+
+/**
+ * POST /api/attendance/note
+ * Body: { punch_type: 'in'|'out', note }
+ * Catatan diisi SETELAH absen tersimpan. Wajib untuk absen masuk >= 08:00 WIB.
+ */
+export const savePunchNote = async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    const { punch_type, note } = req.body;
+
+    if (!['in', 'out'].includes(punch_type)) {
+      return res.status(400).json({ success: false, message: 'Parameter punch_type tidak valid' });
+    }
+
+    const workDate = await getWorkDateNow();
+    const [rows] = await myWaschenPool.query(
+      'SELECT check_in_time, check_out_time FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+      [employeeId, workDate]
+    );
+    const rec = rows[0];
+    const punchTime = punch_type === 'in' ? rec?.check_in_time : rec?.check_out_time;
+    if (!punchTime) {
+      return res.status(400).json({
+        success: false,
+        message: punch_type === 'in' ? 'Anda belum absen masuk hari ini.' : 'Anda belum absen pulang hari ini.'
+      });
+    }
+
+    const check = normalizeNote(note, { punchType: punch_type, checkInTime: rec.check_in_time });
+    if (!check.ok) {
+      return res.status(422).json({ success: false, message: check.message });
+    }
+
+    const column = punch_type === 'in' ? 'check_in_note' : 'check_out_note';
+    await myWaschenPool.query(
+      `UPDATE tr_attendance SET ${column}=? WHERE employee_id=? AND work_date=?`,
+      [check.value, employeeId, workDate]
+    );
+
+    emitDataChange({ domain: 'attendance', employeeId, action: `note_${punch_type}` });
+    return res.status(200).json({ success: true, message: 'Catatan tersimpan.', data: { note: check.value } });
+  } catch (error) {
+    console.error('savePunchNote error:', error);
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(500).json({
+        success: false,
+        message: 'Kolom catatan belum ada. Jalankan DDL di agent/tr_attendance_note.sql terlebih dahulu.'
+      });
+    }
+    return res.status(500).json({ success: false, message: 'Gagal menyimpan catatan', error: error.message });
   }
 };
 
@@ -423,13 +594,24 @@ export const deletePunch = async (req, res) => {
         );
       } catch (_) { /* tabel mungkin belum ada */ }
 
-      await myWaschenPool.query(
-        `UPDATE tr_attendance
-         SET check_in_time=NULL, check_in_lat=NULL, check_in_lng=NULL,
-             check_in_photo_path=NULL, check_in_photo_name=NULL
-         WHERE employee_id=? AND work_date=?`,
-        [employeeId, workDate]
-      );
+      try {
+        await myWaschenPool.query(
+          `UPDATE tr_attendance
+           SET check_in_time=NULL, check_in_lat=NULL, check_in_lng=NULL,
+               check_in_photo_path=NULL, check_in_photo_name=NULL, check_in_note=NULL
+           WHERE employee_id=? AND work_date=?`,
+          [employeeId, workDate]
+        );
+      } catch (updErr) {
+        if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
+        await myWaschenPool.query(
+          `UPDATE tr_attendance
+           SET check_in_time=NULL, check_in_lat=NULL, check_in_lng=NULL,
+               check_in_photo_path=NULL, check_in_photo_name=NULL
+           WHERE employee_id=? AND work_date=?`,
+          [employeeId, workDate]
+        );
+      }
 
       await myWaschenPool.query(
         `DELETE FROM tr_attendance
@@ -452,13 +634,24 @@ export const deletePunch = async (req, res) => {
 
       photoName = existing[0].check_out_photo_name;
 
-      await myWaschenPool.query(
-        `UPDATE tr_attendance
-         SET check_out_time=NULL, check_out_lat=NULL, check_out_lng=NULL,
-             check_out_photo_path=NULL, check_out_photo_name=NULL
-         WHERE employee_id=? AND work_date=?`,
-        [employeeId, workDate]
-      );
+      try {
+        await myWaschenPool.query(
+          `UPDATE tr_attendance
+           SET check_out_time=NULL, check_out_lat=NULL, check_out_lng=NULL,
+               check_out_photo_path=NULL, check_out_photo_name=NULL, check_out_note=NULL
+           WHERE employee_id=? AND work_date=?`,
+          [employeeId, workDate]
+        );
+      } catch (updErr) {
+        if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
+        await myWaschenPool.query(
+          `UPDATE tr_attendance
+           SET check_out_time=NULL, check_out_lat=NULL, check_out_lng=NULL,
+               check_out_photo_path=NULL, check_out_photo_name=NULL
+           WHERE employee_id=? AND work_date=?`,
+          [employeeId, workDate]
+        );
+      }
     }
 
     if (photoName) {

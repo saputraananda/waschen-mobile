@@ -4,7 +4,7 @@ import axios from 'axios';
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
@@ -349,7 +349,7 @@ export default function Leave() {
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
               <span className="text-[11px] text-pink-200/80 font-medium truncate block">
-                {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
+                {getHeaderSubtitle(currentUser)}
               </span>
             </div>
             <button

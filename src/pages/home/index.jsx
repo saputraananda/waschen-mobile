@@ -10,6 +10,7 @@ import AlertOvertime from './components/AlertOvertime.jsx';
 import useActiveOvertime from '../../hooks/useActiveOvertime.js';
 import useSoftRefresh from '../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../components/DataUpdatedModal.jsx';
+import { useRealtimeRefresh } from '../../context/SocketContext.jsx';
 import { setPageTitle } from '../../utils/pageTitle.js';
 
 export default function Home() {
@@ -97,6 +98,12 @@ export default function Home() {
       }
     }
   }, [navigate, fetchProgressGate]);
+
+  // Upload/hapus foto kebersihan terjadi di halaman Absensi; tanpa ini gate di
+  // dasbor baru ikut berubah setelah reload manual.
+  useRealtimeRefresh('attendance', () => {
+    fetchProgressGate(localStorage.getItem('token'));
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);

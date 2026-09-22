@@ -256,7 +256,20 @@ export const getProgressGate = async (req, res) => {
     const workDate = await getWorkDateNow();
     const roleRow = await getEmployeeRole(employeeId);
     const role = roleRow?.role || null;
-    const outletId = req.user.assignedOutletId || roleRow?.outlet_id || null;
+
+    // Foto kebersihan disimpan memakai tr_attendance.outlet_id (bisa outlet lain
+    // bila karyawan absen di outlet pengganti). Gate harus memakai outlet yang
+    // sama, kalau tidak foto tersimpan di outlet A tapi dicek di outlet B.
+    let attendanceOutletId = null;
+    try {
+      const [attRows] = await myWaschenPool.query(
+        'SELECT outlet_id FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+        [employeeId, workDate]
+      );
+      attendanceOutletId = attRows[0]?.outlet_id || null;
+    } catch (_) { /* tabel absensi opsional */ }
+
+    const outletId = attendanceOutletId || req.user.assignedOutletId || roleRow?.outlet_id || null;
 
     if (!requiresCleanliness(role)) {
       return res.json({
@@ -549,8 +562,8 @@ export const submitGroomingReason = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
     const reason = String(req.body?.reason || '').trim();
-    if (reason.length < 5) {
-      return res.status(400).json({ success: false, message: 'Alasan minimal 5 karakter.' });
+    if (!reason) {
+      return res.status(400).json({ success: false, message: 'Alasan wajib diisi.' });
     }
     if (reason.length > 1000) {
       return res.status(400).json({ success: false, message: 'Alasan terlalu panjang.' });

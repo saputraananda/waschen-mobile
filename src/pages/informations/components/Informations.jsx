@@ -18,7 +18,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
@@ -32,7 +32,8 @@ const SECTIONS = [
     bg: 'bg-[#5f1340]/10',
     steps: [
       'Login memakai akun karyawan Waschen yang sudah didaftarkan.',
-      'Di beranda, nama dan jabatan Anda akan tampil di bagian atas.',
+      'Di beranda, nama, jabatan, dan outlet Anda akan tampil di bagian atas.',
+      'Cukup login sekali. Aplikasi mengingat sesi Anda, jadi tidak perlu login ulang setiap hari.',
       'Pilih menu sesuai pekerjaan hari ini (Absensi, Progress, Delivery, dan lain-lain).',
       'Kalau bingung, buka lagi halaman petunjuk ini lewat tombol (i) di beranda.'
     ]
@@ -47,7 +48,25 @@ const SECTIONS = [
       'Buka menu Absensi untuk absen masuk dan pulang.',
       'Pastikan GPS aktif dan Anda berada di sekitar outlet.',
       'Ambil foto selfie sesuai instruksi di layar, lalu kirim.',
+      'Setelah foto terkirim, muncul kotak catatan. Absen masuk lewat pukul 08.00 WIB wajib diisi alasannya; sebelum jam itu catatan boleh dikosongkan.',
+      'Ada tombol cepat "Shift Siang" bila alasannya memang jadwal siang. Catatan absen pulang selalu opsional.',
+      'Catatan bisa diubah kapan saja lewat kartu Masuk / Pulang di halaman yang sama.',
       'Cek status absen hari ini di halaman yang sama (sudah masuk / sudah pulang).'
+    ]
+  },
+  {
+    id: 'grooming',
+    title: 'Grooming & Kebersihan',
+    icon: Camera,
+    color: 'text-fuchsia-700',
+    bg: 'bg-fuchsia-50',
+    steps: [
+      'Grooming wajib untuk Frontliner dan Delivery Staff. Posisi lain cukup foto kebersihan area.',
+      'Unggah 6 foto grooming: tampak depan, close-up wajah, samping, belakang, celana, dan kuku.',
+      'Jendela unggah grooming: pukul 05.00–09.00 dan 10.00–11.30 WIB.',
+      'Lewat pukul 11.30 WIB unggahan dikunci. Jika foto belum lengkap, Anda wajib mengisi kolom Alasan.',
+      'Tanpa alasan tersebut, tombol Absen Pulang terkunci. Alasan yang sudah tersimpan bisa diubah lewat tombol "Ubah Alasan".',
+      'Foto kebersihan area sesuai posisi juga harus diunggah — ini syarat membuka menu Update Progress.'
     ]
   },
   {
@@ -97,7 +116,8 @@ const SECTIONS = [
     bg: 'bg-[#5f1340]/10',
     steps: [
       'Menu ini untuk mengecek dan memajukan status cucian (antrian → cuci → setrika → packing).',
-      'Pilih tab sesuai tugas Anda (Frontliner, Washing, Ironing, atau Packing).',
+      'Menu terkunci sampai Anda mengunggah foto kebersihan area di menu Absensi.',
+      'Pilih tab sesuai tugas Anda (Frontliner, Cuci, Setrika, atau Packing).',
       'Bisa cari nota dengan ketik nomor/nama, atau scan barcode/QR nota.',
       'Klik item → isi QC (foto bila perlu) → pilih lanjut / hold / kembalikan sesuai kondisi.',
       'Nota delivery di tahap antrian punya tanda "Pickup Delivery" — frontliner juga boleh QC jika tim delivery berhalangan.'
@@ -105,12 +125,12 @@ const SECTIONS = [
   },
   {
     id: 'delivery',
-    title: 'Delivery (khusus Delivery Staff)',
+    title: 'Delivery (khusus Tim Delivery)',
     icon: Truck,
     color: 'text-rose-700',
     bg: 'bg-rose-50',
     steps: [
-      'Menu Delivery hanya muncul jika jabatan Anda Delivery Staff.',
+      'Menu Delivery hanya muncul jika jabatan Anda Tim Delivery.',
       'Tab Pickup: nota antar yang baru masuk (belum diproses). Lakukan QC seperti frontliner.',
       'Setelah cucian selesai packing dan berstatus Siap Diantar, nota masuk Tab Delivery (boleh outstanding / belum lunas).',
       'Di Tab Delivery, lakukan QC final. Aman atau temuan dengan catatan lanjut → status jadi Sedang Diantar (nota tetap di tab). Temuan fatal → dikembalikan ke packing.',
@@ -128,9 +148,10 @@ const SECTIONS = [
     bg: 'bg-slate-100',
     steps: [
       'Ketuk foto/inisial di beranda untuk membuka Profil.',
-      'Di sini Anda bisa melihat data diri dan outlet yang ditetapkan.',
+      'Di sini Anda bisa melihat data diri, kode karyawan, dan outlet yang ditetapkan.',
       'Edit profil jika ada data yang perlu diperbarui.',
-      'Logout hanya jika diminta atau saat ganti perangkat/akun.'
+      'PIN kasir untuk My Waschen POS diatur di Edit Profil — tepat 4 digit angka dan tidak boleh sama dengan karyawan lain.',
+      'Logout hanya jika diminta atau saat ganti perangkat/akun. Setelah logout Anda harus login ulang.'
     ]
   }
 ];
@@ -155,6 +176,11 @@ const TIPS = [
     icon: CheckCircle2,
     title: 'Kerjakan sesuai tahap',
     text: 'Jangan loncat tahap. Ikuti status yang tampil di aplikasi agar alur cucian tetap rapi.'
+  },
+  {
+    icon: RefreshCw,
+    title: 'Data tidak berubah?',
+    text: 'Ketuk tombol putar di pojok kanan atas untuk memuat ulang data halaman.'
   }
 ];
 
@@ -248,7 +274,7 @@ export default function Informations() {
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
               <span className="text-[11px] text-pink-200/80 font-medium truncate block">
-                {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
+                {getHeaderSubtitle(currentUser)}
               </span>
             </div>
             <button

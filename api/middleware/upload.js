@@ -104,8 +104,44 @@ export const deleteAttendancePhotoFile = async (photoName) => {
 
 export const uploadEvidence = createUploader('assets/evidence');
 export const uploadLeaveDoc = createUploader('assets/document_leave');
-export const uploadProfilePhoto = createUploader('assets/profile_photos');
 export const uploadGeneralDoc = createUploader('assets/documents');
+
+/**
+ * Foto profil & dokumen karyawan (Edit Profil).
+ * File TIDAK ditulis ke disk Waschen Mobile — diteruskan ke Alsa
+ * (storage/assets/{avatars,documents}) supaya satu sumber dengan mst_employee.
+ * Karena itu memakai memoryStorage.
+ */
+const PROFILE_PHOTO_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+const EMPLOYEE_DOC_EXT = [...PROFILE_PHOTO_EXT, '.pdf'];
+
+/** Whitelist ganda: ekstensi DAN mime harus cocok (cegah upload file berbahaya). */
+const employeeAssetFileFilter = (req, file, cb) => {
+  const isPhoto = String(req.params?.docKey) === 'profile';
+  const allowedExt = isPhoto ? PROFILE_PHOTO_EXT : EMPLOYEE_DOC_EXT;
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mime = String(file.mimetype || '').toLowerCase();
+
+  if (!allowedExt.includes(ext)) {
+    return cb(new Error(`Format tidak didukung. Gunakan ${allowedExt.join(', ')}.`));
+  }
+  const mimeOk = ext === '.pdf'
+    ? mime === 'application/pdf'
+    : /^image\/(jpeg|jpg|png|webp)$/.test(mime);
+  if (!mimeOk) {
+    return cb(new Error('Isi file tidak cocok dengan ekstensinya.'));
+  }
+  cb(null, true);
+};
+
+export const uploadEmployeeAsset = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: employeeAssetFileFilter,
+  limits: { fileSize: 6 * 1024 * 1024, files: 1 }
+});
+
+/** @deprecated gunakan uploadEmployeeAsset */
+export const uploadProfilePhoto = uploadEmployeeAsset;
 
 /**
  * Attendance selfie uploader — images only, stored in assets/attendance

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { toAssetUrl } from '../../utils/assetUrl.js';
 
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
@@ -152,7 +153,7 @@ export const loginUser = async (req, res) => {
         fullName: displayName,
         position: user.position_name || 'Staff',
         department: user.department_name || 'Waschen Laundry',
-        profilePath: user.profile_path || user.avatar,
+        profilePath: toAssetUrl(user.profile_path || user.avatar),
         assignedRole,
         assignedOutletId,
         assignedOutletName

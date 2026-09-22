@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import getDisplayRole, { getRoleLabel } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, CheckCircle2, Search, ScanLine, X } from 'lucide-react';
 import { api, STAGES, stageForRole } from '../../../utils/produksiShared.js';
@@ -71,7 +71,11 @@ export default function Produksi() {
     }
     if (parsed) {
       const role = getDisplayRole(parsed);
-      setCurrentUser({ fullName: parsed.fullName || parsed.name || 'Karyawan Waschen', role });
+      setCurrentUser({
+        fullName: parsed.fullName || parsed.name || 'Karyawan Waschen',
+        role,
+        assignedOutletName: parsed.assignedOutletName || null
+      });
       if (role) {
         setActiveStage(stageForRole(role));
       } else {
@@ -300,7 +304,7 @@ export default function Produksi() {
             <div className="min-w-0">
               <h1 className="text-white text-[16px] font-black leading-tight">Progres Pengerjaan</h1>
               <p className="text-pink-100/70 text-[10.5px] font-semibold truncate">
-                {formatName(currentUser.fullName || currentUser.full_name)}{currentUser.role ? ` · ${currentUser.role}` : ''}
+                {[formatName(currentUser.fullName || currentUser.full_name), getRoleLabel(currentUser.role), currentUser.assignedOutletName].filter(Boolean).join(' · ')}
               </p>
             </div>
             <button

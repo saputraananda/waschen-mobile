@@ -6,7 +6,7 @@ import {
   CheckCircle2, PackageSearch, Search, ScanLine, X
 } from 'lucide-react';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import getDisplayRole, { getRoleLabel } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { api, formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
 import {
@@ -332,11 +332,11 @@ export default function Delivery() {
     const displayRole = getDisplayRole(parsed);
     const fullName = parsed?.fullName || parsed?.name || 'Karyawan Waschen';
     if (displayRole) {
-      setCurrentUser({ fullName, role: displayRole });
+      setCurrentUser({ fullName, role: displayRole, assignedOutletName: parsed?.assignedOutletName || null });
       if (displayRole !== DELIVERY_ROLE) navigate('/', { replace: true });
     } else {
       fetchAssignedRole(token).then((r) => {
-        setCurrentUser({ fullName, role: r });
+        setCurrentUser({ fullName, role: r, assignedOutletName: parsed?.assignedOutletName || null });
         if (r !== DELIVERY_ROLE) navigate('/', { replace: true });
       });
     }
@@ -541,7 +541,7 @@ export default function Delivery() {
               <h1 className="text-white text-[16px] font-black leading-tight">Delivery</h1>
               <p className="text-pink-100/70 text-[10.5px] font-semibold truncate">
                 {formatName(currentUser.fullName)}
-                {currentUser.role ? ` · ${currentUser.role}` : ''}
+                {[getRoleLabel(currentUser.role), currentUser.assignedOutletName].filter(Boolean).map((t) => ` · ${t}`).join('')}
               </p>
             </div>
             <button

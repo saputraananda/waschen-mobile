@@ -6,6 +6,7 @@ import {
 } from '@simplewebauthn/server';
 import jwt from 'jsonwebtoken';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { toAssetUrl } from '../../utils/assetUrl.js';
 
 // In-memory challenge store (mapped by userId or challenge key)
 const challengeStore = new Map();
@@ -156,7 +157,7 @@ const fetchUserLoginPayload = async (userId) => {
       fullName: user.full_name || roleEmployeeName || user.user_display_name,
       position: user.position_name || 'Staff',
       department: user.department_name || 'Waschen Laundry',
-      profilePath: user.profile_path || user.avatar,
+      profilePath: toAssetUrl(user.profile_path || user.avatar),
       assignedRole,
       assignedOutletId,
       assignedOutletName

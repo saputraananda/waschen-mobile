@@ -1,6 +1,10 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import jwt from 'jsonwebtoken';
 import { emitDataChange } from '../../socket/io.js';
+import { toAssetUrl as toPublicUrl } from '../../utils/assetUrl.js';
+
+/** docKey → prefix kolom di mst_employee (pola `<prefix>_name` + `<prefix>_path`) */
+const DOC_KEYS = ['profile', 'ktp', 'kk', 'npwp', 'bpjs', 'bpjs_tk', 'ijazah', 'sertifikat', 'rekomkerja'];
 
 /**
  * Helper to extract user identity from JWT header or request params/query
@@ -131,14 +135,21 @@ export const getProfileDetail = async (req, res) => {
       console.warn('myWaschenPool role fetch warning:', e.message);
     }
 
+    // URL publik tiap dokumen: <docKey>_url dipakai langsung oleh frontend
+    const docUrls = {};
+    for (const key of DOC_KEYS) {
+      docUrls[`${key}_url`] = toPublicUrl(employeeRow[`${key}_path`]);
+    }
+
     // Combine detailed profile response
     const profileData = {
       ...employeeRow,
+      ...docUrls,
       fullName: employeeRow.full_name,
       employeeCode: employeeRow.employee_code,
       position: employeeRow.position_name || 'Staff',
       department: employeeRow.department_name || 'Waschen Laundry',
-      profile_url: employeeRow.profile_path || employeeRow.avatar || null,
+      profile_url: toPublicUrl(employeeRow.profile_path || employeeRow.avatar),
       role: assignedRole || 'Frontliner',
       assignedRole: assignedRole || null,
       is_leader: isLeader,
@@ -365,11 +376,65 @@ export const getEducationLevels = async (req, res) => {
 
 /**
  * POST /api/employee/upload-doc/:docKey
- * Handle document / avatar uploads
+ * File diteruskan ke Alsa (POST /service/employee-assets/:docType). Alsa yang
+ * menulis file ke storage/assets/{avatars,documents} sekaligus mengisi
+ * mst_employee.<docKey>_path & _name — satu sumber, tidak ada duplikasi file.
  */
 export const uploadDoc = async (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: 'Dokumen berhasil diunggah'
-  });
+  const docKey = String(req.params.docKey || '').toLowerCase();
+
+  if (!DOC_KEYS.includes(docKey)) {
+    return res.status(400).json({ success: false, message: 'Jenis dokumen tidak dikenal.' });
+  }
+  if (!req.file?.buffer) {
+    return res.status(400).json({ success: false, message: 'File tidak ditemukan.' });
+  }
+
+  const empId = getRequestUserId(req)?.employee_id || null;
+  if (!empId) {
+    return res.status(401).json({ success: false, message: 'Sesi tidak valid. Silakan login ulang.' });
+  }
+
+  const endpoint = String(process.env.ALSA_SERVICE_URL || '').replace(/\/+$/, '');
+  const token = process.env.SERVICE_UPLOAD_TOKEN || '';
+  if (!endpoint || !token) {
+    console.error('uploadDoc: ALSA_SERVICE_URL / SERVICE_UPLOAD_TOKEN belum diset');
+    return res.status(503).json({ success: false, message: 'Layanan unggah belum dikonfigurasi.' });
+  }
+
+  try {
+    const form = new FormData();
+    form.append('employee_id', String(empId));
+    form.append(
+      'file',
+      new Blob([req.file.buffer], { type: req.file.mimetype }),
+      req.file.originalname
+    );
+
+    const upstream = await fetch(`${endpoint}/service/employee-assets/${docKey}`, {
+      method: 'POST',
+      headers: { 'x-service-token': token },
+      body: form,
+      signal: AbortSignal.timeout(30000)
+    });
+
+    const payload = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      // Pesan upstream aman ditampilkan (validasi format/ukuran), bukan detail internal
+      return res.status(upstream.status === 401 ? 502 : upstream.status).json({
+        success: false,
+        message: payload.message || 'Gagal menyimpan dokumen.'
+      });
+    }
+
+    emitDataChange({ domain: 'profile', employeeId: empId, action: 'upload' });
+    return res.status(200).json({
+      success: true,
+      message: 'Dokumen berhasil diunggah',
+      data: { docKey, url: toPublicUrl(payload[`${docKey}_path`]) }
+    });
+  } catch (error) {
+    console.error('uploadDoc error:', error);
+    return res.status(502).json({ success: false, message: 'Gagal menghubungi server dokumen.' });
+  }
 };

@@ -518,7 +518,17 @@ export default function ProfileEditPage() {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             const r2 = await api.get('/employee/profile-detail');
-            setDetail(r2.data.data || {});
+            const fresh = r2.data.data || {};
+            setDetail(fresh);
+            // Header di halaman lain membaca foto dari localStorage 'user'
+            if (docKey === 'profile') {
+                try {
+                    const stored = JSON.parse(localStorage.getItem('user') || '{}');
+                    stored.profilePath = fresh.profile_url || null;
+                    stored.profile_path = fresh.profile_url || null;
+                    localStorage.setItem('user', JSON.stringify(stored));
+                } catch { /* ignore */ }
+            }
             showToast(`${file.name} berhasil diunggah.`);
         } catch (e) {
             if (objectUrl) setDetail(prev => ({ ...prev, profile_url: null }));

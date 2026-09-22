@@ -2,7 +2,8 @@ import React from 'react';
 import { RefreshCw, Shirt, Droplets, Waves, Wind, Info } from 'lucide-react';
 import waschenLogo from '../../../assets/images/waschen.png';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
+import getAvatarUrl from '../../../utils/avatarUrl.js';
 
 export default function Banner({
   currentUser,
@@ -16,6 +17,8 @@ export default function Banner({
   formatDate,
   getGreeting,
 }) {
+  const avatarUrl = getAvatarUrl(currentUser);
+
   return (
     <div className="bg-gradient-to-br from-[#210415] via-[#450d2e] to-[#5f1340] pt-safe-header pb-7 px-5 relative overflow-hidden text-white rounded-b-[32px] shadow-lg shadow-[#5f1340]/20">
       <div className="absolute inset-0 opacity-[0.08] pointer-events-none z-0 overflow-hidden select-none">
@@ -42,9 +45,13 @@ export default function Banner({
         <div className="flex items-center gap-3 min-w-0 pr-2">
           <div
             onClick={onNavigateProfile}
-            className="w-[50px] h-[50px] rounded-[18px] bg-white/15 border border-white/25 flex items-center justify-center font-extrabold text-[17px] text-white flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-transform"
+            className="w-[50px] h-[50px] rounded-[18px] overflow-hidden bg-white/15 border border-white/25 flex items-center justify-center font-extrabold text-[17px] text-white flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-transform"
           >
-            {getInitials(formatName(currentUser?.fullName || currentUser?.full_name))}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Foto profil" className="w-full h-full object-cover" />
+            ) : (
+              getInitials(formatName(currentUser?.fullName || currentUser?.full_name))
+            )}
           </div>
 
           <div className="min-w-0">
@@ -52,7 +59,7 @@ export default function Banner({
               {formatName(currentUser?.fullName || currentUser?.full_name || 'Karyawan Waschen')}
             </h2>
             <p className="text-[11.5px] text-white/75 font-medium truncate mt-0.5 tracking-wide">
-              {[getDisplayRole(currentUser), currentUser?.employeeCode].filter(Boolean).join(' · ') || 'Karyawan Waschen'}
+              {getHeaderSubtitle(currentUser) || 'Karyawan Waschen'}
             </p>
           </div>
         </div>

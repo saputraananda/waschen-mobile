@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import formatName from '../../../utils/FormatName.js';
-import getDisplayRole from '../../../utils/getDisplayRole.js';
+import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 
 const MAX_DIST_M = 1000;
+const NOTE_MAX_LEN = 255;
+const NOTE_QUICK_FILL = ['Shift Siang'];
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -66,6 +68,24 @@ function getPhotoUrl(record, type) {
   }
   return record.check_out_photo_url
     || (record.check_out_photo_name ? `/uploads/assets/attendance/${encodeURIComponent(record.check_out_photo_name)}` : null);
+}
+
+/** Menit dari 00:00 menurut jam WIB — HP karyawan bisa saja tidak di zona WIB. */
+function wibMinutesOfDay(d) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(d);
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+  return get('hour') * 60 + get('minute');
+}
+
+/** "08:00" → 480. */
+function hhmmToMinutes(v, fallback) {
+  const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
 }
 
 const formatStamp = (d) => {
@@ -111,6 +131,10 @@ export default function Attendance() {
   const [facingMode, setFacingMode] = useState('user');
   const [cameraStreamTick, setCameraStreamTick] = useState(0);
   const [pendingCapture, setPendingCapture] = useState(null); // { kind: 'punch'|'grooming'|'cleanliness', punchType?, stepCode?, stepLabel?, coord? }
+  const [noteModal, setNoteModal] = useState(null); // { punchType, required }
+  const [noteText, setNoteText] = useState('');
+  const [noteError, setNoteError] = useState(null);
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const [openingCamera, setOpeningCamera] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -140,6 +164,21 @@ export default function Attendance() {
 
   const inZone = gpsDist != null && gpsDist <= MAX_DIST_M;
   const canPunch = timeStatus?.isOpen && inZone && gpsState === 'ok';
+
+  // Catatan diisi setelah absen tersimpan. Masuk wajib bila JAM ABSEN >= ambang
+  // (default 08:00 WIB) — dihitung dari waktu tercatat, bukan waktu mengetik.
+  const noteRequiredAfter = timeStatus?.note?.requiredAfter || '08:00';
+  const noteMaxLength = timeStatus?.note?.maxLength || NOTE_MAX_LEN;
+
+  // Grooming wajib (Frontliner / Delivery) yang belum lengkap setelah jam kunci
+  // harus diberi alasan sebelum absen pulang.
+  const groomingBlocksCheckout = !!(
+    gcData?.grooming?.required &&
+    gcData.grooming.pastLock &&
+    gcData.grooming.status !== 'lengkap' &&
+    !String(gcData.grooming.incompleteReason || '').trim()
+  );
+  const groomingBlockMessage = `Isi alasan grooming dulu (terkunci sejak ${gcData?.grooming?.windows?.lockAfter || '11:30'}) sebelum absen pulang.`;
 
   const fetchToday = useCallback(async () => {
     const res = await api.get('/attendance/today');
@@ -428,6 +467,13 @@ export default function Attendance() {
     const setMsg = punchType === 'in' ? setMsgIn : setMsgOut;
     setMsg(null);
 
+    // Frontliner / Delivery: grooming belum lengkap setelah jam kunci wajib beralasan
+    // dulu. Backend juga menolak, ini sekadar cegah buka kamera sia-sia.
+    if (punchType === 'out' && groomingBlocksCheckout) {
+      setMsg({ text: groomingBlockMessage, type: 'error' });
+      return;
+    }
+
     if (!timeStatus?.isOpen) {
       setMsg({ text: timeStatus?.lockReason || 'Absensi sedang terkunci.', type: 'error' });
       return;
@@ -458,6 +504,8 @@ export default function Attendance() {
       return;
     }
 
+    setNoteText('');
+    setNoteError(null);
     setOpeningCamera(true);
     setPendingCapture({ kind: 'punch', punchType, coord });
     const ok = await openCamera(facingMode);
@@ -511,6 +559,55 @@ export default function Attendance() {
     await fetchGc();
   };
 
+  /** Buka modal catatan setelah absen tersimpan. Wajib bila jam absen tercatat >= ambang. */
+  const openNoteModal = useCallback((punchType, rec) => {
+    const stamp = punchType === 'in' ? rec?.check_in_time : rec?.check_out_time;
+    const stampMin = stamp ? wibMinutesOfDay(new Date(stamp)) : wibMinutesOfDay(new Date());
+    setNoteText(
+      (punchType === 'in' ? rec?.check_in_note : rec?.check_out_note) || ''
+    );
+    setNoteError(null);
+    setNoteModal({
+      punchType,
+      required: punchType === 'in' && stampMin >= hhmmToMinutes(noteRequiredAfter, 8 * 60)
+    });
+  }, [noteRequiredAfter]);
+
+  const closeNoteModal = () => {
+    if (noteSaving) return;
+    setNoteModal(null);
+    setNoteText('');
+    setNoteError(null);
+  };
+
+  const saveNote = async () => {
+    if (!noteModal || noteSaving) return;
+    const trimmed = noteText.trim().replace(/\s+/g, ' ');
+
+    if (noteModal.required && !trimmed) {
+      setNoteError(`Absen masuk setelah pukul ${noteRequiredAfter} WIB wajib mengisi catatan.`);
+      return;
+    }
+    if (trimmed.length > noteMaxLength) {
+      setNoteError(`Catatan maksimal ${noteMaxLength} karakter.`);
+      return;
+    }
+
+    setNoteSaving(true);
+    try {
+      await api.post('/attendance/note', { punch_type: noteModal.punchType, note: trimmed });
+      await fetchToday();
+      setNoteModal(null);
+      setNoteText('');
+      setNoteError(null);
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      setNoteError(e.response?.data?.message || 'Gagal menyimpan catatan.');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
   const confirmSelfie = async () => {
     if (!pendingCapture || isSubmitting) return;
     const kind = pendingCapture.kind;
@@ -548,7 +645,9 @@ export default function Attendance() {
         form.append('selfie', blob, 'selfie.jpg');
         const res = await api.post('/attendance/punch-selfie', form);
         setMsg?.({ text: res.data.message, type: 'success' });
-        await Promise.all([fetchToday(), fetchGc()]);
+        const [fresh] = await Promise.all([fetchToday(), fetchGc()]);
+        // Absen dulu, baru catatan: modal muncul setelah data tersimpan.
+        openNoteModal(pendingCapture.punchType, fresh?.record);
       } else if (kind === 'grooming') {
         const form = new FormData();
         form.append('step_code', pendingCapture.stepCode);
@@ -732,7 +831,7 @@ export default function Attendance() {
                 {formatName(currentUser.fullName || currentUser.full_name)}
               </h2>
               <span className="text-[11px] text-pink-200/80 font-medium truncate block">
-                {[getDisplayRole(currentUser), currentUser.employeeCode].filter(Boolean).join(' · ')}
+                {getHeaderSubtitle(currentUser)}
               </span>
             </div>
             <button
@@ -904,6 +1003,20 @@ export default function Attendance() {
                             {formatDateFull(record.check_in_time)}
                           </div>
                         )}
+                        {hasIn && (
+                          <button
+                            type="button"
+                            onClick={() => openNoteModal('in', record)}
+                            className="mt-1.5 w-full rounded-lg bg-blue-50 border border-blue-100 px-2 py-1 text-left transition active:scale-[.98] hover:bg-blue-100"
+                          >
+                            <span className="text-[8.5px] font-extrabold uppercase tracking-wider text-blue-400 block">
+                              Catatan {record?.check_in_note ? '· ketuk untuk ubah' : ''}
+                            </span>
+                            <span className={`text-[10px] font-semibold leading-snug break-words ${record?.check_in_note ? 'text-blue-900' : 'text-blue-400'}`}>
+                              {record?.check_in_note || 'Belum ada — ketuk untuk isi'}
+                            </span>
+                          </button>
+                        )}
                         {msgIn && (
                           <div className={`mt-1.5 text-[10px] font-semibold leading-snug px-2 py-1 rounded-lg text-left ${msgIn.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-900'}`}>
                             {msgIn.text}
@@ -977,9 +1090,30 @@ export default function Attendance() {
                             {formatDateFull(record.check_out_time)}
                           </div>
                         )}
+                        {hasOut && (
+                          <button
+                            type="button"
+                            onClick={() => openNoteModal('out', record)}
+                            className="mt-1.5 w-full rounded-lg bg-rose-50 border border-rose-100 px-2 py-1 text-left transition active:scale-[.98] hover:bg-rose-100"
+                          >
+                            <span className="text-[8.5px] font-extrabold uppercase tracking-wider text-rose-400 block">
+                              Catatan {record?.check_out_note ? '· ketuk untuk ubah' : ''}
+                            </span>
+                            <span className={`text-[10px] font-semibold leading-snug break-words ${record?.check_out_note ? 'text-rose-900' : 'text-rose-400'}`}>
+                              {record?.check_out_note || 'Belum ada — ketuk untuk isi'}
+                            </span>
+                          </button>
+                        )}
                         {msgOut && (
                           <div className={`mt-1.5 text-[10px] font-semibold leading-snug px-2 py-1 rounded-lg text-left ${msgOut.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-900'}`}>
                             {msgOut.text}
+                          </div>
+                        )}
+                        {!hasOut && hasIn && groomingBlocksCheckout && (
+                          <div className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-left">
+                            <span className="text-[10px] font-semibold text-amber-800 leading-snug block">
+                              Grooming belum lengkap. Isi alasan di bagian Grooming Harian dulu.
+                            </span>
                           </div>
                         )}
                         <div className="mt-2">
@@ -995,10 +1129,16 @@ export default function Attendance() {
                             <button
                               type="button"
                               onClick={() => handlePunch('out')}
-                              disabled={!hasIn || openingCamera || cameraOpen || !canPunch}
+                              disabled={!hasIn || openingCamera || cameraOpen || !canPunch || groomingBlocksCheckout}
                               className={`w-full h-[34px] rounded-[10px] text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition active:scale-[.96] disabled:opacity-40 disabled:cursor-not-allowed ${hasIn ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-300'}`}
                             >
-                              {openingCamera ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : !hasIn ? 'Belum Masuk' : 'Absen Pulang'}
+                              {openingCamera
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : !hasIn
+                                  ? 'Belum Masuk'
+                                  : groomingBlocksCheckout
+                                    ? 'Isi Alasan Dulu'
+                                    : 'Absen Pulang'}
                             </button>
                           )}
                         </div>
@@ -1043,17 +1183,56 @@ export default function Attendance() {
               )}
 
               <div className="mt-5 bg-white border border-slate-100 rounded-[22px] shadow-[0_4px_16px_rgba(0,0,0,0.03)] p-4">
-                <h4 className="text-[13px] font-black text-slate-800 mb-1">Catatan Presensi</h4>
-                <p className="text-[11.5px] text-slate-400 font-medium leading-relaxed">
-                  Absensi dibuka pukul{' '}
-                  <strong className="text-slate-600">
-                    {timeStatus?.windows?.open || '05:00'}–{timeStatus?.windows?.close || '23:59'} WIB
-                  </strong>
-                  {timeStatus?.windows?.lockEnabled
-                    ? <> (terkunci {timeStatus.windows.lockStart}–{timeStatus.windows.lockEnd})</>
-                    : null}
-                  . Pastikan Anda berada dalam radius <strong className="text-slate-600">500 Meter</strong> dari outlet yang ditetapkan.
-                </p>
+                <h4 className="text-[13px] font-black text-slate-800 mb-2">Catatan Presensi</h4>
+                <ul className="flex flex-col gap-1.5 text-[11.5px] text-slate-400 font-medium leading-relaxed">
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>
+                      Absensi dibuka pukul{' '}
+                      <strong className="text-slate-600">
+                        {timeStatus?.windows?.open || '05:00'}–{timeStatus?.windows?.close || '23:59'} WIB
+                      </strong>
+                      {timeStatus?.windows?.lockEnabled
+                        ? <> (terkunci {timeStatus.windows.lockStart}–{timeStatus.windows.lockEnd})</>
+                        : null}.
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>
+                      Berada dalam radius <strong className="text-slate-600">500 Meter</strong> dari outlet yang ditetapkan.
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>Absen dulu — modal catatan muncul setelah absen tersimpan.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>
+                      Absen masuk lewat <strong className="text-slate-600">{noteRequiredAfter} WIB</strong> wajib isi catatan.
+                      Tersedia tombol cepat <strong className="text-slate-600">Shift Siang</strong>.
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>Catatan absen pulang opsional.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                    <span>Ketuk kotak catatan di kartu absen untuk mengubah isinya.</span>
+                  </li>
+                  {gcData?.grooming?.required && (
+                    <li className="flex gap-2">
+                      <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
+                      <span>
+                        Grooming belum lengkap setelah{' '}
+                        <strong className="text-slate-600">{gcData.grooming.windows?.lockAfter || '11:30'} WIB</strong>{' '}
+                        wajib isi alasan — tanpa alasan tidak bisa absen pulang.
+                      </span>
+                    </li>
+                  )}
+                </ul>
               </div>
             </>
           )}
@@ -1283,6 +1462,112 @@ export default function Attendance() {
           </div>
         </div>
       )}
+      {/* Catatan absen — muncul SETELAH absen tersimpan */}
+      {noteModal && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-safe-modal">
+          <div className="w-full max-w-[400px] bg-white rounded-[28px] shadow-2xl p-5">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div>
+                <h3 className="text-[15px] font-black text-slate-800">
+                  Catatan Absen {noteModal.punchType === 'in' ? 'Masuk' : 'Pulang'}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  {noteModal.required
+                    ? `Absen masuk lewat pukul ${noteRequiredAfter} WIB — catatan wajib diisi.`
+                    : 'Opsional. Boleh dilewati bila tidak ada catatan.'}
+                </p>
+              </div>
+              {!noteModal.required && (
+                <button
+                  type="button"
+                  onClick={closeNoteModal}
+                  disabled={noteSaving}
+                  className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                  aria-label="Tutup"
+                >
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 mt-3 mb-1.5">
+              <div className="flex flex-wrap gap-1.5">
+                {NOTE_QUICK_FILL.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setNoteText(preset);
+                      setNoteError(null);
+                    }}
+                    className={`px-2.5 h-[28px] rounded-full border text-[11px] font-extrabold transition active:scale-95 ${
+                      noteText.trim() === preset
+                        ? 'border-[#5f1340] bg-[#5f1340] text-white'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold tabular-nums flex-shrink-0">
+                {noteText.length}/{noteMaxLength}
+              </span>
+            </div>
+
+            <textarea
+              id="attendance-note"
+              rows={3}
+              autoFocus
+              value={noteText}
+              maxLength={noteMaxLength}
+              onChange={(e) => {
+                setNoteText(e.target.value);
+                if (noteError) setNoteError(null);
+              }}
+              placeholder={
+                noteModal.punchType === 'in'
+                  ? 'Contoh: Shift Siang, izin telat, ada urusan keluarga'
+                  : 'Contoh: lembur packing, serah terima ke shift malam'
+              }
+              className={`w-full rounded-[12px] border px-3 py-2 text-[12.5px] font-medium text-slate-800 outline-none resize-none transition placeholder:text-slate-300 placeholder:font-normal ${
+                noteError
+                  ? 'border-rose-300 bg-rose-50 focus:border-rose-500'
+                  : 'border-slate-200 bg-white focus:border-[#5f1340]'
+              }`}
+            />
+
+            {noteError && (
+              <div className="mt-1 text-[10.5px] font-bold text-rose-600 flex items-start gap-1">
+                <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                <span>{noteError}</span>
+              </div>
+            )}
+
+            <div className={`mt-3 grid gap-2 ${noteModal.required ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              {!noteModal.required && (
+                <button
+                  type="button"
+                  onClick={closeNoteModal}
+                  disabled={noteSaving}
+                  className="h-[42px] rounded-[12px] border border-slate-200 bg-white text-slate-700 text-[12px] font-extrabold disabled:opacity-50"
+                >
+                  Lewati
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={saveNote}
+                disabled={noteSaving || (noteModal.required && !noteText.trim())}
+                className="h-[42px] rounded-[12px] bg-[#5f1340] text-white text-[12px] font-extrabold disabled:opacity-50"
+              >
+                {noteSaving ? 'Menyimpan…' : 'Simpan Catatan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
     </div>
   );
