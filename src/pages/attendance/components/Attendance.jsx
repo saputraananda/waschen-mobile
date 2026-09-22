@@ -747,7 +747,7 @@ export default function Attendance() {
           </div>
 
           <div className="relative z-10 text-center py-2">
-            <span className="text-[11px] text-pink-200/80 font-bold uppercase tracking-wider block">Waktu Saat Inizzzz</span>
+            <span className="text-[11px] text-pink-200/80 font-bold uppercase tracking-wider block">Waktu Saat Ini</span>
             <span className="text-[34px] font-black text-white font-mono tracking-tight leading-tight block">
               {currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
