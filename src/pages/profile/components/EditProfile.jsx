@@ -539,6 +539,28 @@ export default function ProfileEditPage() {
         setUploading(null);
     };
 
+    const handleDeleteDoc = async (docKey) => {
+        setUploading(docKey);
+        try {
+            await api.delete(`/employee/upload-doc/${docKey}`);
+            const r2 = await api.get('/employee/profile-detail');
+            const fresh = r2.data.data || {};
+            setDetail(fresh);
+            if (docKey === 'profile') {
+                try {
+                    const stored = JSON.parse(localStorage.getItem('user') || '{}');
+                    stored.profilePath = null;
+                    stored.profile_path = null;
+                    localStorage.setItem('user', JSON.stringify(stored));
+                } catch { /* ignore */ }
+            }
+            showToast('Foto berhasil dihapus.');
+        } catch (e) {
+            showToast(e.response?.data?.message || 'Gagal menghapus file.', false);
+        }
+        setUploading(null);
+    };
+
     const bankOpts = [
         { v: '', l: '— Pilih Bank —' },
         ...banks
@@ -616,6 +638,16 @@ export default function ProfileEditPage() {
                             onChange={e => { if (e.target.files?.[0]) handleUpload('profile', e.target.files[0]); e.target.value = ''; }}
                         />
                         <div className="text-[11px] text-white/50 font-medium">Ketuk untuk ganti foto</div>
+                        {detail?.profile_url && (
+                            <button
+                                type="button"
+                                disabled={uploading === 'profile'}
+                                onClick={() => handleDeleteDoc('profile')}
+                                className="text-[10.5px] font-bold text-white/70 underline underline-offset-2 disabled:opacity-40"
+                            >
+                                Hapus foto
+                            </button>
+                        )}
                         <div className="text-[13px] font-extrabold text-white">{name || '—'}</div>
                         {detail?.employee_code && (
                             <div className="text-[10.5px] text-white/45 font-medium">{detail.employee_code}</div>

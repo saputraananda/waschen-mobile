@@ -6,7 +6,8 @@ import {
   updateProfile,
   getBanks,
   getEducationLevels,
-  uploadDoc
+  uploadDoc,
+  deleteDoc
 } from '../../controllers/profile/profile.controller.js';
 
 const router = express.Router();
@@ -37,5 +38,6 @@ const uploadEmployeeAssetSafe = (req, res, next) => {
 };
 
 router.post('/upload-doc/:docKey', requireAuth, uploadEmployeeAssetSafe, uploadDoc);
+router.delete('/upload-doc/:docKey', requireAuth, deleteDoc);
 
 export default router;

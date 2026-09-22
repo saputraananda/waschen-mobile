@@ -438,3 +438,52 @@ export const uploadDoc = async (req, res) => {
     return res.status(502).json({ success: false, message: 'Gagal menghubungi server dokumen.' });
   }
 };
+
+/**
+ * DELETE /api/employee/upload-doc/:docKey
+ * Menghapus file di server Alsa sekaligus mengosongkan kolom mst_employee.
+ */
+export const deleteDoc = async (req, res) => {
+  const docKey = String(req.params.docKey || '').toLowerCase();
+
+  if (!DOC_KEYS.includes(docKey)) {
+    return res.status(400).json({ success: false, message: 'Jenis dokumen tidak dikenal.' });
+  }
+
+  const empId = getRequestUserId(req)?.employee_id || null;
+  if (!empId) {
+    return res.status(401).json({ success: false, message: 'Sesi tidak valid. Silakan login ulang.' });
+  }
+
+  const endpoint = String(process.env.ALSA_SERVICE_URL || '').replace(/\/+$/, '');
+  const token = process.env.SERVICE_UPLOAD_TOKEN || '';
+  if (!endpoint || !token) {
+    console.error('deleteDoc: ALSA_SERVICE_URL / SERVICE_UPLOAD_TOKEN belum diset');
+    return res.status(503).json({ success: false, message: 'Layanan unggah belum dikonfigurasi.' });
+  }
+
+  try {
+    const upstream = await fetch(
+      `${endpoint}/service/employee-assets/${docKey}?employee_id=${encodeURIComponent(empId)}`,
+      {
+        method: 'DELETE',
+        headers: { 'x-service-token': token },
+        signal: AbortSignal.timeout(30000)
+      }
+    );
+
+    const payload = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      return res.status(upstream.status === 401 ? 502 : upstream.status).json({
+        success: false,
+        message: payload.message || 'Gagal menghapus dokumen.'
+      });
+    }
+
+    emitDataChange({ domain: 'profile', employeeId: empId, action: 'delete' });
+    return res.status(200).json({ success: true, message: 'Dokumen berhasil dihapus' });
+  } catch (error) {
+    console.error('deleteDoc error:', error);
+    return res.status(502).json({ success: false, message: 'Gagal menghubungi server dokumen.' });
+  }
+};
