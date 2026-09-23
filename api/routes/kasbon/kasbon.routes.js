@@ -3,6 +3,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { uploadKasbonProof } from '../../middleware/upload.js';
 import {
   getKasbonList,
+  getKasbonSummary,
   getKasbonById,
   submitKasbon,
   updateKasbon,
@@ -26,6 +27,7 @@ const uploadKasbonProofWithErrorHandling = (req, res, next) => {
 };
 
 router.get('/list', getKasbonList);
+router.get('/summary', getKasbonSummary);
 router.get('/:id', getKasbonById);
 router.post('/', uploadKasbonProofWithErrorHandling, submitKasbon);
 router.put('/:id', uploadKasbonProofWithErrorHandling, updateKasbon);

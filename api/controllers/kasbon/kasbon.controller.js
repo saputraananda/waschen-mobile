@@ -1,8 +1,27 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { KASBON_UPLOAD_PUBLIC_PATH, deleteKasbonProofFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
+import { buildKasbonSummary } from '../../utils/kasbonLimit.js';
 
 const KASBON_TYPES = ['kasbon', 'pinjaman'];
+
+const resolveTenor = (type, raw) => {
+  if (type === 'kasbon') return 1;
+  const n = parseInt(raw, 10);
+  if (!Number.isInteger(n) || n < 1 || n > 36) return null;
+  return n;
+};
+
+const assertWithinLimit = async (employeeId, amount, excludeId = null) => {
+  const summary = await buildKasbonSummary(employeeId, excludeId);
+  if (!summary.hasSalary) {
+    return { ok: false, message: 'Gaji pokok belum diisi HRD. Pengajuan belum bisa dikirim.' };
+  }
+  if (amount > summary.sisa) {
+    return { ok: false, message: `Jumlah melebihi sisa limit (Rp ${summary.sisa.toLocaleString('id-ID')}).` };
+  }
+  return { ok: true, summary };
+};
 
 const buildProofUrl = (req, row) => {
   if (!row?.proof_path) return null;
@@ -28,11 +47,12 @@ export const getKasbonList = async (req, res) => {
       SELECT
         k.id, k.employee_id, k.employee_name, k.type,
         k.submission_date, k.amount_requested, k.amount_approved,
+        k.payment_method, k.tenor_count, k.installment_amount, k.is_opening_balance,
         k.purpose, k.notes, k.proof_path, k.status,
         k.process_note, k.process_by_name, k.process_at,
         k.approved_note, k.approved_by_name, k.approved_at,
         k.rejection_note, k.created_at, k.updated_at,
-        COALESCE((SELECT SUM(p.amount) FROM tr_kasbon_payment p WHERE p.kasbon_id = k.id), 0) AS total_paid,
+        COALESCE((SELECT SUM(p.amount) FROM tr_kasbon_payment p WHERE p.kasbon_id = k.id AND p.status = 'terbayar'), 0) AS total_paid,
         (SELECT COUNT(*) FROM tr_kasbon_payment p WHERE p.kasbon_id = k.id) AS payment_count
       FROM tr_kasbon k
       WHERE k.employee_id = ?
@@ -45,7 +65,15 @@ export const getKasbonList = async (req, res) => {
     sql += ' ORDER BY k.created_at DESC';
 
     const [rows] = await myWaschenPool.query(sql, params);
-    return res.status(200).json({ success: true, message: 'OK', data: rows.map((r) => mapRow(req, r)) });
+    const [yearRows] = await myWaschenPool.query(
+      `SELECT DISTINCT YEAR(submission_date) AS year
+       FROM tr_kasbon
+       WHERE employee_id = ? AND submission_date IS NOT NULL
+       ORDER BY year DESC`,
+      [employeeId]
+    );
+    const years = yearRows.map((r) => Number(r.year)).filter((y) => Number.isInteger(y) && y > 0);
+    return res.status(200).json({ success: true, message: 'OK', data: rows.map((r) => mapRow(req, r)), years });
   } catch (error) {
     console.error('getKasbonList error:', error);
     if (error.code === 'ER_NO_SUCH_TABLE') {
@@ -55,6 +83,27 @@ export const getKasbonList = async (req, res) => {
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil riwayat kasbon', error: error.message });
+  }
+};
+
+/**
+ * GET /api/kasbon/summary
+ * Limit = 50% gaji pokok. Sisa = limit dikurangi pengajuan berjalan dan pokok yang belum lunas.
+ * Sekarang = termin belum lunas yang jatuh tempo sampai akhir cutoff berjalan.
+ */
+export const getKasbonSummary = async (req, res) => {
+  try {
+    const summary = await buildKasbonSummary(req.user.employee_id);
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error) {
+    console.error('getKasbonSummary error:', error);
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(500).json({
+        success: false,
+        message: 'Kolom kasbon/gaji pokok belum ada. Jalankan agent/kasbon_limit_alter.sql di database development.'
+      });
+    }
+    return res.status(500).json({ success: false, message: 'Gagal mengambil ringkasan limit kasbon' });
   }
 };
 
@@ -78,10 +127,10 @@ export const getKasbonById = async (req, res) => {
     const submission = mapRow(req, rows[0]);
 
     const [payments] = await myWaschenPool.query(
-      `SELECT id, payment_date, amount, payment_method, notes, recorded_by_name, created_at
+      `SELECT id, installment_no, payment_date, due_date, amount, payment_method, status, paid_at, notes, recorded_by_name, created_at
        FROM tr_kasbon_payment
        WHERE kasbon_id = ?
-       ORDER BY payment_date ASC, created_at ASC`,
+       ORDER BY installment_no ASC, payment_date ASC, created_at ASC`,
       [id]
     );
     submission.payments = payments;
@@ -105,7 +154,7 @@ export const submitKasbon = async (req, res) => {
 
   try {
     const employeeId = req.user.employee_id;
-    const { type, submission_date, purpose, amount_requested, notes } = req.body;
+    const { type, submission_date, purpose, amount_requested, notes, tenor_count } = req.body;
 
     if (!KASBON_TYPES.includes(type)) {
       await cleanupFile();
@@ -124,6 +173,16 @@ export const submitKasbon = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Jumlah pengajuan harus lebih dari 0' });
     }
+    const tenor = resolveTenor(type, tenor_count);
+    if (!tenor) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: 'Jumlah termin pinjaman harus 1 sampai 36' });
+    }
+    const limitCheck = await assertWithinLimit(employeeId, amount);
+    if (!limitCheck.ok) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: limitCheck.message });
+    }
 
     const [empRows] = await myWaschenPool.query(
       `SELECT employee_name FROM mst_role
@@ -138,9 +197,9 @@ export const submitKasbon = async (req, res) => {
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_kasbon
-         (employee_id, employee_name, type, submission_date, amount_requested, purpose, notes, proof_path, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pengajuan')`,
-      [employeeId, employeeName, type, submission_date, amount, purpose.trim(), notes?.trim() || null, proofPath]
+         (employee_id, employee_name, type, submission_date, amount_requested, tenor_count, purpose, notes, proof_path, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pengajuan')`,
+      [employeeId, employeeName, type, submission_date, amount, tenor, purpose.trim(), notes?.trim() || null, proofPath]
     );
 
     const [inserted] = await myWaschenPool.query('SELECT * FROM tr_kasbon WHERE id = ?', [result.insertId]);
@@ -187,7 +246,7 @@ export const updateKasbon = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Pengajuan tidak dapat diubah karena sudah diproses' });
     }
 
-    const { type, submission_date, purpose, amount_requested, notes, remove_proof } = req.body;
+    const { type, submission_date, purpose, amount_requested, notes, remove_proof, tenor_count } = req.body;
 
     if (!KASBON_TYPES.includes(type)) {
       await cleanupFile();
@@ -206,6 +265,16 @@ export const updateKasbon = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Jumlah pengajuan harus lebih dari 0' });
     }
+    const tenor = resolveTenor(type, tenor_count);
+    if (!tenor) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: 'Jumlah termin pinjaman harus 1 sampai 36' });
+    }
+    const limitCheck = await assertWithinLimit(employeeId, amount, id);
+    if (!limitCheck.ok) {
+      await cleanupFile();
+      return res.status(422).json({ success: false, message: limitCheck.message });
+    }
 
     let proofPath = existingRows[0].proof_path;
 
@@ -219,9 +288,9 @@ export const updateKasbon = async (req, res) => {
 
     await myWaschenPool.query(
       `UPDATE tr_kasbon
-       SET type = ?, submission_date = ?, amount_requested = ?, purpose = ?, notes = ?, proof_path = ?
+       SET type = ?, submission_date = ?, amount_requested = ?, tenor_count = ?, purpose = ?, notes = ?, proof_path = ?
        WHERE id = ?`,
-      [type, submission_date, amount, purpose.trim(), notes?.trim() || null, proofPath, id]
+      [type, submission_date, amount, tenor, purpose.trim(), notes?.trim() || null, proofPath, id]
     );
 
     const [updatedRows] = await myWaschenPool.query('SELECT * FROM tr_kasbon WHERE id = ?', [id]);

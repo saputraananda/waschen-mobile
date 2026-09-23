@@ -77,10 +77,26 @@ function valueToDate(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+const formatAmountInput = (value) => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  return Number(digits).toLocaleString('id-ID');
+};
+
 const formatRupiah = (n) => {
   const num = Number(n);
   if (!num || Number.isNaN(num)) return 'Rp 0';
   return 'Rp ' + num.toLocaleString('id-ID');
+};
+
+const simulateInstallments = (total, tenor) => {
+  const n = parseInt(tenor, 10);
+  const whole = Math.round(Number(total) || 0);
+  if (!Number.isInteger(n) || n < 1 || n > 36 || whole <= 0) return [];
+  const each = Math.floor(whole / n);
+  const amounts = Array.from({ length: n }, () => each);
+  amounts[n - 1] = whole - each * (n - 1);
+  return amounts;
 };
 
 const getPeriodRange = (month, year) => {
@@ -96,6 +112,7 @@ const emptyForm = () => ({
   submissionDate: todayISO(),
   purpose: '',
   amountStr: '',
+  tenorCount: '',
   notes: '',
   proofFile: null,
   proofPreview: null,
@@ -112,11 +129,9 @@ export default function Kasbon() {
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
-  const yearOptions = useMemo(() => {
-    const y = now.getFullYear();
-    return [y - 1, y, y + 1];
-  }, [now]);
+  const [yearOptions, setYearOptions] = useState([now.getFullYear()]);
 
+  const [summary, setSummary] = useState(null);
   const [items, setItems] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState(null);
@@ -178,9 +193,19 @@ export default function Kasbon() {
     setLoadingList(true);
     setListError(null);
     try {
-      const { start, end } = getPeriodRange(filterMonth, filterYear);
-      const res = await api.get('/kasbon/list', { params: { startDate: start, endDate: end } });
+      const range = filterMonth
+        ? getPeriodRange(filterMonth, filterYear)
+        : { start: `${filterYear}-01-01`, end: `${filterYear}-12-31` };
+      const [res, sumRes] = await Promise.all([
+        api.get('/kasbon/list', { params: { startDate: range.start, endDate: range.end } }),
+        api.get('/kasbon/summary')
+      ]);
       setItems(res.data?.data || []);
+      setSummary(sumRes.data?.data || null);
+      const years = Array.isArray(res.data?.years) ? res.data.years.map(Number).filter((y) => y > 0) : [];
+      const options = years.length ? years : [new Date().getFullYear()];
+      setYearOptions(options);
+      setFilterYear((prev) => (options.includes(prev) ? prev : options[0]));
     } catch (e) {
       if (handleAuthError(e)) return;
       setListError(e.response?.data?.message || 'Gagal memuat riwayat pengajuan');
@@ -222,6 +247,7 @@ export default function Kasbon() {
       submissionDate: String(item.submission_date).slice(0, 10),
       purpose: item.purpose || '',
       amountStr: String(Math.round(Number(item.amount_requested))),
+      tenorCount: item.tenor_count ? String(item.tenor_count) : '',
       notes: item.notes || '',
       proofFile: null,
       proofPreview: item.proof_url || null,
@@ -276,6 +302,24 @@ export default function Kasbon() {
       setSubmitError('Jumlah pengajuan harus lebih dari 0');
       return;
     }
+    if (summary && !summary.hasSalary) {
+      setSubmitError('Gaji pokok belum diisi HRD. Pengajuan belum bisa dikirim.');
+      return;
+    }
+    const ownHold = editTarget && (editTarget.status === 'pengajuan' || editTarget.status === 'proses')
+      ? Number(editTarget.amount_requested) || 0
+      : 0;
+    if (summary && amount > (Number(summary.sisa) || 0) + ownHold) {
+      setSubmitError(`Jumlah melebihi sisa limit (${formatRupiah((Number(summary.sisa) || 0) + ownHold)})`);
+      return;
+    }
+    if (form.type === 'pinjaman') {
+      const tenor = parseInt(form.tenorCount, 10);
+      if (!Number.isInteger(tenor) || tenor < 1 || tenor > 36) {
+        setSubmitError('Jumlah termin pinjaman harus 1 sampai 36');
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -284,6 +328,7 @@ export default function Kasbon() {
       fd.append('submission_date', form.submissionDate);
       fd.append('purpose', form.purpose.trim());
       fd.append('amount_requested', String(amount));
+      fd.append('tenor_count', form.type === 'pinjaman' ? String(parseInt(form.tenorCount, 10) || 1) : '1');
       fd.append('notes', form.notes.trim());
       if (form.proofFile) fd.append('proof_doc', form.proofFile);
       if (editTarget && form.removeProof && !form.proofFile) fd.append('remove_proof', '1');
@@ -337,7 +382,7 @@ export default function Kasbon() {
   };
 
   const monthOptions = useMemo(
-    () => MONTH_NAMES.map((label, idx) => ({ value: idx + 1, label })),
+    () => [{ value: '', label: 'Semua' }, ...MONTH_NAMES.map((label, idx) => ({ value: idx + 1, label }))],
     []
   );
 
@@ -390,12 +435,28 @@ export default function Kasbon() {
         {/* CONTENT AREA */}
         <div className="w-full relative">
 
+          <div className="mx-4 -mt-6 relative z-20 grid grid-cols-3 gap-2">
+            {[
+              ['Limit', summary?.limit],
+              ['Sekarang', summary?.sekarang],
+              ['Sisa', summary?.sisa]
+            ].map(([label, value]) => (
+              <div key={label} className="bg-white rounded-2xl border border-slate-100 px-2 py-3 text-center shadow-[0_8px_32px_rgba(0,0,0,0.06)]">
+                <div className="text-[9.5px] font-extrabold uppercase tracking-wider text-slate-400">{label}</div>
+                <div className="mt-1 text-[12px] font-black text-slate-800 leading-tight">{summary ? formatRupiah(value) : '—'}</div>
+              </div>
+            ))}
+          </div>
+          {summary && !summary.hasSalary && (
+            <p className="mx-4 mt-2 text-[11px] font-semibold text-amber-700">Gaji pokok belum diisi HRD. Pengajuan baru belum bisa dikirim.</p>
+          )}
+
           {/* Filter periode + stats */}
-          <div className="mx-4 -mt-6 relative z-20 bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 p-5">
+          <div className="mx-4 mt-3 relative z-20 bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 p-5">
             <div className="flex items-center gap-2 mb-3">
               <select
                 value={filterMonth}
-                onChange={(e) => setFilterMonth(Number(e.target.value))}
+                onChange={(e) => setFilterMonth(e.target.value === '' ? '' : Number(e.target.value))}
                 className="flex-1 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 outline-none"
               >
                 {monthOptions.map((m) => (
@@ -475,7 +536,6 @@ export default function Kasbon() {
                   const statusMeta = STATUS_META[item.status] || STATUS_META.pengajuan;
                   const Icon = typeMeta.icon;
                   const isEditable = item.status === 'pengajuan';
-                  const isPinjaman = item.type === 'pinjaman';
                   const isApproved = item.status === 'disetujui';
                   const totalPaid = Number(item.total_paid) || 0;
                   const amtApproved = Number(item.amount_approved) || 0;
@@ -531,10 +591,10 @@ export default function Kasbon() {
                         </div>
                       )}
 
-                      {isPinjaman && isApproved && amtApproved > 0 && (
+                      {isApproved && amtApproved > 0 && (
                         <div className="mt-3 bg-indigo-50 border border-indigo-100 rounded-[12px] p-3">
                           <div className="flex items-center justify-between mb-2">
-                            <div className="text-[11px] font-bold text-indigo-700">Pembayaran Pinjaman</div>
+                            <div className="text-[11px] font-bold text-indigo-700">Jadwal Pembayaran</div>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sisa <= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                               {sisa <= 0 ? 'LUNAS' : `Sisa ${formatRupiah(sisa)}`}
                             </span>
@@ -569,9 +629,12 @@ export default function Kasbon() {
                               ) : payments.map((p) => (
                                 <div key={p.id} className="flex items-start justify-between bg-white rounded-[8px] px-3 py-2 border border-indigo-100">
                                   <div className="min-w-0">
-                                    <div className="text-[11.5px] font-bold text-slate-800">{formatRupiah(p.amount)}</div>
+                                    <div className="text-[11.5px] font-bold text-slate-800">
+                                      {p.installment_no ? `Termin ${p.installment_no} · ` : ''}{formatRupiah(p.amount)}
+                                    </div>
                                     <div className="text-[10px] text-slate-400">
-                                      {formatDateShort(p.payment_date)}{p.payment_method ? ` · ${p.payment_method.replace('_', ' ')}` : ''}
+                                      Jatuh tempo {formatDateShort(p.due_date || p.payment_date)}
+                                      {p.status === 'terbayar' ? ' · Lunas' : ' · Belum'}
                                     </div>
                                   </div>
                                   {p.notes && <div className="text-[10.5px] text-slate-500 text-right max-w-[110px] truncate ml-2 flex-shrink-0">{p.notes}</div>}
@@ -701,19 +764,51 @@ export default function Kasbon() {
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-500 font-semibold select-none">Rp</span>
                   <input
-                    type="number"
-                    min="1"
-                    step="1"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
                     placeholder="Contoh : 500.000"
-                    value={form.amountStr}
-                    onChange={(e) => setForm((prev) => ({ ...prev, amountStr: e.target.value }))}
+                    value={formatAmountInput(form.amountStr)}
+                    onChange={(e) => setForm((prev) => ({ ...prev, amountStr: e.target.value.replace(/\D/g, '') }))}
                     className="w-full text-[12.5px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 outline-none"
                   />
                 </div>
-                {form.amountStr && Number(form.amountStr) > 0 && (
-                  <div className="text-[11px] text-slate-500 font-semibold px-1 mt-1">{formatRupiah(form.amountStr)}</div>
+                {summary?.hasSalary && (
+                  <div className="text-[11px] text-slate-400 font-semibold px-1 mt-1">Sisa limit {formatRupiah(summary.sisa)}</div>
                 )}
               </div>
+
+              {form.type === 'pinjaman' && (
+                <div>
+                  <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Jumlah Termin</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="36"
+                    placeholder="Contoh : 2"
+                    value={form.tenorCount}
+                    onChange={(e) => setForm((prev) => ({ ...prev, tenorCount: e.target.value }))}
+                    className="w-full text-[12.5px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none"
+                  />
+                  {(() => {
+                    const rows = simulateInstallments(form.amountStr, form.tenorCount);
+                    if (!rows.length) return null;
+                    return (
+                      <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Simulasi cicilan</div>
+                        <div className="flex flex-col gap-1">
+                          {rows.map((nominal, index) => (
+                            <div key={index} className="flex items-center justify-between text-[11.5px]">
+                              <span className="font-semibold text-slate-500">Termin {index + 1}</span>
+                              <span className="font-bold text-slate-800">{formatRupiah(nominal)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Notes */}
               <div>
