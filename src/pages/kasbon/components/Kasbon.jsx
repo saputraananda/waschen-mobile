@@ -303,7 +303,7 @@ export default function Kasbon() {
       return;
     }
     if (summary && !summary.hasSalary) {
-      setSubmitError('Gaji pokok belum diisi HRD. Pengajuan belum bisa dikirim.');
+      setSubmitError('Take Home Pay belum diisi HRD. Pengajuan belum bisa dikirim.');
       return;
     }
     const ownHold = editTarget && (editTarget.status === 'pengajuan' || editTarget.status === 'proses')
@@ -448,7 +448,7 @@ export default function Kasbon() {
             ))}
           </div>
           {summary && !summary.hasSalary && (
-            <p className="mx-4 mt-2 text-[11px] font-semibold text-amber-700">Gaji pokok belum diisi HRD. Pengajuan baru belum bisa dikirim.</p>
+            <p className="mx-4 mt-2 text-[11px] font-semibold text-amber-700">Take Home Pay belum diisi HRD. Pengajuan baru belum bisa dikirim.</p>
           )}
 
           {/* Filter periode + stats */}

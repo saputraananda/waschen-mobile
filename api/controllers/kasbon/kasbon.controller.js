@@ -15,7 +15,7 @@ const resolveTenor = (type, raw) => {
 const assertWithinLimit = async (employeeId, amount, excludeId = null) => {
   const summary = await buildKasbonSummary(employeeId, excludeId);
   if (!summary.hasSalary) {
-    return { ok: false, message: 'Gaji pokok belum diisi HRD. Pengajuan belum bisa dikirim.' };
+    return { ok: false, message: 'Take Home Pay belum diisi HRD. Pengajuan belum bisa dikirim.' };
   }
   if (amount > summary.sisa) {
     return { ok: false, message: `Jumlah melebihi sisa limit (Rp ${summary.sisa.toLocaleString('id-ID')}).` };
@@ -88,7 +88,7 @@ export const getKasbonList = async (req, res) => {
 
 /**
  * GET /api/kasbon/summary
- * Limit = 50% gaji pokok. Sisa = limit dikurangi pengajuan berjalan dan pokok yang belum lunas.
+ * Limit = 50% Take Home Pay. Sisa = limit dikurangi pengajuan berjalan dan pokok yang belum lunas.
  * Sekarang = termin belum lunas yang jatuh tempo sampai akhir cutoff berjalan.
  */
 export const getKasbonSummary = async (req, res) => {
@@ -100,7 +100,7 @@ export const getKasbonSummary = async (req, res) => {
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(500).json({
         success: false,
-        message: 'Kolom kasbon/gaji pokok belum ada. Jalankan agent/kasbon_limit_alter.sql di database development.'
+        message: 'Kolom kasbon/Take Home Pay belum ada. Jalankan agent/kasbon_limit_alter.sql di database development.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil ringkasan limit kasbon' });
