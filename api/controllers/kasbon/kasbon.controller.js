@@ -127,13 +127,16 @@ export const getKasbonById = async (req, res) => {
     const submission = mapRow(req, rows[0]);
 
     const [payments] = await myWaschenPool.query(
-      `SELECT id, installment_no, payment_date, due_date, amount, payment_method, status, paid_at, notes, recorded_by_name, created_at
+      `SELECT id, installment_no, payment_date, due_date, amount, payment_method, status, paid_at, notes, proof_path, recorded_by_name, created_at
        FROM tr_kasbon_payment
        WHERE kasbon_id = ?
        ORDER BY installment_no ASC, payment_date ASC, created_at ASC`,
       [id]
     );
-    submission.payments = payments;
+    submission.payments = payments.map((p) => ({
+      ...p,
+      proof_url: buildProofUrl(req, p),
+    }));
 
     return res.status(200).json({ success: true, message: 'OK', data: submission });
   } catch (error) {

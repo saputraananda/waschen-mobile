@@ -7,7 +7,9 @@ import {
   deleteKasbonProofFile,
   deleteProduksiPhotoFile,
   deleteGroomingPhotoFile,
-  deleteCleanlinessPhotoFile
+  deleteCleanlinessPhotoFile,
+  uploadKasbonPaymentProof,
+  KASBON_UPLOAD_PUBLIC_PATH
 } from '../../middleware/upload.js';
 
 const router = express.Router();
@@ -49,6 +51,29 @@ router.post('/notify', (req, res) => {
   });
 
   return res.json({ success: true, message: 'Broadcast terkirim' });
+});
+
+/**
+ * POST /api/realtime/upload-kasbon-payment (multipart, field "proof")
+ * Alsa menitipkan bukti pembayaran kasbon ke disk Waschen Mobile.
+ * Header: X-Realtime-Secret
+ * Response: { success, path: '/uploads/assets/kasbon/bayar_....jpg' }
+ */
+router.post('/upload-kasbon-payment', (req, res) => {
+  if (!assertRealtimeSecret(req, res)) return;
+
+  uploadKasbonPaymentProof.single('proof')(req, res, (err) => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Ukuran bukti terlalu besar (maks 6MB).'
+        : (err.message || 'Gagal mengunggah bukti.');
+      return res.status(400).json({ success: false, message });
+    }
+    if (!req.file) {
+      return res.status(422).json({ success: false, message: 'File bukti wajib dikirim' });
+    }
+    return res.json({ success: true, path: `${KASBON_UPLOAD_PUBLIC_PATH}/${req.file.filename}` });
+  });
 });
 
 /**

@@ -367,6 +367,42 @@ export const uploadKasbonProof = multer({
 });
 
 /**
+ * Bukti pembayaran kasbon/pinjaman yang dikirim Alsa (admin menandai lunas).
+ * Gambar atau PDF; ekstensi DAN mime harus cocok.
+ */
+const kasbonPaymentProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    try {
+      cb(null, ensureUploadFolder(KASBON_UPLOAD_SUBFOLDER));
+    } catch (err) {
+      cb(err, null);
+    }
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    cb(null, `bayar_${ts}_${Math.round(Math.random() * 1e6)}${ext}`);
+  }
+});
+
+export const uploadKasbonPaymentProof = multer({
+  storage: kasbonPaymentProofStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const mime = String(file.mimetype || '').toLowerCase();
+    const okExt = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'].includes(ext);
+    const okMime = ext === '.pdf'
+      ? mime === 'application/pdf'
+      : /^image\/(jpeg|jpg|png|webp)$/.test(mime);
+    if (!okExt || !okMime) {
+      return cb(new Error('Bukti harus gambar (jpg, png, webp) atau PDF.'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 6 * 1024 * 1024, files: 1 }
+});
+
+/**
  * Produksi QC photo uploader — images only, multiple (max 5)
  * Path: assets/produksi/{stage}/
  * Serah terima (handover) → folder "delivery" (sama lokasi bukti antar)

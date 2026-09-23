@@ -7,6 +7,12 @@ import { initPwaInstallCapture } from './utils/pwaInstall.js';
 import './index.css';
 
 initPwaInstallCapture();
+
+// Scroll di atas input angka jangan menambah/mengurangi nilainya.
+document.addEventListener('wheel', () => {
+  const el = document.activeElement;
+  if (el?.type === 'number') el.blur();
+}, { passive: true });
 // iOS PWA standalone tidak reload saat resume dari background -> update SW tak pernah terdeteksi.
 // Paksa cek update saat app kembali foreground + tiap 1 jam.
 const updateSW = registerSW({
