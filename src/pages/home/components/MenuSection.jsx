@@ -173,14 +173,16 @@ export default function MenuSection({
         <button
           id="menu-delivery-btn"
           type="button"
-          disabled={menusLocked}
-          onClick={() => !menusLocked && onMenuClick('/delivery', 'Delivery')}
+          disabled={menusLocked || progressLocked}
+          onClick={() => !menusLocked && !progressLocked && onMenuClick('/delivery', 'Delivery')}
           className={`mt-3.5 w-full bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex items-center gap-4 min-h-[88px] group ${
-            menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(234,88,12,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+            menusLocked || progressLocked
+              ? 'opacity-55 cursor-not-allowed'
+              : 'hover:shadow-[0_8px_24px_rgba(234,88,12,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
           }`}
         >
           <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-orange-100/90 to-transparent rounded-bl-[48px] pointer-events-none" />
-          {lockBadge}
+          {lockBadge || progressLockBadge}
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-100/80 text-orange-600 border border-orange-100 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
             <MotorbikeIcon className="w-5 h-5" />
           </div>
@@ -189,7 +191,11 @@ export default function MenuSection({
               Delivery
             </h4>
             <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
-              {menusLocked ? 'Tutup lembur dulu' : 'Pickup QC & pengantaran nota delivery'}
+              {menusLocked
+                ? 'Tutup lembur dulu'
+                : progressLocked
+                  ? (progressLockMessage || 'Upload foto kebersihan dulu di Absensi')
+                  : 'Pickup QC & pengantaran nota delivery'}
             </span>
           </div>
         </button>

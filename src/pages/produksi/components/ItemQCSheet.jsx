@@ -25,7 +25,7 @@ const RETURN_STAGE_OPTIONS = {
  * Bottom-sheet QC per item: aman/temuan, rincian plastik (kiloan),
  * rincian packing (tahap packing), foto (kamera/galeri), keputusan lanjut/hold/kembali.
  */
-export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, roleUsed = null }) {
+export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone }) {
   const fileInputRef = useRef(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [qcStatus, setQcStatus] = useState('aman');
@@ -55,6 +55,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
   const carriedFinding = Number(item?.has_finding) === 1;
   const isHandover = stage === 'handover';
   const needBags = kiloan && ['frontliner', 'washing'].includes(stage);
+  // Kiloan: setrika sudah ditentukan paket layanan, jangan tanya lagi di QC.
+  const askIroning = stage === 'frontliner' && !kiloan;
   const needPackings = kiloan && stage === 'packing';
   const showBagHistory = kiloan && prevBagStagesFor(stage).length > 0;
   const returnStageOptions = RETURN_STAGE_OPTIONS[stage] || ['frontliner'];
@@ -189,8 +191,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
       }
       if (notes.trim()) fd.append('notes', notes.trim());
       fd.append('wa_contacted', stage === 'frontliner' && waContacted ? '1' : '0');
-      if (stage === 'frontliner') fd.append('requires_ironing', requiresIroning ? '1' : '0');
-      if (roleUsed) fd.append('role_used', roleUsed);
+      if (askIroning) fd.append('requires_ironing', requiresIroning ? '1' : '0');
+      // role_used tidak dikirim: server menentukannya sendiri dari mst_role (anti-spoof audit).
       if (needBags) {
         fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))));
       }
@@ -317,8 +319,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone, r
               </div>
             )}
 
-            {/* Toggle perlu setrika (frontliner) */}
-            {stage === 'frontliner' && (
+            {/* Toggle perlu setrika (frontliner, non-kiloan) */}
+            {askIroning && (
               <div>
                 <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Perlu Setrika?</label>
                 <div className="grid grid-cols-2 gap-2">

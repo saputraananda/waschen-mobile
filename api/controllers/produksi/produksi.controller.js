@@ -1,4 +1,4 @@
-import { myWaschenPool } from '../../db/pool.js';
+import { mainPool, myWaschenPool } from '../../db/pool.js';
 import {
   getProduksiPhotoPublicPath,
   deleteProduksiPhotoFile,
@@ -64,6 +64,21 @@ const recalcWorkStatus = async (conn, transactionId) => {
   ]);
 };
 
+/**
+ * Cegah aksi lintas outlet: data hanya boleh disentuh oleh karyawan outlet yang sama.
+ * Dipakai di endpoint tulis (submitQC, resolveHold) dan baca per-ID.
+ * Return true kalau lolos; kalau tidak, response 403 sudah dikirim.
+ */
+const assertSameOutlet = (req, res, rowOutletId) => {
+  const mine = Number(req.user?.assignedOutletId) || null;
+  const target = Number(rowOutletId) || null;
+  if (!mine || !target || mine !== target) {
+    res.status(403).json({ success: false, message: 'Data ini milik outlet lain' });
+    return false;
+  }
+  return true;
+};
+
 const resolveEmployeeName = async (employeeId, fallback) => {
   try {
     const [rows] = await myWaschenPool.query(
@@ -76,6 +91,24 @@ const resolveEmployeeName = async (employeeId, fallback) => {
     return rows[0]?.employee_name || fallback || 'Unknown';
   } catch (_) {
     return fallback || 'Unknown';
+  }
+};
+
+/**
+ * Role asli karyawan dari mst_role. Dipakai untuk kolom audit `role_used`.
+ * Sebelumnya nilai ini dikirim klien, jadi bisa dipalsukan — padahal ini satu-satunya
+ * jejak "siapa yang mengerjakan tahap ini". Lintas-role tetap boleh (kurir QC pickup),
+ * yang tercatat sekarang adalah role sebenarnya, bukan klaim klien.
+ */
+const resolveEmployeeRole = async (employeeId) => {
+  try {
+    const [rows] = await myWaschenPool.query(
+      'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
+      [employeeId]
+    );
+    return rows[0]?.role || null;
+  } catch (_) {
+    return null;
   }
 };
 
@@ -182,6 +215,7 @@ export const getList = async (req, res) => {
 
     const [txns] = await myWaschenPool.query(
       `SELECT DISTINCT t.id, t.order_no, t.barcode, t.customer_id, t.order_category,
+              t.cashier_employee_id,
               t.total_weight_kg, t.total_pcs, t.work_status, t.order_date,
               t.estimated_finished_at, t.special_notes, t.is_delivery, t.delivery_address,
               t.delivery_notes,
@@ -221,6 +255,17 @@ export const getList = async (req, res) => {
       [txnIds]
     );
 
+    // Nama pembuat nota ada di DB lain (waschen.mst_employee), jadi query terpisah.
+    const cashierIds = [...new Set(txns.map((t) => t.cashier_employee_id).filter(Boolean))];
+    const cashierNames = new Map();
+    if (cashierIds.length) {
+      const [empRows] = await mainPool.query(
+        'SELECT employee_id, full_name FROM mst_employee WHERE employee_id IN (?)',
+        [cashierIds]
+      );
+      empRows.forEach((e) => cashierNames.set(Number(e.employee_id), e.full_name));
+    }
+
     const stageStatus = STAGE_STATUS[stage] || null;
     const data = txns.map((t) => {
       const items = details.filter((d) => d.transaction_id === t.id);
@@ -229,6 +274,7 @@ export const getList = async (req, res) => {
       const isDeliveryItem = items.some((d) => d.fulfillment_type === 'Delivery_Kurir');
       return {
         ...t,
+        cashier_name: cashierNames.get(Number(t.cashier_employee_id)) || null,
         // Badge Pickup Delivery: utamakan fulfillment_type item, fallback header is_delivery
         is_delivery: isDeliveryItem || Number(t.is_delivery) === 1 ? 1 : 0,
         has_finding: items.some((d) => Number(d.has_finding) === 1),
@@ -265,6 +311,7 @@ export const getTransactionDetail = async (req, res) => {
     if (txns.length === 0) {
       return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
     }
+    if (!assertSameOutlet(req, res, txns[0].outlet_id)) return;
 
     const [details] = await myWaschenPool.query(
       `SELECT d.*, s.category_id, cat.code AS category_code
@@ -352,9 +399,9 @@ export const submitQC = async (req, res) => {
       returned_to_stage,
       notes,
       wa_contacted,
-      requires_ironing,
-      role_used
+      requires_ironing
     } = req.body;
+    // role_used sengaja TIDAK diambil dari body — lihat resolveEmployeeRole.
 
     if (!ALL_QC_STAGES.includes(stage)) {
       await cleanupFiles();
@@ -437,6 +484,11 @@ export const submitQC = async (req, res) => {
     }
     const detail = detailRows[0];
 
+    if (!assertSameOutlet(req, res, detail.outlet_id)) {
+      await cleanupFiles();
+      return;
+    }
+
     if (detail.item_work_status !== STAGE_STATUS[stage]) {
       await cleanupFiles();
       return res.status(409).json({
@@ -460,6 +512,7 @@ export const submitQC = async (req, res) => {
     }
 
     const employeeName = await resolveEmployeeName(employeeId, req.user.email);
+    const roleUsed = await resolveEmployeeRole(employeeId);
 
     // MEMORY LEMBUR: flag KPI hanya jika completed_at jatuh di dalam [start_time, end_time]
     // slot tr_overtime aktif (pengajuan/disetujui). Kerja di luar end_time tanpa perpanjang → normal.
@@ -493,7 +546,7 @@ export const submitQC = async (req, res) => {
         stage,
         employeeId,
         employeeName,
-        role_used || null,
+        roleUsed,
         detail.outlet_id,
         qc_status,
         qc_decision,
@@ -539,9 +592,10 @@ export const submitQC = async (req, res) => {
     // Update state item
     const detailUpdates = [];
     const detailParams = [];
+    let nextStatus = null;
 
     if (qc_decision === 'lanjut') {
-      const nextStatus = nextStatusFor(stage, {
+      nextStatus = nextStatusFor(stage, {
         ...detail,
         requires_ironing:
           stage === 'frontliner' && requires_ironing !== undefined
@@ -671,7 +725,12 @@ export const submitQC = async (req, res) => {
       action: 'qc',
       meta: { stage, transaction_id: detail.txn_id }
     });
-    if (stage === 'delivery' || stage === 'handover' || stage === 'frontliner') {
+    // Halaman Delivery ikut di-refresh saat item masuk/keluar antrean kurir.
+    // 'Siap Diantar' penting: itulah saat nota baru muncul di tab Delivery (hasil QC packing).
+    const touchesDelivery =
+      ['delivery', 'handover', 'frontliner'].includes(stage) ||
+      nextStatus === 'Siap Diantar';
+    if (touchesDelivery) {
       emitDataChange({
         domain: 'delivery',
         outletId: detail.outlet_id,
@@ -783,7 +842,7 @@ export const resolveHold = async (req, res) => {
     }
 
     const [detailRows] = await myWaschenPool.query(
-      `SELECT d.*, t.id AS txn_id FROM tr_transaction_detail d
+      `SELECT d.*, t.id AS txn_id, t.outlet_id FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
        WHERE d.id = ? LIMIT 1`,
       [detailId]
@@ -792,6 +851,7 @@ export const resolveHold = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Item tidak ditemukan' });
     }
     const detail = detailRows[0];
+    if (!assertSameOutlet(req, res, detail.outlet_id)) return;
     if (Number(detail.is_on_hold) !== 1) {
       return res.status(409).json({ success: false, message: 'Item tidak sedang di-hold' });
     }
@@ -878,6 +938,17 @@ export const getItemBagHistory = async (req, res) => {
     if (!detailId) {
       return res.status(422).json({ success: false, message: 'ID item tidak valid' });
     }
+
+    const [ownerRows] = await myWaschenPool.query(
+      `SELECT t.outlet_id FROM tr_transaction_detail d
+       JOIN tr_transaction t ON t.id = d.transaction_id
+       WHERE d.id = ? LIMIT 1`,
+      [detailId]
+    );
+    if (ownerRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Item tidak ditemukan' });
+    }
+    if (!assertSameOutlet(req, res, ownerRows[0].outlet_id)) return;
 
     const [rows] = await myWaschenPool.query(
       `SELECT b.bag_no, b.qty_pcs, b.notes,

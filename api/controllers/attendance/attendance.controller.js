@@ -13,6 +13,8 @@ import {
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
+/** >= 5 km dari semua titik absen: absen tetap diterima, foto wajib bertuliskan Diluar Jangkauan. */
+const OUT_OF_RANGE_M = 5000;
 
 /** Catatan absen masuk wajib bila absen lewat jam ini (menit dari 00:00 WIB). */
 const NOTE_REQUIRED_AFTER_MIN = 8 * 60; // 08:00
@@ -156,12 +158,39 @@ const buildPhotoUrl = (req, photoPath, photoName) => {
   return `${req.protocol}://${req.get('host')}${normalized}/${encodeURIComponent(photoName)}`;
 };
 
+function mapAbsenLocation(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.location_name,
+    full_name: row.location_name,
+    address: row.location_id || null,
+    lat: row.latitude,
+    lon: row.longitude
+  };
+}
+
+async function getAbsenLocationById(locationId) {
+  try {
+    const [rows] = await myWaschenPool.query(
+      `SELECT id, location_id, location_name, latitude, longitude
+       FROM mst_location_absen WHERE id = ? LIMIT 1`,
+      [locationId]
+    );
+    return mapAbsenLocation(rows[0]);
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') return null;
+    throw err;
+  }
+}
+
 async function getOutletById(outletId) {
   const [rows] = await mainPool.query(
     'SELECT id, name, full_name, address, lat, lon FROM mst_outlet WHERE id = ? LIMIT 1',
     [outletId]
   );
-  return rows[0] || null;
+  if (rows[0]) return rows[0];
+  return getAbsenLocationById(outletId);
 }
 
 async function validateLocation(lat, lng, outletId) {
@@ -182,6 +211,10 @@ async function validateLocation(lat, lng, outletId) {
 
   const dist = haversineMeters(parseFloat(lat), parseFloat(lng), oLat, oLng);
   if (dist > MAX_DIST_M) {
+    const nearest = await nearestAbsenMeters(lat, lng);
+    if (nearest != null && nearest >= OUT_OF_RANGE_M) {
+      return { ok: true, outsideRange: true, distance: dist, nearest, outlet };
+    }
     return {
       ok: false,
       message: `Anda berada ${Math.round(dist)} meter dari ${outlet.full_name || outlet.name}. Maksimal ${MAX_DIST_M / 1000} km.`,
@@ -190,7 +223,40 @@ async function validateLocation(lat, lng, outletId) {
     };
   }
 
-  return { ok: true, distance: dist, outlet };
+  return { ok: true, outsideRange: false, distance: dist, outlet };
+}
+
+async function listAbsenPoints() {
+  const points = [];
+  const push = (lat, lon) => {
+    const la = parseFloat(lat);
+    const lo = parseFloat(lon);
+    if (Number.isFinite(la) && Number.isFinite(lo)) points.push({ lat: la, lon: lo });
+  };
+  const [rows] = await mainPool.query('SELECT lat, lon FROM mst_outlet');
+  rows.forEach((r) => push(r.lat, r.lon));
+  try {
+    const [locRows] = await myWaschenPool.query(
+      'SELECT latitude, longitude FROM mst_location_absen'
+    );
+    locRows.forEach((r) => push(r.latitude, r.longitude));
+  } catch (err) {
+    if (err.code !== 'ER_NO_SUCH_TABLE') throw err;
+  }
+  return points;
+}
+
+async function nearestAbsenMeters(lat, lng) {
+  const points = await listAbsenPoints();
+  if (!points.length) return null;
+  const la = parseFloat(lat);
+  const lo = parseFloat(lng);
+  let min = Infinity;
+  for (const p of points) {
+    const d = haversineMeters(la, lo, p.lat, p.lon);
+    if (d < min) min = d;
+  }
+  return min;
 }
 
 /**
@@ -271,7 +337,18 @@ export const getOutlets = async (req, res) => {
     const [rows] = await mainPool.query(
       'SELECT id, name, full_name, address, lat, lon FROM mst_outlet ORDER BY name ASC'
     );
-    return res.status(200).json({ success: true, data: rows });
+    let absenLocations = [];
+    try {
+      const [locRows] = await myWaschenPool.query(
+        `SELECT id, location_id, location_name, latitude, longitude
+         FROM mst_location_absen
+         ORDER BY location_name ASC`
+      );
+      absenLocations = locRows.map(mapAbsenLocation);
+    } catch (locErr) {
+      if (locErr.code !== 'ER_NO_SUCH_TABLE') throw locErr;
+    }
+    return res.status(200).json({ success: true, data: [...rows, ...absenLocations] });
   } catch (error) {
     console.error('getOutlets error:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil daftar outlet', error: error.message });
@@ -295,11 +372,15 @@ export const checkLocation = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        inZone: result.ok,
+        inZone: result.ok && !result.outsideRange,
+        outsideRange: !!result.outsideRange,
         distance: result.distance != null ? Math.round(result.distance) : null,
         maxDistanceM: MAX_DIST_M,
+        outOfRangeM: OUT_OF_RANGE_M,
         outlet: result.outlet || null,
-        message: result.ok ? 'Anda berada dalam zona outlet.' : result.message
+        message: result.outsideRange
+          ? 'Di luar jangkauan semua lokasi absen. Absen tetap dicatat.'
+          : (result.ok ? 'Anda berada dalam zona outlet.' : result.message)
       }
     });
   } catch (error) {

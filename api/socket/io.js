@@ -52,7 +52,7 @@ export function initSocket(httpServer) {
     if (employeeId) socket.join(`employee:${employeeId}`);
     if (outletId) socket.join(`outlet:${outletId}`);
     // Semua domain yang dipakai halaman mobile
-    ['leave', 'kasbon', 'overtime', 'attendance', 'progress', 'history', 'profile'].forEach((d) => {
+    ['leave', 'kasbon', 'overtime', 'attendance', 'progress', 'delivery', 'history', 'profile'].forEach((d) => {
       socket.join(`domain:${d}`);
     });
 

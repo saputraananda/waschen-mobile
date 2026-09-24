@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 
 const MAX_DIST_M = 1000;
+const OUT_OF_RANGE_M = 5000;
 const NOTE_MAX_LEN = 255;
 const NOTE_QUICK_FILL = ['Shift Siang'];
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
@@ -50,6 +51,18 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function nearestAbsenMeters(lat, lng, places) {
+  let min = null;
+  for (const place of places || []) {
+    const la = parseFloat(place.lat);
+    const lo = parseFloat(place.lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+    const d = haversineMeters(lat, lng, la, lo);
+    if (min == null || d < min) min = d;
+  }
+  return min;
 }
 
 function formatTime(v) {
@@ -163,7 +176,8 @@ export default function Attendance() {
   }, [activeOutletId, outlets, assignedOutlet]);
 
   const inZone = gpsDist != null && gpsDist <= MAX_DIST_M;
-  const canPunch = timeStatus?.isOpen && inZone && gpsState === 'ok';
+  const outsideRange = gpsState === 'far';
+  const canPunch = timeStatus?.isOpen && (inZone || outsideRange) && (gpsState === 'ok' || gpsState === 'far');
 
   // Catatan diisi setelah absen tersimpan. Masuk wajib bila JAM ABSEN >= ambang
   // (default 08:00 WIB) — dihitung dari waktu tercatat, bukan waktu mengetik.
@@ -312,7 +326,9 @@ export default function Attendance() {
         parseFloat(activeOutlet.lon)
       );
       setGpsDist(dist);
-      setGpsState(dist <= MAX_DIST_M ? 'ok' : 'out');
+      const nearest = nearestAbsenMeters(lat, lng, outlets);
+      const far = nearest != null && nearest >= OUT_OF_RANGE_M;
+      setGpsState(dist <= MAX_DIST_M ? 'ok' : far ? 'far' : 'out');
     };
 
     const onError = (err) => {
@@ -332,7 +348,7 @@ export default function Attendance() {
     });
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [activeOutlet, gpsRefreshKey]);
+  }, [activeOutlet, gpsRefreshKey, outlets]);
 
   const stopCamera = useCallback(() => {
     const v = videoRef.current;
@@ -423,7 +439,7 @@ export default function Attendance() {
     ctx.drawImage(v, 0, 0, w, h);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    const stamp = formatStamp(new Date());
+    const stamp = `${formatStamp(new Date())}${outsideRange ? ' — Diluar Jangkauan' : ''}`;
     const locationLine = `Lokasi: ${activeOutlet?.full_name || activeOutlet?.name || 'Outlet Waschen'}`;
     const pad = Math.max(14, Math.floor(Math.min(w, h) * 0.02));
     const primarySize = Math.max(14, Math.floor(Math.min(w, h) * 0.035));
@@ -451,7 +467,7 @@ export default function Attendance() {
     ctx.fillText(locationLine, x + pad, y + pad + primarySize + lineGap + secondarySize);
 
     return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-  }, [activeOutlet]);
+  }, [activeOutlet, outsideRange]);
 
   const getFreshCoord = (fallback) =>
     new Promise((resolve) => {
@@ -496,7 +512,9 @@ export default function Attendance() {
       parseFloat(activeOutlet.lat),
       parseFloat(activeOutlet.lon)
     );
-    if (dist > MAX_DIST_M) {
+    const nearest = nearestAbsenMeters(coord.lat, coord.lng, outlets);
+    const far = nearest != null && nearest >= OUT_OF_RANGE_M;
+    if (dist > MAX_DIST_M && !far) {
       setMsg({
         text: `Anda ${Math.round(dist)}m dari outlet. Maksimal ${MAX_DIST_M / 1000} km.`,
         type: 'error'
@@ -803,6 +821,7 @@ export default function Attendance() {
     if (gpsState === 'denied') return { label: 'GPS ditolak — izinkan lokasi', cls: 'bg-rose-50 text-rose-600 border-rose-200' };
     if (gpsState === 'error') return { label: 'GPS error — coba refresh', cls: 'bg-rose-50 text-rose-600 border-rose-200' };
     if (inZone) return { label: `Zona Outlet · ${Math.round(gpsDist)}m`, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (outsideRange) return { label: `Diluar Jangkauan · ${Math.round(gpsDist)}m`, cls: 'bg-amber-50 text-amber-700 border-amber-200' };
     return { label: `Diluar Outlet · ${Math.round(gpsDist)}m`, cls: 'bg-amber-50 text-amber-700 border-amber-200' };
   };
   const badge = gpsBadge();
@@ -1200,7 +1219,8 @@ export default function Attendance() {
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
                     <span>
-                      Berada dalam radius <strong className="text-slate-600">500 Meter</strong> dari outlet yang ditetapkan.
+                      Berada dalam radius <strong className="text-slate-600">1 km</strong> dari lokasi absen.
+                      Jika GPS 5 km dari semua lokasi, absen tetap bisa dan foto bertuliskan Diluar Jangkauan.
                     </span>
                   </li>
                   <li className="flex gap-2">
@@ -1253,7 +1273,7 @@ export default function Attendance() {
               </button>
             </div>
             <p className="text-[11px] text-slate-400 font-medium mb-3">
-              Pilih outlet tempat Anda bertugas hari ini. Validasi GPS akan menyesuaikan dengan outlet yang dipilih.
+              Pilih outlet atau lokasi absen. Validasi GPS mengikuti titik yang dipilih.
             </p>
             <div className="flex flex-col gap-2">
               {outlets.map((o) => (
@@ -1420,7 +1440,9 @@ export default function Attendance() {
                   className="absolute left-3 bottom-3 text-white px-2.5 py-1.5 rounded-xl"
                   style={{ background: 'rgba(0,0,0,0.55)' }}
                 >
-                  <div className="text-[11px] font-extrabold">{formatStamp(currentTime)}</div>
+                  <div className="text-[11px] font-extrabold">
+                    {formatStamp(currentTime)}{outsideRange ? ' — Diluar Jangkauan' : ''}
+                  </div>
                   <div className="text-[10px] font-semibold text-white/90 mt-0.5">
                     Lokasi: {activeOutlet?.full_name || activeOutlet?.name || 'Outlet Waschen'}
                   </div>

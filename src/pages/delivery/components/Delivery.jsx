@@ -698,7 +698,6 @@ export default function Delivery() {
             stage={qcTarget.stage || qcStage}
             item={qcTarget.item}
             txn={qcTarget.txn}
-            roleUsed="Delivery Staff"
             onClose={() => setQcTarget(null)}
             onDone={handleQCDone}
           />

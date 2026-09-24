@@ -141,7 +141,8 @@ export default function Home() {
       setForceOtModal(true);
       return;
     }
-    if (path === '/produksi' && !progressGate.unlocked) {
+    // /delivery ikut dikunci: semua aksinya bermuara ke POST /api/progress/qc yang kena gate.
+    if (['/produksi', '/delivery'].includes(path) && !progressGate.unlocked) {
       return;
     }
     navigate(path);

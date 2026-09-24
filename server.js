@@ -29,6 +29,19 @@ const PORT = process.env.PORT || 9001;
 
 app.use(cors());
 app.use(express.json());
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = (body) => {
+      if (body && typeof body === 'object' && !Array.isArray(body) && 'error' in body) {
+        const { error, ...safe } = body;
+        return originalJson(safe);
+      }
+      return originalJson(body);
+    };
+    next();
+  });
+}
 
 app.use('/uploads', express.static(getBaseUploadDir()));
 

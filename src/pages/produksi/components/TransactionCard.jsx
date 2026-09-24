@@ -1,14 +1,8 @@
 import React from 'react';
-import { AlertTriangle, PauseCircle, ChevronRight, Scale, Shirt, PauseOctagon } from 'lucide-react';
+import { AlertTriangle, PauseCircle, ChevronRight, Scale, Shirt, PauseOctagon, UserRound } from 'lucide-react';
 import { formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
+import { STAGE_ITEM_STATUS as STAGE_STATUS } from '../../../utils/notaScan.js';
 import formatName from '../../../utils/FormatName.js';
-
-const STAGE_STATUS = {
-  frontliner: 'Antrean',
-  washing: 'Pencucian',
-  ironing: 'Penyetrikaan',
-  packing: 'Pengemasan'
-};
 
 /**
  * Kartu nota di list progres — header info nota + nested section item yang bisa di-QC
@@ -47,28 +41,20 @@ export default function TransactionCard({ txn, activeStage, onOpen, onItemClick 
           <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" />
         </div>
 
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
-          {Number(txn.is_delivery) === 1 && activeStage === 'frontliner' && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
-              Pickup Delivery{txn.customer_name ? ` · ${formatName(txn.customer_name)}` : ''}
-            </span>
-          )}
-          {(txn.items || []).map((item) => (
-            <span
-              key={item.id}
-              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border ${
-                Number(item.has_finding) === 1
-                  ? 'bg-red-50 text-red-700 border-red-200'
-                  : Number(item.is_on_hold) === 1
-                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                    : 'bg-slate-50 text-slate-600 border-slate-200'
-              }`}
-            >
-              {isKiloanItem(item) ? <Scale className="w-3 h-3" /> : <Shirt className="w-3 h-3" />}
-              {item.service_name} · {Number(item.qty)} {item.unit}
-            </span>
-          ))}
-        </div>
+        {(txn.cashier_name || (Number(txn.is_delivery) === 1 && activeStage === 'frontliner')) && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {Number(txn.is_delivery) === 1 && activeStage === 'frontliner' && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
+                Pickup Delivery
+              </span>
+            )}
+            {txn.cashier_name && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border bg-slate-50 text-slate-600 border-slate-200">
+                <UserRound className="w-3 h-3" /> {formatName(txn.cashier_name)}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-3 flex items-center justify-between">
           <span className="text-[10.5px] text-slate-400 font-semibold">
