@@ -20,9 +20,9 @@ function shiftMonth(y, m, delta) {
   return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1 };
 }
 
-export function currentCutoff(date = new Date()) {
-  const { y, m, d } = wibParts(date);
-  const end = d >= 26 ? shiftMonth(y, m, 1) : { y, m };
+/** Periode bulan X = tanggal 26 bulan sebelumnya s/d tanggal 25 bulan X. */
+export function cutoffFor(year, month) {
+  const end = { y: Number(year), m: Number(month) };
   const start = shiftMonth(end.y, end.m, -1);
   return {
     start: `${start.y}-${pad(start.m)}-26`,
@@ -30,6 +30,12 @@ export function currentCutoff(date = new Date()) {
     year: end.y,
     month: end.m
   };
+}
+
+export function currentCutoff(date = new Date()) {
+  const { y, m, d } = wibParts(date);
+  const end = d >= 26 ? shiftMonth(y, m, 1) : { y, m };
+  return cutoffFor(end.y, end.m);
 }
 
 export function cutoffEndOffset(offset, date = new Date()) {

@@ -38,6 +38,29 @@ const MONTHS_ID = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 const AVAILABLE_YEARS = [2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function isoFromDate(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+/** Periode bulan X = 26 bulan sebelumnya s/d 25 bulan X. monthIndex 0-based. */
+function cutoffBounds(year, monthIndex) {
+  const startDate = new Date(year, monthIndex - 1, 26);
+  const endDate = new Date(year, monthIndex, 25);
+  return { startDate, endDate, start: isoFromDate(startDate), end: isoFromDate(endDate) };
+}
+
+function cutoffPeriodFromKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  if (d >= 26) return m === 12 ? { year: y + 1, monthIndex: 0 } : { year: y, monthIndex: m };
+  return { year: y, monthIndex: m - 1 };
+}
+
+function formatKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return `${d} ${MONTHS_ID[m - 1]} ${y}`;
+}
 
 const UI_BY_KIND = {
   hadir: {
@@ -100,19 +123,17 @@ const mapDayRecord = (raw) => {
 export default function History() {
   const navigate = useNavigate();
   const todayKey = todayWibISO();
-  const [ty, tm, td] = todayKey.split('-').map(Number);
-  const nowMonth = tm - 1;
-  const nowYear = ty;
-  const nowDate = td;
+  const periodNow = cutoffPeriodFromKey(todayKey);
 
-  const [calMonth, setCalMonth] = useState(nowMonth);
-  const [calYear, setCalYear] = useState(nowYear);
+  const [calMonth, setCalMonth] = useState(periodNow.monthIndex);
+  const [calYear, setCalYear] = useState(periodNow.year);
   const [selectedDate, setSelectedDate] = useState(null);
 
   const [calendarDays, setCalendarDays] = useState({});
   const [stats, setStats] = useState({ hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 });
   const [policy, setPolicy] = useState({ max_days_per_month: 4 });
   const [dayOffList, setDayOffList] = useState([]);
+  const [outletMates, setOutletMates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -123,8 +144,8 @@ export default function History() {
   const [requestLoading, setRequestLoading] = useState(false);
   const [requestError, setRequestError] = useState('');
 
-  const [tempPickerMonth, setTempPickerMonth] = useState(nowMonth);
-  const [tempPickerYear, setTempPickerYear] = useState(nowYear);
+  const [tempPickerMonth, setTempPickerMonth] = useState(periodNow.monthIndex);
+  const [tempPickerYear, setTempPickerYear] = useState(periodNow.year);
 
   useLockBodyScroll(showPickerModal || showRequestModal);
 
@@ -175,25 +196,50 @@ export default function History() {
     fetchDayOffs();
   }, [fetchCalendar, fetchDayOffs]);
 
+  const bounds = cutoffBounds(calYear, calMonth);
+  const calCells = [];
+  for (let i = 0; i < bounds.startDate.getDay(); i++) calCells.push(null);
+  for (let cur = new Date(bounds.startDate); cur <= bounds.endDate; cur.setDate(cur.getDate() + 1)) {
+    calCells.push(isoFromDate(cur));
+  }
+  const selectedKey = selectedDate;
+  const selectedRecord = selectedKey ? calendarDays[selectedKey] : null;
+
+  const fetchOutletMates = useCallback(async (dateKey) => {
+    if (!dateKey) {
+      setOutletMates([]);
+      return;
+    }
+    try {
+      const { data } = await api.get('/history/day-offs/outlet', { params: { date: dateKey } });
+      setOutletMates(data.success ? data.data || [] : []);
+    } catch {
+      setOutletMates([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedKey || calendarDays[selectedKey]) {
+      setOutletMates([]);
+      return;
+    }
+    fetchOutletMates(selectedKey);
+  }, [selectedKey, calendarDays, fetchOutletMates]);
+
   useRealtimeRefresh(['history', 'attendance', 'leave'], () => {
     fetchCalendar();
     fetchDayOffs();
+    if (selectedKey && !calendarDays[selectedKey]) fetchOutletMates(selectedKey);
   });
 
   const softRefresh = useCallback(async () => {
-    await Promise.all([fetchCalendar(), fetchDayOffs()]);
-  }, [fetchCalendar, fetchDayOffs]);
+    await Promise.all([
+      fetchCalendar(),
+      fetchDayOffs(),
+      selectedKey && !calendarDays[selectedKey] ? fetchOutletMates(selectedKey) : Promise.resolve()
+    ]);
+  }, [fetchCalendar, fetchDayOffs, fetchOutletMates, selectedKey, calendarDays]);
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
-
-  const firstDay = new Date(calYear, calMonth, 1).getDay();
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-  const calCells = [];
-  for (let i = 0; i < firstDay; i++) calCells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) calCells.push(d);
-
-  const getKey = (d) => `${calYear}-${String(monthParam).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  const selectedKey = selectedDate ? getKey(selectedDate) : null;
-  const selectedRecord = selectedKey ? calendarDays[selectedKey] : null;
 
   const prevMonth = () => {
     if (calMonth === 0) { setCalMonth(11); setCalYear((y) => y - 1); }
@@ -219,8 +265,6 @@ export default function History() {
     setSelectedDate(null);
     setShowPickerModal(false);
   };
-
-  const isToday = (d) => d === nowDate && calMonth === nowMonth && calYear === nowYear;
 
   const openRequestModal = () => {
     setRequestReason('');
@@ -335,8 +379,13 @@ export default function History() {
               </button>
               <button onClick={openPickerModal} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-[#5f1340]/5 hover:border-[#5f1340]/30 transition-all active:scale-95 group">
                 <CalendarDays className="w-4 h-4 text-[#5f1340]" />
-                <span className="text-[14px] font-black text-slate-800 tracking-tight group-hover:text-[#5f1340] transition-colors">
-                  {MONTHS_ID[calMonth]} {calYear}
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-[14px] font-black text-slate-800 tracking-tight group-hover:text-[#5f1340] transition-colors">
+                    {MONTHS_ID[calMonth]} {calYear}
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-400">
+                    {bounds.startDate.getDate()} {MONTHS_SHORT[bounds.startDate.getMonth()]} – {bounds.endDate.getDate()} {MONTHS_SHORT[bounds.endDate.getMonth()]}
+                  </span>
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#5f1340] transition-colors" />
               </button>
@@ -384,18 +433,17 @@ export default function History() {
                 </div>
 
                 <div className="grid grid-cols-7 gap-y-1.5 px-3 pb-4">
-                  {calCells.map((d, i) => {
-                    if (!d) return <div key={`empty-${i}`} />;
-                    const key = getKey(d);
+                  {calCells.map((key, i) => {
+                    if (!key) return <div key={`empty-${i}`} />;
                     const rec = calendarDays[key];
-                    const isSelected = selectedDate === d;
-                    const today = isToday(d);
+                    const isSelected = selectedDate === key;
+                    const today = key === todayKey;
                     const dotColor = rec?.dot || '';
 
                     return (
                       <button
                         key={key}
-                        onClick={() => setSelectedDate(isSelected ? null : d)}
+                        onClick={() => setSelectedDate(isSelected ? null : key)}
                         className={`flex flex-col items-center justify-center rounded-[14px] py-2 gap-0.5 transition-all duration-150 active:scale-90 ${
                           isSelected
                             ? 'bg-[#5f1340] text-white scale-[1.08] shadow-md shadow-[#5f1340]/25'
@@ -407,7 +455,7 @@ export default function History() {
                         <span className={`text-[12.5px] font-extrabold leading-none ${
                           isSelected ? 'text-white' : today ? 'text-[#5f1340]' : 'text-slate-800'
                         }`}>
-                          {d}
+                          {Number(key.slice(8, 10))}
                         </span>
                         {dotColor && <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : dotColor}`} />}
                         {!dotColor && <span className="w-1.5 h-1.5 rounded-full bg-transparent" />}
@@ -426,7 +474,7 @@ export default function History() {
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Detail Absensi</span>
-                      <span className="text-[14px] font-black text-slate-800">{selectedDate} {MONTHS_ID[calMonth]} {calYear}</span>
+                      <span className="text-[14px] font-black text-slate-800">{formatKey(selectedKey)}</span>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-[11px] font-black border ${selectedRecord.color}`}>
                       {selectedRecord.label}
@@ -493,6 +541,23 @@ export default function History() {
                   <span className="text-[12px] text-slate-500 font-bold block text-center mb-3">
                     Belum ada data absensi untuk tanggal ini.
                   </span>
+                  {outletMates.length > 0 && (
+                    <div className="mb-3 text-left">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block mb-1.5">
+                        Libur di cabang ini
+                      </span>
+                      <div className="flex flex-col gap-1.5">
+                        {outletMates.map((mate) => (
+                          <div key={mate.employee_id} className="flex items-center justify-between gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2">
+                            <span className="text-[12px] font-black text-slate-800 truncate">{mate.name}</span>
+                            <span className={`text-[10px] font-bold shrink-0 ${mate.status === 'disetujui' ? 'text-emerald-700' : 'text-purple-700'}`}>
+                              {mate.status === 'disetujui' ? 'Disetujui' : 'Pengajuan'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {canRequestDayOff && (
                     <button
                       onClick={openRequestModal}
@@ -509,7 +574,7 @@ export default function History() {
           <div className="mx-4 mt-5 mb-4">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider block">
-                {showDayOffFilter ? 'Jadwal Libur Bulan Ini' : 'Riwayat Absensi Bulan Ini'}
+                {showDayOffFilter ? 'Jadwal Libur Periode Ini' : 'Riwayat Absensi Periode Ini'}
               </span>
               <span className="text-[10px] text-[#5f1340] font-black uppercase tracking-wider bg-[#5f1340]/10 px-2.5 py-0.5 rounded-full">
                 {filteredLogKeys.length} Hari
@@ -518,7 +583,7 @@ export default function History() {
 
             {showDayOffFilter && dayOffList.length === 0 && !loading && (
               <div className="bg-white rounded-[20px] border border-dashed border-purple-200 p-6 text-center text-[12px] text-purple-600 font-bold">
-                Belum ada jadwal libur di bulan ini. Tap tanggal di kalender untuk permintaan libur.
+                Belum ada jadwal libur di periode ini. Tap tanggal di kalender untuk permintaan libur.
               </div>
             )}
 
@@ -555,8 +620,8 @@ export default function History() {
                 );
               }) : filteredLogKeys.slice().reverse().map((key) => {
                 const rec = calendarDays[key];
-                const d = parseInt(key.split('-')[2], 10);
-                const dateObj = new Date(calYear, calMonth, d);
+                const [yy, mm, d] = key.split('-').map(Number);
+                const dateObj = new Date(yy, mm - 1, d);
                 const dayName = DAYS[dateObj.getDay()];
                 return (
                   <div key={key} className="bg-white rounded-[20px] border border-slate-100 p-3.5 flex items-center gap-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.03)] hover:shadow-md transition-all">

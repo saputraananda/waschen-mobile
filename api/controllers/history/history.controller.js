@@ -1,8 +1,7 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { emitDataChange } from '../../socket/io.js';
-import { toWibDateKey, formatWibTime, getWibYearMonth } from '../../utils/wib.js';
-
-const pad2 = (n) => String(n).padStart(2, '0');
+import { toWibDateKey, formatWibTime } from '../../utils/wib.js';
+import { cutoffFor, currentCutoff } from '../../utils/kasbonLimit.js';
 
 const leaveLabel = (type) => {
   if (type === 'sakit') return 'Sakit';
@@ -26,13 +25,14 @@ const expandDateRange = (start, end) => {
   return out;
 };
 
-const monthBounds = (year, month) => {
-  const y = Number(year);
-  const m = Number(month);
-  const start = `${y}-${pad2(m)}-01`;
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const end = `${y}-${pad2(m)}-${pad2(lastDay)}`;
-  return { start, end, year: y, month: m };
+const periodOfDate = (dateKey) => {
+  const y = Number(String(dateKey).slice(0, 4));
+  const m = Number(String(dateKey).slice(5, 7));
+  const d = Number(String(dateKey).slice(8, 10));
+  if (d >= 26) {
+    return m === 12 ? { year: y + 1, month: 1 } : { year: y, month: m + 1 };
+  }
+  return { year: y, month: m };
 };
 
 const buildPhotoUrl = (req, photoPath, photoName) => {
@@ -50,32 +50,32 @@ async function getDayOffPolicy() {
   return rows[0] || { max_days_per_month: 4, min_notice_days: 1, allow_past_date_request: 0 };
 }
 
-async function countDayOffInMonth(employeeId, year, month, statuses = ['pengajuan', 'disetujui']) {
+async function countDayOffInRange(employeeId, start, end, statuses = ['pengajuan', 'disetujui']) {
   const [rows] = await myWaschenPool.query(
     `SELECT COUNT(*) AS cnt FROM tr_employee_day_off
-     WHERE employee_id = ? AND schedule_year = ? AND schedule_month = ?
+     WHERE employee_id = ? AND off_date BETWEEN ? AND ?
        AND status IN (${statuses.map(() => '?').join(',')})`,
-    [employeeId, year, month, ...statuses]
+    [employeeId, start, end, ...statuses]
   );
   return Number(rows[0]?.cnt) || 0;
 }
 
 /**
  * GET /api/history/calendar?year=&month=
- * Gabung tr_attendance + tr_leave + tr_employee_day_off untuk kalender bulan.
+ * year/month = label periode cutoff (26 bulan sebelumnya s/d 25 bulan itu).
  */
 export const getCalendar = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const { year: wibYear, month: wibMonth } = getWibYearMonth();
-    const year = parseInt(req.query.year || wibYear, 10);
-    const month = parseInt(req.query.month || wibMonth, 10);
+    const cur = currentCutoff();
+    const year = parseInt(req.query.year || cur.year, 10);
+    const month = parseInt(req.query.month || cur.month, 10);
 
     if (month < 1 || month > 12 || year < 2000) {
       return res.status(422).json({ success: false, message: 'Bulan/tahun tidak valid' });
     }
 
-    const { start, end } = monthBounds(year, month);
+    const { start, end } = cutoffFor(year, month);
 
     const [attendanceRows, leaveRows, dayOffRows] = await Promise.all([
       myWaschenPool.query(
@@ -97,9 +97,9 @@ export const getCalendar = async (req, res) => {
       myWaschenPool.query(
         `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at
          FROM tr_employee_day_off
-         WHERE employee_id = ? AND schedule_year = ? AND schedule_month = ?
+         WHERE employee_id = ? AND off_date BETWEEN ? AND ?
            AND status IN ('pengajuan', 'disetujui')`,
-        [employeeId, year, month]
+        [employeeId, start, end]
       )
     ]);
 
@@ -166,9 +166,7 @@ export const getCalendar = async (req, res) => {
 
     // Hari lampau tanpa absensi / izin / libur → tidak masuk (alpha / lupa absen)
     const today = toWibDateKey(new Date());
-    const lastDayNum = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    for (let d = 1; d <= lastDayNum; d++) {
-      const key = `${year}-${pad2(month)}-${pad2(d)}`;
+    for (const key of expandDateRange(start, end)) {
       if (key >= today) continue;
       if (days[key]) continue;
       days[key] = {
@@ -183,7 +181,7 @@ export const getCalendar = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'OK',
-      data: { year, month, days, stats, policy: await getDayOffPolicy() }
+      data: { year, month, dateFrom: start, dateTo: end, days, stats, policy: await getDayOffPolicy() }
     });
   } catch (error) {
     console.error('getCalendar error:', error);
@@ -203,13 +201,14 @@ export const getCalendar = async (req, res) => {
 export const getDayOffs = async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
-    const { year: wibYear, month: wibMonth } = getWibYearMonth();
-    const year = parseInt(req.query.year || wibYear, 10);
-    const month = parseInt(req.query.month || wibMonth, 10);
+    const cur = currentCutoff();
+    const year = parseInt(req.query.year || cur.year, 10);
+    const month = parseInt(req.query.month || cur.month, 10);
     const status = req.query.status || 'disetujui';
 
+    const { start, end } = cutoffFor(year, month);
     let statusClause = "status IN ('disetujui', 'pengajuan')";
-    const params = [employeeId, year, month];
+    const params = [employeeId, start, end];
 
     if (status === 'disetujui') {
       statusClause = "status = 'disetujui'";
@@ -220,7 +219,7 @@ export const getDayOffs = async (req, res) => {
     const [rows] = await myWaschenPool.query(
       `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, created_at
        FROM tr_employee_day_off
-       WHERE employee_id = ? AND schedule_year = ? AND schedule_month = ?
+       WHERE employee_id = ? AND off_date BETWEEN ? AND ?
          AND ${statusClause}
        ORDER BY off_date ASC`,
       params
@@ -230,6 +229,46 @@ export const getDayOffs = async (req, res) => {
   } catch (error) {
     console.error('getDayOffs error:', error);
     return res.status(500).json({ success: false, message: 'Gagal memuat jadwal libur', error: error.message });
+  }
+};
+
+/**
+ * GET /api/history/day-offs/outlet?date=YYYY-MM-DD
+ * Karyawan outlet yang sama yang sudah mengajukan / disetujui libur di tanggal itu.
+ */
+export const getOutletDayOffs = async (req, res) => {
+  try {
+    const date = toWibDateKey(req.query.date);
+    const outletId = Number(req.user.assignedOutletId) || 0;
+    if (!date) {
+      return res.status(422).json({ success: false, message: 'Tanggal tidak valid' });
+    }
+    if (!outletId) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT d.employee_id, d.status, MIN(r.employee_name) AS employee_name
+       FROM tr_employee_day_off d
+       INNER JOIN mst_role r ON r.employee_id = d.employee_id AND r.outlet_id = ?
+       WHERE d.off_date = ? AND d.status IN ('pengajuan', 'disetujui')
+         AND d.employee_id <> ?
+       GROUP BY d.employee_id, d.status
+       ORDER BY employee_name ASC`,
+      [outletId, date, req.user.employee_id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({
+        employee_id: row.employee_id,
+        name: row.employee_name || `Karyawan ${row.employee_id}`,
+        status: row.status
+      }))
+    });
+  } catch (error) {
+    console.error('getOutletDayOffs error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat libur cabang' });
   }
 };
 
@@ -267,11 +306,13 @@ export const requestDayOff = async (req, res) => {
       });
     }
 
-    const used = await countDayOffInMonth(employeeId, scheduleYear, scheduleMonth);
+    const period = periodOfDate(offDate);
+    const quotaRange = cutoffFor(period.year, period.month);
+    const used = await countDayOffInRange(employeeId, quotaRange.start, quotaRange.end);
     if (used >= Number(policy.max_days_per_month || 4)) {
       return res.status(422).json({
         success: false,
-        message: `Kuota libur bulan ini sudah penuh (maks ${policy.max_days_per_month} hari)`
+        message: `Kuota libur periode ini sudah penuh (maks ${policy.max_days_per_month} hari)`
       });
     }
 
