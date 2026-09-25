@@ -85,7 +85,7 @@ export default function CleanlinessTab({
       <div key={session} className="mt-4">
         <div className={`mb-2 flex items-center justify-between rounded-xl px-3 py-2 ${session === 'Pulang' ? 'bg-indigo-50 text-indigo-800' : 'bg-amber-50 text-amber-800'}`}>
           <span className="text-[12px] font-extrabold">Foto Kebersihan {session}</span>
-          <span className="text-[11px] font-bold">{photos.length} foto · {session === 'Pulang' ? '16:00–24:00' : 'sebelum 16:00'}</span>
+          <span className="text-[11px] font-bold">{photos.length} foto</span>
         </div>
         {photos.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-6 text-center">
