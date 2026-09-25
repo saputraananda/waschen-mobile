@@ -30,3 +30,12 @@ export const myWaschenPool = mysql.createPool({
   queueLimit: 0,
   connectTimeout: 10000
 });
+
+function holdPool(pool) {
+  const raw = pool.pool || pool;
+  raw.on('error', (err) => {
+    console.error('mysql', err.code || err.message);
+  });
+}
+holdPool(mainPool);
+holdPool(myWaschenPool);
