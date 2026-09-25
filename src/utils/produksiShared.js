@@ -80,7 +80,7 @@ export const STAGE_LABEL = {
 };
 
 /** Tahap yang mengisi rincian plastik kiloan */
-export const BAG_ENTRY_STAGES = ['frontliner', 'washing'];
+export const BAG_ENTRY_STAGES = ['frontliner', 'washing', 'ironing'];
 
 /** Tahap sebelumnya yang punya rincian plastik (untuk tampilan riwayat) */
 export const prevBagStagesFor = (stage) => {

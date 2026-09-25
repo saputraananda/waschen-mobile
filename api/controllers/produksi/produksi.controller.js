@@ -415,16 +415,14 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Keputusan QC tidak valid' });
     }
-    if (qc_status === 'temuan' && incomingPhotos.length === 0) {
-      await cleanupFiles();
-      return res.status(422).json({ success: false, message: 'Temuan wajib menyertakan minimal 1 foto bukti' });
-    }
-    // Serah terima delivery (handover) wajib foto bukti sudah diantar
-    if (stage === 'handover' && incomingPhotos.length === 0) {
+    // Semua QC wajib foto (aman, temuan, serah terima)
+    if (incomingPhotos.length === 0) {
       await cleanupFiles();
       return res.status(422).json({
         success: false,
-        message: 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran'
+        message: stage === 'handover'
+          ? 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran'
+          : 'QC wajib menyertakan minimal 1 foto'
       });
     }
     if (qc_decision === 'kembali') {
@@ -459,12 +457,41 @@ export const submitQC = async (req, res) => {
 
     let bags = [];
     let packings = [];
+    let kgItems = [];
     try {
       if (req.body.bags) bags = JSON.parse(req.body.bags);
       if (req.body.packings) packings = JSON.parse(req.body.packings);
+      if (req.body.kg_items) kgItems = JSON.parse(req.body.kg_items);
     } catch (_) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Format rincian plastik/packing tidak valid' });
+    }
+    // Rincian jenis pakaian kiloan (opsional, hanya Tim Cuci)
+    if (!Array.isArray(kgItems) || kgItems.length > 50 || (kgItems.length && stage !== 'washing')) {
+      await cleanupFiles();
+      return res.status(422).json({ success: false, message: 'Rincian jenis pakaian tidak valid' });
+    }
+    kgItems = kgItems.map((k) => ({
+      item_kg_id: Number(k?.item_kg_id) || null,
+      item_name: String(k?.item_name || '').trim().slice(0, 100),
+      qty_pcs: Number(k?.qty_pcs)
+    }));
+    if (kgItems.some((k) => !Number.isInteger(k.qty_pcs) || k.qty_pcs < 1 || k.qty_pcs > 999 || (!k.item_kg_id && !k.item_name))) {
+      await cleanupFiles();
+      return res.status(422).json({ success: false, message: 'Rincian jenis pakaian: pilih jenis & isi jumlah (1–999)' });
+    }
+    if (kgItems.some((k) => k.item_kg_id)) {
+      const ids = [...new Set(kgItems.filter((k) => k.item_kg_id).map((k) => k.item_kg_id))];
+      const [masterRows] = await myWaschenPool.query(
+        'SELECT id, name FROM mst_item_kg WHERE is_active = 1 AND id IN (?)', [ids]
+      );
+      const nameById = new Map(masterRows.map((r) => [r.id, r.name]));
+      if (nameById.size !== ids.length) {
+        await cleanupFiles();
+        return res.status(422).json({ success: false, message: 'Jenis pakaian tidak ditemukan / nonaktif' });
+      }
+      // Nama selalu dari master, bukan dari klien
+      kgItems.forEach((k) => { if (k.item_kg_id) k.item_name = nameById.get(k.item_kg_id); });
     }
 
     // Ambil item + validasi posisi
@@ -502,7 +529,7 @@ export const submitQC = async (req, res) => {
     }
 
     const isKiloan = detail.category_code === 'KILOAN' || String(detail.unit).toLowerCase() === 'kg';
-    if (isKiloan && ['frontliner', 'washing'].includes(stage) && bags.length === 0) {
+    if (isKiloan && ['frontliner', 'washing', 'ironing'].includes(stage) && bags.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian plastik' });
     }
@@ -573,6 +600,17 @@ export const submitQC = async (req, res) => {
         'INSERT INTO tr_item_bag_detail (progress_id, transaction_detail_id, bag_no, qty_pcs, notes) VALUES ?',
         [bagValues]
       );
+    }
+
+    // Rincian jenis pakaian kiloan (Tim Cuci) — QC cuci ulang menggantikan rincian lama
+    if (isKiloan && stage === 'washing') {
+      await conn.query('DELETE FROM tr_item_kg_detail WHERE transaction_detail_id = ?', [detail.id]);
+      if (kgItems.length > 0) {
+        await conn.query(
+          'INSERT INTO tr_item_kg_detail (progress_id, transaction_detail_id, item_kg_id, item_name, qty_pcs) VALUES ?',
+          [kgItems.map((k) => [progressId, detail.id, k.item_kg_id, k.item_name, k.qty_pcs])]
+        );
+      }
     }
 
     // Rincian packing (replace existing utk item ini)
@@ -928,6 +966,19 @@ export const resolveHold = async (req, res) => {
   }
 };
 
+/** GET /api/progress/item-kg — master jenis pakaian kiloan (aktif) untuk dropdown rincian */
+export const getItemKgMaster = async (req, res) => {
+  try {
+    const [rows] = await myWaschenPool.query(
+      'SELECT id, name FROM mst_item_kg WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    console.error('getItemKgMaster error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat master jenis pakaian' });
+  }
+};
+
 /**
  * GET /api/progress/item/:detailId/bag-history
  * Riwayat rincian plastik kiloan per tahap (frontliner, washing, …).
@@ -982,7 +1033,13 @@ export const getItemBagHistory = async (req, res) => {
       total_pcs: grouped[s].bags.reduce((sum, b) => sum + Number(b.qty_pcs || 0), 0)
     }));
 
-    return res.status(200).json({ success: true, message: 'OK', data });
+    const [kgItems] = await myWaschenPool.query(
+      `SELECT item_kg_id, item_name, qty_pcs FROM tr_item_kg_detail
+       WHERE transaction_detail_id = ? ORDER BY id ASC`,
+      [detailId]
+    );
+
+    return res.status(200).json({ success: true, message: 'OK', data, kg_items: kgItems });
   } catch (error) {
     console.error('getItemBagHistory error:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil riwayat rincian plastik', error: error.message });

@@ -7,6 +7,7 @@ import {
   getList,
   getTransactionDetail,
   getItemBagHistory,
+  getItemKgMaster,
   submitQC,
   getHolds,
   resolveHold
@@ -37,6 +38,7 @@ router.get('/list', getList);
 router.get('/holds', getHolds);
 router.get('/transaction/:id', getTransactionDetail);
 router.get('/item/:detailId/bag-history', getItemBagHistory);
+router.get('/item-kg', getItemKgMaster);
 router.post('/qc', uploadProduksiPhotosWithErrorHandling, submitQC);
 router.post('/hold/:detailId/resolve', resolveHold);
 

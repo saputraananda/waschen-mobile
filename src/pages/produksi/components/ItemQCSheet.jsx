@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  X, Loader2, AlertCircle, Camera, Images, Trash2, Plus,
-  MessageCircle, ShieldCheck, AlertTriangle
+  X, Loader2, Camera, Images, Trash2, Plus,
+  MessageCircle, ShieldCheck, AlertTriangle, ChevronDown
 } from 'lucide-react';
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import {
-  api, isKiloanItem, buildWaLink, prevBagStagesFor, STAGE_LABEL, bagGap
+  api, isKiloanItem, buildWaLink, prevBagStagesFor, STAGE_LABEL, bagGap, BAG_ENTRY_STAGES
 } from '../../../utils/produksiShared.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import StageBagHistory from './StageBagHistory.jsx';
@@ -43,6 +44,9 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
   const [historyLoading, setHistoryLoading] = useState(false);
   const [photoProcessing, setPhotoProcessing] = useState(false);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [kgItems, setKgItems] = useState([]); // [{item_kg_id: '' | id | 'other', item_name, qty_pcs}]
+  const [kgMaster, setKgMaster] = useState([]);
+  const [kgHistory, setKgHistory] = useState([]);
 
   const buildPhotoOverlay = useCallback((date = new Date()) => buildProduksiPhotoLines({
     orderNo: txn?.order_no,
@@ -54,24 +58,34 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
   const kiloan = isKiloanItem(item);
   const carriedFinding = Number(item?.has_finding) === 1;
   const isHandover = stage === 'handover';
-  const needBags = kiloan && ['frontliner', 'washing'].includes(stage);
+  const needBags = kiloan && BAG_ENTRY_STAGES.includes(stage);
   // Kiloan: setrika sudah ditentukan paket layanan, jangan tanya lagi di QC.
   const askIroning = stage === 'frontliner' && !kiloan;
   const needPackings = kiloan && stage === 'packing';
+  const needKgItems = kiloan && stage === 'washing';
   const showBagHistory = kiloan && prevBagStagesFor(stage).length > 0;
   const returnStageOptions = RETURN_STAGE_OPTIONS[stage] || ['frontliner'];
-  const photoRequired = qcStatus === 'temuan' || isHandover;
-
   useEffect(() => {
     if (!open) return;
     const opts = RETURN_STAGE_OPTIONS[stage] || ['frontliner'];
     setReturnedStage(opts[0]);
   }, [open, stage]);
 
-  // Riwayat rincian plastik tahap sebelumnya
+  // Master jenis pakaian (dropdown rincian Tim Cuci)
   useEffect(() => {
-    if (!open || !item?.id || !showBagHistory) {
+    if (!open || !needKgItems) return undefined;
+    let cancelled = false;
+    api.get('/progress/item-kg')
+      .then((res) => { if (!cancelled) setKgMaster(res.data?.data || []); })
+      .catch(() => { if (!cancelled) setKgMaster([]); });
+    return () => { cancelled = true; };
+  }, [open, needKgItems]);
+
+  // Riwayat rincian plastik + rincian jenis pakaian tahap sebelumnya
+  useEffect(() => {
+    if (!open || !item?.id || !kiloan || stage === 'frontliner') {
       setBagHistory([]);
+      setKgHistory([]);
       return undefined;
     }
 
@@ -80,6 +94,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
     api.get(`/progress/item/${item.id}/bag-history`)
       .then((res) => {
         if (cancelled) return;
+        setKgHistory(res.data?.kg_items || []);
         const all = res.data?.data || [];
         const allowed = prevBagStagesFor(stage);
         const filtered = all.filter((h) => allowed.includes(h.stage));
@@ -91,11 +106,11 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
           setBags(latest.bags.map((b) => ({ bag_no: b.bag_no, qty_pcs: '' })));
         }
       })
-      .catch(() => { if (!cancelled) setBagHistory([]); })
+      .catch(() => { if (!cancelled) { setBagHistory([]); setKgHistory([]); } })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
 
     return () => { cancelled = true; };
-  }, [open, item?.id, stage, showBagHistory, needBags]);
+  }, [open, item?.id, stage, kiloan, needBags]);
 
   useLockBodyScroll(open || !!photoPreview);
 
@@ -147,6 +162,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
     setRequiresIroning(true);
     setBags([{ bag_no: 1, qty_pcs: '' }]);
     setPackings([{ packing_no: 1, qty_pcs: '' }]);
+    setKgItems([]);
     setBagHistory([]);
     setHistoryLoading(false);
     setPhotoPreview(null);
@@ -157,10 +173,10 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
   const handleSubmit = async () => {
     setError(null);
 
-    if (photoRequired && photos.length === 0) {
+    if (photos.length === 0) {
       setError(isHandover
         ? 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran.'
-        : 'Temuan wajib menyertakan minimal 1 foto bukti.');
+        : 'QC wajib menyertakan minimal 1 foto.');
       return;
     }
     if (needBags) {
@@ -169,6 +185,11 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
         setError('Isi jumlah pakaian per plastik (semua plastik).');
         return;
       }
+    }
+    const filledKg = needKgItems ? kgItems.filter((k) => k.item_kg_id || k.qty_pcs) : [];
+    if (filledKg.some((k) => !k.item_kg_id || !(Number(k.qty_pcs) > 0) || (k.item_kg_id === 'other' && !k.item_name.trim()))) {
+      setError('Rincian jenis pakaian: pilih jenis & isi jumlah pcs (atau hapus barisnya).');
+      return;
     }
     if (needPackings && qcStatus === 'aman') {
       const valid = packings.every((p) => Number(p.qty_pcs) > 0);
@@ -195,6 +216,13 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
       // role_used tidak dikirim: server menentukannya sendiri dari mst_role (anti-spoof audit).
       if (needBags) {
         fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))));
+      }
+      if (filledKg.length) {
+        fd.append('kg_items', JSON.stringify(filledKg.map((k) => (
+          k.item_kg_id === 'other'
+            ? { item_name: k.item_name.trim(), qty_pcs: Number(k.qty_pcs) }
+            : { item_kg_id: Number(k.item_kg_id), qty_pcs: Number(k.qty_pcs) }
+        ))));
       }
       if (needPackings && qcStatus === 'aman') {
         fd.append('packings', JSON.stringify(packings.map((p, i) => ({ packing_no: i + 1, qty_pcs: Number(p.qty_pcs) }))));
@@ -239,13 +267,6 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
           </div>
 
           <div className="p-4 overflow-y-auto hide-scrollbar flex flex-col gap-4">
-            {error && (
-              <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                <span className="text-[11.5px] text-rose-700 font-semibold">{error}</span>
-              </div>
-            )}
-
             {carriedFinding && (
               <div className="bg-red-50 border border-red-200 rounded-[14px] p-3">
                 <div className="flex items-center gap-1.5 text-[11.5px] font-extrabold text-red-700">
@@ -268,10 +289,10 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
             {/* Rincian plastik (kiloan, frontliner & washing) */}
             {needBags && (
               <div>
-                <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+                <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
                   Rincian Plastik — {STAGE_LABEL[stage] || stage}
                   {bagHistory.length > 0 && (
-                    <span className="normal-case font-normal text-slate-300"> (isi ulang & bandingkan)</span>
+                    <span className="normal-case font-normal text-slate-500"> (isi ulang & bandingkan)</span>
                   )}
                 </label>
                 <div className="flex flex-col gap-2">
@@ -319,10 +340,96 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
               </div>
             )}
 
+            {/* Rincian jenis pakaian dari Tim Cuci (tahap setelah cuci) — native details: tertutup = badge */}
+            {kiloan && !needKgItems && kgHistory.length > 0 && (
+              <details className="group rounded-[14px] border border-[#5f1340]/20 bg-[#5f1340]/5 overflow-hidden">
+                <summary className="list-none cursor-pointer px-3 py-2.5 flex items-center justify-between gap-2 text-[11.5px] font-extrabold text-[#5f1340]">
+                  <span>Rincian Jenis Pakaian (Tim Cuci)</span>
+                  <span className="flex items-center gap-1.5">
+                    {kgHistory.reduce((s, k) => s + Number(k.qty_pcs || 0), 0)} pcs
+                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="bg-white border-t border-[#5f1340]/10 divide-y divide-slate-100">
+                  {kgHistory.map((k, i) => (
+                    <div key={i} className="px-3 py-2 flex justify-between text-[11.5px]">
+                      <span className="font-semibold text-slate-700">{k.item_name}</span>
+                      <span className="font-black text-slate-800">{Number(k.qty_pcs)} pcs</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {/* Input rincian jenis pakaian (kiloan, Tim Cuci) */}
+            {needKgItems && (
+              <div>
+                <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
+                  Rincian Jenis Pakaian
+                </label>
+                <div className="flex flex-col gap-2">
+                  {kgItems.map((k, i) => {
+                    const patch = (p) => setKgItems((prev) => prev.map((x, xi) => (xi === i ? { ...x, ...p } : x)));
+                    return (
+                      <div key={i} className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={k.item_kg_id}
+                            onChange={(e) => patch({ item_kg_id: e.target.value })}
+                            aria-label={`Jenis pakaian ${i + 1}`}
+                            className="flex-1 min-w-0 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 outline-none"
+                          >
+                            <option value="">Pilih jenis…</option>
+                            {kgMaster.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            <option value="other">Lainnya (isi sendiri)</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            max="999"
+                            placeholder="Pcs"
+                            aria-label={`Jumlah pcs ${i + 1}`}
+                            value={k.qty_pcs}
+                            onChange={(e) => patch({ qty_pcs: e.target.value })}
+                            className="w-[64px] text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setKgItems((prev) => prev.filter((_, xi) => xi !== i))}
+                            className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center flex-shrink-0"
+                            aria-label={`Hapus rincian ${i + 1}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {k.item_kg_id === 'other' && (
+                          <input
+                            type="text"
+                            maxLength={100}
+                            placeholder="Contoh : Selimut"
+                            value={k.item_name}
+                            onChange={(e) => patch({ item_name: e.target.value })}
+                            className="w-full text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setKgItems((prev) => [...prev, { item_kg_id: '', item_name: '', qty_pcs: '' }])}
+                  className="mt-2 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Tambah Jenis Pakaian
+                </button>
+              </div>
+            )}
+
             {/* Toggle perlu setrika (frontliner, non-kiloan) */}
             {askIroning && (
               <div>
-                <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Perlu Setrika?</label>
+                <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">Perlu Setrika?</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -344,7 +451,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
             {/* Hasil QC */}
             <div>
-              <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+              <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
                 {isHandover ? 'Kondisi Serah Terima' : 'Hasil QC'}
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -372,8 +479,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
             {/* Catatan */}
             <div>
-              <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
-                Catatan {qcStatus === 'aman' && <span className="normal-case font-normal text-slate-300">(opsional)</span>}
+              <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
+                Catatan {qcStatus === 'aman' && <span className="normal-case font-normal text-slate-500">(opsional)</span>}
               </label>
               <textarea
                 value={notes}
@@ -390,12 +497,12 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
             {/* Foto */}
             <div>
-              <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+              <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
                 {isHandover
                   ? 'Foto Bukti Diantar (wajib, maks 5)'
                   : qcStatus === 'temuan'
                     ? 'Foto Bukti Temuan (wajib, maks 5)'
-                    : 'Foto Hasil (opsional)'}
+                    : 'Foto Hasil (wajib, maks 5)'}
               </label>
               <input
                 ref={fileInputRef}
@@ -470,7 +577,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
                 )}
 
                 <div>
-                  <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Tindak Lanjut</label>
+                  <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">Tindak Lanjut</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -525,7 +632,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
             {/* Rincian packing (kiloan, tahap packing, aman) */}
             {needPackings && qcStatus === 'aman' && (
               <div>
-                <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+                <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
                   Rincian Packing (Kiloan)
                 </label>
                 <div className="flex flex-col gap-2">
@@ -584,6 +691,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
           </div>
         </div>
       </div>
+
+      <AlertModal message={error} onClose={() => setError(null)} />
 
       <CameraCaptureModal
         open={cameraOpen}

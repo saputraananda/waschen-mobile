@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import formatName from '../../../utils/FormatName.js';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
@@ -448,7 +449,6 @@ export default function ProfileEditPage() {
 
     const showToast = (text, ok = true) => {
         setToast({ text, ok });
-        setTimeout(() => setToast(null), 3000);
     };
 
     const handleSave = async () => {
@@ -755,11 +755,7 @@ export default function ProfileEditPage() {
                 </div>
 
                 {/* ── Toast ── */}
-                {toast && (
-                    <div className={`fixed bottom-[90px] left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-[14px] shadow-[0_8px_32px_rgba(0,0,0,.18)] text-[12.5px] font-bold text-white transition-all ${toast.ok ? 'bg-emerald-600' : 'bg-red-500'}`}>
-                        {toast.text}
-                    </div>
-                )}
+                <AlertModal message={toast?.text} variant={toast?.ok ? 'success' : 'danger'} onClose={() => setToast(null)} />
                 <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
 
                 {/* ── Bottom save button ── */}

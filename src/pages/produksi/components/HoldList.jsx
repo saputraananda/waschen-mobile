@@ -5,6 +5,7 @@ import {
 } from '../../../utils/produksiShared.js';
 import formatName from '../../../utils/FormatName.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 
 /**
  * Daftar "Perlu Konfirmasi" per role/tahap aktif.
@@ -64,11 +65,7 @@ export default function HoldList({ holds, loading, stage, onResolved }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {error && (
-        <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 text-[11.5px] text-rose-700 font-semibold">
-          {error}
-        </div>
-      )}
+      <AlertModal message={error} onClose={() => setError(null)} />
       {holds.map((h) => {
         const fromOtherStage = h.reported_stage && h.reported_stage !== 'frontliner';
         const kiloan = isKiloanItem(h);

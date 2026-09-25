@@ -9,6 +9,7 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
+import ConfirmModal, { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { formatWibTime, formatWibDateTime } from '../../../utils/wib.js';
 import GroomingSection from './GroomingSection.jsx';
 import CleanlinessTab from './CleanlinessTab.jsx';
@@ -940,23 +941,18 @@ export default function Attendance() {
           ) : (
             <>
               <div className="bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 p-5 flex flex-col items-center gap-4 text-center">
-                {pageError && (
-                  <div className="w-full bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2 text-left">
-                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <span className="text-[11.5px] text-rose-700 font-bold block">{pageError}</span>
-                      <button
-                        onClick={() => {
-                          setPageLoading(true);
-                          Promise.all([fetchToday(), fetchGc()]).finally(() => setPageLoading(false));
-                        }}
-                        className="text-[10.5px] text-rose-600 font-extrabold mt-1 underline"
-                      >
-                        Coba muat ulang
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <ConfirmModal
+                  isOpen={!!pageError}
+                  title="Gagal"
+                  message={pageError}
+                  confirmText="Coba muat ulang"
+                  cancelText="Tutup"
+                  onClose={() => setPageError(null)}
+                  onConfirm={() => {
+                    setPageLoading(true);
+                    Promise.all([fetchToday(), fetchGc()]).finally(() => setPageLoading(false));
+                  }}
+                />
 
                 {!timeStatus?.isOpen && timeStatus?.lockReason && (
                   <div className="w-full bg-amber-50 border border-amber-200 rounded-[14px] p-3 flex items-start gap-2 text-left">
@@ -1056,11 +1052,7 @@ export default function Attendance() {
                             </span>
                           </button>
                         )}
-                        {msgIn && (
-                          <div className={`mt-1.5 text-[10px] font-semibold leading-snug px-2 py-1 rounded-lg text-left ${msgIn.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-900'}`}>
-                            {msgIn.text}
-                          </div>
-                        )}
+                        <AlertModal message={msgIn?.text} variant={msgIn?.type === 'success' ? 'success' : 'danger'} onClose={() => setMsgIn(null)} />
                         <div className="mt-2">
                           {hasIn ? (
                             <button
@@ -1143,11 +1135,7 @@ export default function Attendance() {
                             </span>
                           </button>
                         )}
-                        {msgOut && (
-                          <div className={`mt-1.5 text-[10px] font-semibold leading-snug px-2 py-1 rounded-lg text-left ${msgOut.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-900'}`}>
-                            {msgOut.text}
-                          </div>
-                        )}
+                        <AlertModal message={msgOut?.text} variant={msgOut?.type === 'success' ? 'success' : 'danger'} onClose={() => setMsgOut(null)} />
                         {!hasOut && hasIn && groomingBlocksCheckout && (
                           <div className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-left">
                             <span className="text-[10px] font-semibold text-amber-800 leading-snug block">
@@ -1426,11 +1414,7 @@ export default function Attendance() {
             </div>
 
             <div className="p-3 overflow-y-auto hide-scrollbar">
-              {cameraErr && (
-                <div className="mb-3 text-[11.5px] font-semibold px-3 py-2 rounded-xl bg-red-50 text-red-900 border border-red-100">
-                  {cameraErr}
-                </div>
-              )}
+              <AlertModal message={cameraErr} onClose={() => setCameraErr(null)} />
 
               <div className="rounded-[16px] overflow-hidden bg-black relative aspect-[3/4]">
                 <video

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import formatName from '../../../utils/FormatName.js';
 import getDisplayRole, { getRoleLabel } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
-import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, CheckCircle2, Search, ScanLine, X } from 'lucide-react';
+import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, Search, ScanLine, X } from 'lucide-react';
 import { api, STAGES, stageForRole } from '../../../utils/produksiShared.js';
 import { evaluateNotaForStage, STAGE_ITEM_STATUS } from '../../../utils/notaScan.js';
 import TransactionCard from './TransactionCard.jsx';
@@ -11,7 +11,7 @@ import ItemQCSheet from './ItemQCSheet.jsx';
 import HoldList from './HoldList.jsx';
 import TransactionDetailModal from './TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
-import ConfirmModal from '../../../components/ConfirmModal.jsx';
+import ConfirmModal, { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
@@ -167,7 +167,6 @@ export default function Produksi() {
 
   const showToast = (msg) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2500);
   };
 
   const pickExactTxn = (list, key) => {
@@ -399,12 +398,7 @@ export default function Produksi() {
 
         {/* Content */}
         <div className="px-4 mt-4 flex flex-col gap-3">
-          {toast && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-[14px] p-3 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span className="text-[11.5px] text-emerald-700 font-semibold">{toast}</span>
-            </div>
-          )}
+          <AlertModal message={toast} variant="success" onClose={() => setToast(null)} />
 
           {searchResults !== null ? (
             <>

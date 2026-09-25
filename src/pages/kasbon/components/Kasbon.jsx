@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import formatName from '../../../utils/FormatName.js';
 import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
@@ -712,12 +713,7 @@ export default function Kasbon() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 overflow-y-auto hide-scrollbar flex flex-col gap-4">
-              {submitError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                  <span className="text-[11.5px] text-rose-700 font-semibold">{submitError}</span>
-                </div>
-              )}
+              <AlertModal message={submitError} onClose={() => setSubmitError(null)} />
 
               {/* Type */}
               <div>

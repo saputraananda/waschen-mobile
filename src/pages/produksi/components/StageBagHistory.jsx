@@ -23,7 +23,7 @@ export default function StageBagHistory({ loading, history = [] }) {
 
   return (
     <div>
-      <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">
+      <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
         Riwayat Rincian Plastik
       </label>
       <div className="rounded-[14px] border border-slate-200 overflow-hidden">

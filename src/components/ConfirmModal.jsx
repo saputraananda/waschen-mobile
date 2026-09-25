@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import useLockBodyScroll from '../hooks/useLockBodyScroll.js';
 
 /**
@@ -17,6 +18,26 @@ import useLockBodyScroll from '../hooks/useLockBodyScroll.js';
  * - closeOnOverlayClick (boolean): Izinkan tutup modal dengan klik backdrop
  * - icon (ReactNode): Custom icon jika ingin mengganti icon bawaan variant
  */
+const ALERT_TITLES = { danger: 'Gagal', warning: 'Perhatian', info: 'Informasi', success: 'Berhasil' };
+
+/** Popup pemberitahuan 1 tombol. Tampil selama `message` truthy. Di-portal ke body agar aman dipanggil di dalam sheet. */
+export function AlertModal({ message, onClose, variant = 'danger', title }) {
+  if (!message) return null;
+  return createPortal(
+    <ConfirmModal
+      isOpen={!!message}
+      onClose={onClose}
+      onConfirm={onClose}
+      title={title || ALERT_TITLES[variant]}
+      message={message}
+      confirmText="Mengerti"
+      cancelText=""
+      variant={variant}
+    />,
+    document.body
+  );
+}
+
 export default function ConfirmModal({
   isOpen,
   onClose,

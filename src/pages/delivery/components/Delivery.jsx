@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Loader2, RefreshCw, PackageOpen,
   MapPin, Phone, ChevronRight, Scale, Shirt, AlertTriangle, PauseOctagon,
-  CheckCircle2, PackageSearch, Search, ScanLine, X
+  PackageSearch, Search, ScanLine, X
 } from 'lucide-react';
 import formatName from '../../../utils/FormatName.js';
 import getDisplayRole, { getRoleLabel } from '../../../utils/getDisplayRole.js';
@@ -17,7 +17,7 @@ import {
 import ItemQCSheet from '../../produksi/components/ItemQCSheet.jsx';
 import TransactionDetailModal from '../../produksi/components/TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
-import ConfirmModal from '../../../components/ConfirmModal.jsx';
+import ConfirmModal, { AlertModal } from '../../../components/ConfirmModal.jsx';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
@@ -424,7 +424,6 @@ export default function Delivery() {
 
   const showToast = (msg) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2500);
   };
 
   const pickExactTxn = (list, key) => {
@@ -627,12 +626,7 @@ export default function Delivery() {
         </div>
 
         <div className="px-4 mt-4 flex flex-col gap-3">
-          {toast && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-[14px] p-3 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span className="text-[11.5px] text-emerald-700 font-semibold">{toast}</span>
-            </div>
-          )}
+          <AlertModal message={toast} variant="success" onClose={() => setToast(null)} />
 
           {isSearchMode ? (
             <>

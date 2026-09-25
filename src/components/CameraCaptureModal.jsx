@@ -101,9 +101,8 @@ export default function CameraCaptureModal({
     const ctx = canvas.getContext('2d');
     if (!ctx) { setCapturing(false); return; }
 
-    if (facingMode === 'user') { ctx.translate(w, 0); ctx.scale(-1, 1); }
+    // Jangan mirror hasil: preview saja yang di-mirror (kamera depan), file tetap orientasi asli.
     ctx.drawImage(video, 0, 0, w, h);
-    if (facingMode === 'user') ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const lines = buildOverlayLines ? buildOverlayLines(now) : [formatStamp(now)];
     drawTextOverlay(ctx, w, h, lines);

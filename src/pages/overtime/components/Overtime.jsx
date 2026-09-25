@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import formatName from '../../../utils/FormatName.js';
 import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
@@ -623,17 +624,9 @@ export default function Overtime() {
             )}
           </div>
 
-          {infoBanner && (
-            <div className="mx-4 mt-3 rounded-[16px] border border-amber-200 bg-amber-50 px-3.5 py-3 text-[11.5px] text-amber-800 font-semibold flex gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p>{infoBanner}</p>
-                <button type="button" className="mt-1 text-[10.5px] font-extrabold underline" onClick={() => setInfoBanner(null)}>
-                  Tutup
-                </button>
-              </div>
-            </div>
-          )}
+          <AlertModal message={infoBanner} onClose={() => setInfoBanner(null)} variant="info" />
+          <AlertModal message={submitError} onClose={() => setSubmitError(null)} />
+          <AlertModal message={startError} onClose={() => setStartError(null)} />
 
           <div className="mx-4 mt-3 rounded-[16px] border border-slate-100 bg-white px-3.5 py-2.5 text-[10.5px] text-slate-500 leading-relaxed font-medium">
             <span className="font-extrabold text-slate-600">Alur:</span> Start → kerja tercatat lembur → Close → status Pengajuan → ACC leader.
@@ -823,12 +816,6 @@ export default function Overtime() {
                 </div>
               )}
 
-              {submitError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                  <span className="text-[11.5px] text-rose-700 font-semibold">{submitError}</span>
-                </div>
-              )}
 
               <div>
                 <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Tanggal Lembur</label>
@@ -916,12 +903,6 @@ export default function Overtime() {
                 Jelaskan singkat kenapa Anda lembur. Sesi dimulai setelah alasan disimpan.
               </p>
 
-              {startError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                  <span className="text-[11.5px] text-rose-700 font-semibold">{startError}</span>
-                </div>
-              )}
 
               <textarea
                 required
@@ -1015,11 +996,6 @@ export default function Overtime() {
                   className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
                 />
               </div>
-              {submitError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 text-[11.5px] text-rose-700 font-semibold">
-                  {submitError}
-                </div>
-              )}
               <button
                 type="button"
                 disabled={submitting}

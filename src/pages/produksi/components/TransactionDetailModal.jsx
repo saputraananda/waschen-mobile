@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, AlertCircle, AlertTriangle, PauseCircle, ShieldCheck, Scale, Shirt } from 'lucide-react';
+import { X, Loader2, AlertTriangle, PauseCircle, ShieldCheck, Scale, Shirt } from 'lucide-react';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { api, formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
 import formatName from '../../../utils/FormatName.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
@@ -78,12 +79,7 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
             </div>
           )}
 
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-[14px] p-3 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-              <span className="text-[11.5px] text-rose-700 font-semibold">{error}</span>
-            </div>
-          )}
+          <AlertModal message={error} onClose={() => setError(null)} />
 
           {data && (data.items || []).map((item) => (
             <div key={item.id} className={`rounded-[16px] border p-3.5 ${

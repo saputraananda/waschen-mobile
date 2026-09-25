@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../../../components/Navbar';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
@@ -366,11 +367,7 @@ export default function History() {
         </div>
 
         <div className="w-full relative">
-          {error && (
-            <div className="mx-4 mt-3 p-3 rounded-2xl bg-red-50 border border-red-200 text-[12px] text-red-700 font-bold">
-              {error}
-            </div>
-          )}
+          <AlertModal message={error} onClose={() => setError('')} />
 
           <div className="mx-4 -mt-6 relative z-20 bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-3.5 pb-2.5 border-b border-slate-100">
@@ -709,7 +706,7 @@ export default function History() {
                 placeholder="Contoh : Libur tahun baru keluarga"
                 className="w-full rounded-2xl border border-slate-200 p-3 text-[13px] font-medium text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400/40"
               />
-              {requestError && <p className="text-[11px] text-red-600 font-bold">{requestError}</p>}
+              <AlertModal message={requestError} onClose={() => setRequestError('')} />
               <button
                 onClick={submitDayOffRequest}
                 disabled={requestLoading}
