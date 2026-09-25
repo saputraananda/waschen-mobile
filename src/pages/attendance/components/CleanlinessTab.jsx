@@ -2,6 +2,10 @@ import React from 'react';
 import { Camera, AlertCircle, Loader2, Eye, Sparkles, Trash2 } from 'lucide-react';
 import { formatWibDateTime } from '../../../utils/wib.js';
 
+const SESSIONS = ['Pagi', 'Pulang'];
+// Label tombol saja; sesi yang tersimpan tetap ditentukan server (jam WIB).
+const wibHour = () => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(new Date()));
+
 export default function CleanlinessTab({
   cleanliness,
   hasCheckIn,
@@ -30,6 +34,8 @@ export default function CleanlinessTab({
       </div>
     );
   }
+
+  const currentSession = wibHour() >= 16 ? 'Pulang' : 'Pagi';
 
   return (
     <div className="bg-white rounded-[24px] border border-slate-100 shadow-[0_8px_32px_rgba(0,0,0,0.06)] p-5">
@@ -70,20 +76,24 @@ export default function CleanlinessTab({
         {openingCamera || isSubmitting
           ? <Loader2 className="w-4 h-4 animate-spin" />
           : <Camera className="w-4 h-4" />}
-        Ambil Foto Kebersihan
+        Ambil Foto Kebersihan {currentSession}
       </button>
 
-      <div className="mt-4">
-        <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
-          Foto hari ini ({cleanliness.photoCount})
-        </p>
-        {cleanliness.photos?.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-8 text-center">
-            <p className="text-[12px] text-slate-400 font-medium">Belum ada foto kebersihan</p>
+      {SESSIONS.map((session) => {
+        const photos = (cleanliness.photos || []).filter((p) => (p.photo_session || 'Pagi') === session);
+        return (
+      <div key={session} className="mt-4">
+        <div className={`mb-2 flex items-center justify-between rounded-xl px-3 py-2 ${session === 'Pulang' ? 'bg-indigo-50 text-indigo-800' : 'bg-amber-50 text-amber-800'}`}>
+          <span className="text-[12px] font-extrabold">Foto Kebersihan {session}</span>
+          <span className="text-[11px] font-bold">{photos.length} foto · {session === 'Pulang' ? '16:00–24:00' : 'sebelum 16:00'}</span>
+        </div>
+        {photos.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-6 text-center">
+            <p className="text-[12px] text-slate-400 font-medium">Belum ada foto kebersihan {session.toLowerCase()}</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2.5">
-            {cleanliness.photos.map((p) => (
+            {photos.map((p) => (
               <div
                 key={p.id}
                 className="rounded-xl border border-slate-100 overflow-hidden bg-slate-50"
@@ -126,6 +136,8 @@ export default function CleanlinessTab({
           </div>
         )}
       </div>
+        );
+      })}
     </div>
   );
 }

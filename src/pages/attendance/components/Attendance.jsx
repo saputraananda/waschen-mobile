@@ -1437,9 +1437,9 @@ export default function Attendance() {
                   type="button"
                   onClick={switchCamera}
                   className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/50 grid place-items-center text-white"
-                  aria-label="Ganti kamera"
+                  aria-label="Tukar kamera depan/belakang"
                 >
-                  <Camera className="w-4.5 h-4.5" />
+                  <RefreshCw className="w-4.5 h-4.5" />
                 </button>
 
                 <div

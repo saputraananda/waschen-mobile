@@ -163,7 +163,7 @@ async function loadCleanlinessBundle(req, outletId, role, workDate) {
 
   const [photos] = await myWaschenPool.query(
     `SELECT cleanliness_photo_id, uploaded_by_employee_id, uploaded_by_name,
-            photo_path, photo_name, taken_at, lat, lng, attendance_id
+            photo_path, photo_name, taken_at, photo_session, lat, lng, attendance_id
      FROM tr_attendance_cleanliness_photo
      WHERE outlet_id = ? AND role_code = ? AND work_date = ?
      ORDER BY taken_at DESC, cleanliness_photo_id DESC`,
@@ -180,6 +180,7 @@ async function loadCleanlinessBundle(req, outletId, role, workDate) {
       id: p.cleanliness_photo_id,
       url: buildPhotoUrl(req, p.photo_path, p.photo_name),
       taken_at: p.taken_at,
+      photo_session: p.photo_session,
       uploaded_by_employee_id: p.uploaded_by_employee_id,
       uploaded_by_name: p.uploaded_by_name,
       is_mine: Number(p.uploaded_by_employee_id) === Number(req.user?.employee_id),
@@ -675,13 +676,15 @@ export const uploadCleanliness = async (req, res) => {
       roleRow?.employee_name ||
       `Karyawan #${employeeId}`;
 
+    // Sesi ditentukan server (jam WIB), bukan dari klien: 16:00–23:59 = Pulang, selain itu Pagi.
+    const photoSession = getWibHoursMinutes().hours >= 16 ? 'Pulang' : 'Pagi';
     for (const file of files) {
       await myWaschenPool.query(
         `INSERT INTO tr_attendance_cleanliness_photo
          (attendance_id, outlet_id, work_date, role_code,
           uploaded_by_employee_id, uploaded_by_name,
-          photo_path, photo_name, taken_at, lat, lng)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)`,
+          photo_path, photo_name, taken_at, photo_session, lat, lng)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
         [
           att.attendance_id,
           outletId,
@@ -691,6 +694,7 @@ export const uploadCleanliness = async (req, res) => {
           displayName,
           CLEANLINESS_UPLOAD_PUBLIC_PATH,
           file.filename,
+          photoSession,
           Number.isFinite(lat) ? lat : null,
           Number.isFinite(lng) ? lng : null
         ]
@@ -706,8 +710,8 @@ export const uploadCleanliness = async (req, res) => {
 
     return res.json({
       success: true,
-      message: `${files.length} foto kebersihan tersimpan.`,
-      data: { uploaded: files.length, areaLabel: cleanlinessAreaLabel(role) }
+      message: `${files.length} foto kebersihan ${photoSession} tersimpan.`,
+      data: { uploaded: files.length, areaLabel: cleanlinessAreaLabel(role), photoSession }
     });
   } catch (error) {
     console.error('uploadCleanliness error:', error);
