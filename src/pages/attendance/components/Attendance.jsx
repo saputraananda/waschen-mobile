@@ -436,10 +436,8 @@ export default function Attendance() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    ctx.translate(w, 0);
-    ctx.scale(-1, 1);
+    // Foto tersimpan tidak di-mirror (tulisan terbaca normal), seperti kamera bawaan HP.
     ctx.drawImage(v, 0, 0, w, h);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const stamp = `${formatStamp(new Date())}${outsideRange ? ' — Diluar Jangkauan' : ''}`;
     const locationLine = `Lokasi: ${activeOutlet?.full_name || activeOutlet?.name || 'Outlet Waschen'}`;
@@ -1446,7 +1444,7 @@ export default function Attendance() {
                   }}
                   onCanPlay={() => setVideoReady(true)}
                   className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
+                  style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}
                 />
 
                 <button
