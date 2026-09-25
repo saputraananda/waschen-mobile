@@ -144,6 +144,8 @@ export default function Attendance() {
   const [facingMode, setFacingMode] = useState('user');
   const [cameraStreamTick, setCameraStreamTick] = useState(0);
   const [pendingCapture, setPendingCapture] = useState(null); // { kind: 'punch'|'grooming'|'cleanliness', punchType?, stepCode?, stepLabel?, coord? }
+  const [timerSec, setTimerSec] = useState(0); // 0 | 5 | 10 — hanya grooming/kebersihan
+  const [countdown, setCountdown] = useState(null);
   const [noteModal, setNoteModal] = useState(null); // { punchType, required }
   const [noteText, setNoteText] = useState('');
   const [noteError, setNoteError] = useState(null);
@@ -702,7 +704,27 @@ export default function Attendance() {
     }
   };
 
+  const allowTimer = pendingCapture?.kind === 'grooming' || pendingCapture?.kind === 'cleanliness';
+
+  const startCapture = () => {
+    if (allowTimer && timerSec > 0) setCountdown(timerSec);
+    else confirmSelfie();
+  };
+
+  useEffect(() => {
+    if (countdown == null) return undefined;
+    if (countdown === 0) {
+      setCountdown(null);
+      confirmSelfie();
+      return undefined;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c == null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
+
   const cancelCamera = () => {
+    setCountdown(null);
     stopCamera();
     setCameraOpen(false);
     setPendingCapture(null);
@@ -1453,7 +1475,35 @@ export default function Attendance() {
                     <Loader2 className="w-8 h-8 text-white animate-spin" />
                   </div>
                 )}
+
+                {countdown != null && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30" aria-live="assertive">
+                    <span className="text-white text-[72px] font-black drop-shadow-lg">{countdown}</span>
+                  </div>
+                )}
               </div>
+
+              {allowTimer && (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-500">Timer</span>
+                  {[0, 5, 10].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setTimerSec(s)}
+                      disabled={countdown != null || isSubmitting}
+                      aria-pressed={timerSec === s}
+                      className={`h-8 px-3 rounded-[10px] text-[11px] font-extrabold border disabled:opacity-50 ${
+                        timerSec === s
+                          ? 'bg-[#5f1340] text-white border-[#5f1340]'
+                          : 'bg-white text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {s === 0 ? 'Mati' : `${s} detik`}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {!videoReady && (
                 <div className="mt-2 text-[11px] font-semibold text-slate-500">Menyiapkan kamera…</div>
@@ -1473,11 +1523,15 @@ export default function Attendance() {
                 </button>
                 <button
                   type="button"
-                  onClick={confirmSelfie}
-                  disabled={!pendingCapture || !videoReady || isSubmitting}
+                  onClick={startCapture}
+                  disabled={!pendingCapture || !videoReady || isSubmitting || countdown != null}
                   className="h-[42px] rounded-[12px] bg-[#5f1340] text-white text-[12px] font-extrabold disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Mengirim…' : videoReady ? 'Ambil & Kirim' : 'Menyiapkan...'}
+                  {isSubmitting
+                    ? 'Mengirim…'
+                    : countdown != null
+                      ? `Ambil dalam ${countdown} dtk`
+                      : videoReady ? 'Ambil & Kirim' : 'Menyiapkan...'}
                 </button>
               </div>
             </div>
