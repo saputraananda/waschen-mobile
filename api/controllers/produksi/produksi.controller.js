@@ -467,11 +467,12 @@ export const submitQC = async (req, res) => {
       return res.status(422).json({ success: false, message: 'Format rincian plastik/packing tidak valid' });
     }
     // Rincian jenis pakaian kiloan (opsional, hanya Tim Cuci)
-    if (!Array.isArray(kgItems) || kgItems.length > 50 || (kgItems.length && stage !== 'washing')) {
+    if (!Array.isArray(kgItems) || kgItems.length > 500 || (kgItems.length && stage !== 'washing')) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Rincian jenis pakaian tidak valid' });
     }
     kgItems = kgItems.map((k) => ({
+      bag_no: Number(k?.bag_no),
       item_kg_id: Number(k?.item_kg_id) || null,
       item_name: String(k?.item_name || '').trim().slice(0, 100),
       qty_pcs: Number(k?.qty_pcs)
@@ -532,6 +533,22 @@ export const submitQC = async (req, res) => {
     if (isKiloan && ['frontliner', 'washing', 'ironing'].includes(stage) && bags.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian plastik' });
+    }
+    // Tim Cuci wajib merinci jenis pakaian per plastik; total rincian = qty plastik
+    if (isKiloan && stage === 'washing') {
+      const bagNos = new Set(bags.map((b) => Number(b.bag_no)));
+      let kgError = kgItems.some((k) => !bagNos.has(k.bag_no)) ? 'Rincian jenis pakaian tidak cocok dengan nomor plastik' : null;
+      for (const b of bags) {
+        if (kgError) break;
+        const no = Number(b.bag_no);
+        const sum = kgItems.filter((k) => k.bag_no === no).reduce((s, k) => s + k.qty_pcs, 0);
+        if (sum < 1) kgError = `Plastik ${no}: rincian jenis pakaian wajib diisi`;
+        else if (sum !== Number(b.qty_pcs)) kgError = `Plastik ${no}: total rincian (${sum}) tidak sama dengan jumlah plastik (${Number(b.qty_pcs)})`;
+      }
+      if (kgError) {
+        await cleanupFiles();
+        return res.status(422).json({ success: false, message: kgError });
+      }
     }
     if (stage === 'packing' && isKiloan && packings.length === 0) {
       await cleanupFiles();
@@ -607,8 +624,8 @@ export const submitQC = async (req, res) => {
       await conn.query('DELETE FROM tr_item_kg_detail WHERE transaction_detail_id = ?', [detail.id]);
       if (kgItems.length > 0) {
         await conn.query(
-          'INSERT INTO tr_item_kg_detail (progress_id, transaction_detail_id, item_kg_id, item_name, qty_pcs) VALUES ?',
-          [kgItems.map((k) => [progressId, detail.id, k.item_kg_id, k.item_name, k.qty_pcs])]
+          'INSERT INTO tr_item_kg_detail (progress_id, transaction_detail_id, bag_no, item_kg_id, item_name, qty_pcs) VALUES ?',
+          [kgItems.map((k) => [progressId, detail.id, k.bag_no, k.item_kg_id, k.item_name, k.qty_pcs])]
         );
       }
     }
@@ -1034,8 +1051,8 @@ export const getItemBagHistory = async (req, res) => {
     }));
 
     const [kgItems] = await myWaschenPool.query(
-      `SELECT item_kg_id, item_name, qty_pcs FROM tr_item_kg_detail
-       WHERE transaction_detail_id = ? ORDER BY id ASC`,
+      `SELECT bag_no, item_kg_id, item_name, qty_pcs FROM tr_item_kg_detail
+       WHERE transaction_detail_id = ? ORDER BY bag_no ASC, id ASC`,
       [detailId]
     );
 

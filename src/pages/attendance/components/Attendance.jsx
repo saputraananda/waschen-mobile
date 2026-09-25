@@ -365,6 +365,8 @@ export default function Attendance() {
   const openCamera = useCallback(async (mode = 'user') => {
     setCameraErr(null);
     setVideoReady(false);
+    // State harus ikut kamera yang dibuka: dipakai untuk mirror preview & tombol tukar kamera.
+    setFacingMode(mode);
     if (!canUseCamera) {
       setCameraErr('Browser tidak mendukung kamera.');
       return false;
@@ -527,7 +529,7 @@ export default function Attendance() {
     setNoteError(null);
     setOpeningCamera(true);
     setPendingCapture({ kind: 'punch', punchType, coord });
-    const ok = await openCamera(facingMode);
+    const ok = await openCamera('user');
     setOpeningCamera(false);
     if (!ok) {
       setMsg({ text: 'Kamera tidak bisa dibuka.', type: 'error' });
