@@ -84,6 +84,7 @@ const DOC_DEFS = [
 
 /* ── Phone number validation: must start with 0, digits only ── */
 const isValidPhone = v => !v || /^0\d{8,13}$/.test(v);
+const isValidUsername = v => /^[A-Za-z0-9._-]{3,32}$/.test(v);
 
 /* ── File type detection from URL ── */
 const getFileType = url => {
@@ -355,6 +356,7 @@ export default function ProfileEditPage() {
     const [banks, setBanks] = useState([]);
     const [educationLevels, setEducationLevels] = useState([]);
     const [phoneErrors, setPhoneErrors] = useState({});
+    const [usernameError, setUsernameError] = useState(null);
     const [pinError, setPinError] = useState(null);
     const [showPin, setShowPin] = useState(false);
     const [preview, setPreview] = useState(null); // { url, label }
@@ -373,6 +375,7 @@ export default function ProfileEditPage() {
     const applyProfileDetail = useCallback((d) => {
         setDetail(d);
         setForm({
+            username: d.username || '',
             gender: d.gender || '',
             birth_place: d.birth_place || '',
             birth_date: d.birth_date ? d.birth_date.slice(0, 10) : '',
@@ -415,6 +418,7 @@ export default function ProfileEditPage() {
                     });
                     setForm(prev => ({
                         ...prev,
+                        username: u.username || '',
                         phone_number: u.phone || u.phone_number || '',
                         private_email: u.email || u.private_email || '',
                         join_date: u.join_date ? u.join_date.slice(0, 10) : '',
@@ -434,6 +438,10 @@ export default function ProfileEditPage() {
         let next = value;
         if (name === 'code_pin' || name === 'code_pin_confirm') {
             next = String(value || '').replace(/\D/g, '').slice(0, 4);
+        }
+        if (name === 'username') {
+            next = String(value || '').replace(/\s/g, '').slice(0, 32);
+            setUsernameError(null);
         }
         setForm(prev => ({ ...prev, [name]: next }));
         if (name === 'phone_number' || name === 'emergency_contact') {
@@ -480,16 +488,33 @@ export default function ProfileEditPage() {
             }
         }
 
+        const username = String(form.username || '').trim();
+        if (!username) {
+            setUsernameError('Username wajib diisi.');
+            showToast('Username wajib diisi.', false);
+            return;
+        }
+        if (!isValidUsername(username)) {
+            setUsernameError('3–32 karakter: huruf, angka, titik, strip, atau garis bawah.');
+            showToast('Format username tidak valid.', false);
+            return;
+        }
+
         setSaving(true);
         setPinError(null);
         try {
-            const payload = { ...form };
+            const payload = { ...form, username };
             delete payload.code_pin_confirm;
             // Kirim code_pin hanya jika diisi (kosong = tidak ubah PIN)
             if (!pin) delete payload.code_pin;
             else payload.code_pin = pin;
 
             await api.put('/employee/update-profile', payload);
+            try {
+                const stored = JSON.parse(localStorage.getItem('user') || '{}');
+                stored.username = username;
+                localStorage.setItem('user', JSON.stringify(stored));
+            } catch { /* ignore */ }
             showToast('Profil berhasil disimpan.');
             if (pin) {
                 setDetail(prev => (prev ? { ...prev, code_pin: pin, has_pin: true } : prev));
@@ -660,6 +685,14 @@ export default function ProfileEditPage() {
 
                     {/* Data Pribadi */}
                     <Section title="Data Pribadi">
+                        <FieldRow
+                            label="Username"
+                            name="username"
+                            value={form.username}
+                            onChange={handleChange}
+                            placeholder="Contoh : putraalora"
+                            error={usernameError}
+                        />
                         <FieldRow label="Jenis Kelamin" name="gender" value={form.gender} onChange={handleChange} options={GENDER_OPTS} />
                         <FieldRow label="Tempat Lahir" name="birth_place" value={form.birth_place} onChange={handleChange} placeholder="Contoh : Jakarta" />
                         <FieldRow label="Tanggal Lahir" name="birth_date" value={form.birth_date} onChange={handleChange} type="date" />

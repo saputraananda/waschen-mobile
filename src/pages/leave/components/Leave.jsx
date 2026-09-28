@@ -63,6 +63,28 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
+/** Cutoff bulan X = tgl 26 bulan sebelumnya s/d tgl 25 bulan X. Hari >= 26 sudah masuk cutoff bulan depan. */
+const currentCutoff = () => {
+  const [y, m, d] = todayWibISO().split('-').map(Number);
+  if (d >= 26) return m === 12 ? { month: 1, year: y + 1 } : { month: m + 1, year: y };
+  return { month: m, year: y };
+};
+
+const getPeriodRange = (month, year) => {
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  return {
+    start: `${prevYear}-${String(prevMonth).padStart(2, '0')}-26`,
+    end: `${year}-${String(month).padStart(2, '0')}-25`
+  };
+};
+
+const formatRangeShort = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const short = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${d} ${short[m - 1]} ${y}`;
+};
+
 // Izin libur panjang (izin sehari penuh > 1 hari) wajib diajukan
 // minimal 2 minggu sebelum tgl 25 -> paling lambat tgl 11 bulan berjalan.
 const LONG_LEAVE_DEADLINE_DAY = 11;
@@ -96,10 +118,10 @@ export default function Leave() {
 
   const [currentUser, setCurrentUser] = useState({ fullName: 'Karyawan Waschen', position: 'Staff Waschen' });
 
-  const now = new Date();
-  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
-  const [filterYear, setFilterYear] = useState(now.getFullYear());
-  const [yearOptions, setYearOptions] = useState([now.getFullYear()]);
+  const cutoffNow = currentCutoff();
+  const [filterMonth, setFilterMonth] = useState(cutoffNow.month);
+  const [filterYear, setFilterYear] = useState(cutoffNow.year);
+  const [yearOptions, setYearOptions] = useState([cutoffNow.year]);
   const [stats, setStats] = useState({ izin: 0, sakit: 0, cuti: 0 });
   const [filterType, setFilterType] = useState(null);
 
@@ -160,11 +182,13 @@ export default function Leave() {
     try {
       const res = await api.get('/leave/years');
       const years = res.data?.data || [];
-      setYearOptions(years.length ? years : [now.getFullYear()]);
+      const y = currentCutoff().year;
+      const options = [...new Set([...(years.length ? years : [y]), y])].sort((a, b) => a - b);
+      setYearOptions(options);
     } catch (e) {
       if (handleAuthError(e)) return;
     }
-  }, [handleAuthError, now]);
+  }, [handleAuthError]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -340,6 +364,12 @@ export default function Leave() {
 
   // ponytail: filter jenis dilakukan client-side atas hasil list (limit 50).
   // Pindahkan ke query backend kalau riwayat sudah butuh pagination.
+  const periodLabel = useMemo(() => {
+    if (!filterMonth) return 'Semua Periode';
+    const range = getPeriodRange(filterMonth, filterYear);
+    return `${formatRangeShort(range.start)} – ${formatRangeShort(range.end)}`;
+  }, [filterMonth, filterYear]);
+
   const visibleItems = useMemo(
     () => (filterType ? items.filter((i) => i.leave_type === filterType) : items),
     [items, filterType]
@@ -460,7 +490,7 @@ export default function Leave() {
                     <X className="w-3 h-3" />
                   </button>
                 )}
-                {filterMonth === 0 ? 'Semua Periode' : `${monthOptions.find((m) => m.value === filterMonth)?.label} ${filterYear}`}
+                {periodLabel}
               </span>
             </div>
 

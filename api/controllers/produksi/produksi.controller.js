@@ -52,7 +52,7 @@ const nextStatusFor = (stage, detail) => {
 /** Rekalkulasi tr_transaction.work_status = rata-rata persentase item */
 const recalcWorkStatus = async (conn, transactionId) => {
   const [items] = await conn.query(
-    'SELECT item_work_status FROM tr_transaction_detail WHERE transaction_id = ?',
+    'SELECT item_work_status FROM tr_transaction_detail WHERE transaction_id = ? AND is_production = 1',
     [transactionId]
   );
   if (items.length === 0) return;
@@ -251,7 +251,7 @@ export const getList = async (req, res) => {
        FROM tr_transaction_detail d
        LEFT JOIN mst_service s ON s.id = d.service_id
        LEFT JOIN mst_service_category cat ON cat.id = s.category_id
-       WHERE d.transaction_id IN (?)`,
+       WHERE d.transaction_id IN (?) AND d.is_production = 1`,
       [txnIds]
     );
 
@@ -318,7 +318,7 @@ export const getTransactionDetail = async (req, res) => {
        FROM tr_transaction_detail d
        LEFT JOIN mst_service s ON s.id = d.service_id
        LEFT JOIN mst_service_category cat ON cat.id = s.category_id
-       WHERE d.transaction_id = ?`,
+       WHERE d.transaction_id = ? AND d.is_production = 1`,
       [id]
     );
 

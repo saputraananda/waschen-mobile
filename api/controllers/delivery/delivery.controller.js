@@ -69,7 +69,7 @@ const fetchDetailsForTxns = async (txnIds) => {
      FROM tr_transaction_detail d
      LEFT JOIN mst_service s ON s.id = d.service_id
      LEFT JOIN mst_service_category cat ON cat.id = s.category_id
-     WHERE d.transaction_id IN (?)`,
+     WHERE d.transaction_id IN (?) AND d.is_production = 1`,
     [txnIds]
   );
   return details;

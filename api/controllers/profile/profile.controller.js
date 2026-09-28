@@ -135,6 +135,16 @@ export const getProfileDetail = async (req, res) => {
       console.warn('myWaschenPool role fetch warning:', e.message);
     }
 
+    let username = null;
+    if (userId) {
+      const [urows] = await mainPool.query('SELECT username FROM users WHERE id = ? LIMIT 1', [userId]);
+      username = urows[0]?.username || null;
+    }
+    if (!username && employeeRow.email) {
+      const [urows] = await mainPool.query('SELECT username FROM users WHERE email = ? LIMIT 1', [employeeRow.email]);
+      username = urows[0]?.username || null;
+    }
+
     // URL publik tiap dokumen: <docKey>_url dipakai langsung oleh frontend
     const docUrls = {};
     for (const key of DOC_KEYS) {
@@ -150,6 +160,7 @@ export const getProfileDetail = async (req, res) => {
       position: employeeRow.position_name || 'Staff',
       department: employeeRow.department_name || 'Waschen Laundry',
       profile_url: toPublicUrl(employeeRow.profile_path || employeeRow.avatar),
+      username,
       role: assignedRole || 'Frontliner',
       assignedRole: assignedRole || null,
       is_leader: isLeader,
@@ -211,6 +222,47 @@ export const updateProfile = async (req, res) => {
         success: false,
         message: 'Employee ID tidak ditemukan untuk diperbarui'
       });
+    }
+
+    if (data.username !== undefined && String(data.username).trim() !== '') {
+      const nextUsername = String(data.username).trim();
+      if (!/^[A-Za-z0-9._-]{3,32}$/.test(nextUsername)) {
+        return res.status(422).json({
+          success: false,
+          message: 'Username 3–32 karakter: huruf, angka, titik, strip, atau garis bawah.'
+        });
+      }
+
+      let userId = decoded?.userId || decoded?.user_id || null;
+      if (!userId) {
+        const [empRows] = await mainPool.query(
+          'SELECT email FROM mst_employee WHERE employee_id = ? LIMIT 1',
+          [empId]
+        );
+        const email = empRows[0]?.email;
+        if (email) {
+          const [urows] = await mainPool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+          userId = urows[0]?.id || null;
+        }
+      }
+      if (!userId) {
+        return res.status(422).json({
+          success: false,
+          message: 'Akun login tidak ditemukan untuk karyawan ini.'
+        });
+      }
+
+      const [dup] = await mainPool.query(
+        'SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1',
+        [nextUsername, userId]
+      );
+      if (dup.length) {
+        return res.status(409).json({
+          success: false,
+          message: 'Username sudah dipakai.'
+        });
+      }
+      await mainPool.query('UPDATE users SET username = ? WHERE id = ?', [nextUsername, userId]);
     }
 
     // Build dynamic UPDATE query for mst_employee

@@ -108,6 +108,19 @@ const getPeriodRange = (month, year) => {
   return { start, end };
 };
 
+/** Cutoff bulan X = tgl 26 bulan sebelumnya s/d tgl 25 bulan X. Hari >= 26 sudah masuk cutoff bulan depan. */
+const currentCutoff = () => {
+  const [y, m, d] = todayWibISO().split('-').map(Number);
+  if (d >= 26) return m === 12 ? { month: 1, year: y + 1 } : { month: m + 1, year: y };
+  return { month: m, year: y };
+};
+
+const formatRangeShort = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const short = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${d} ${short[m - 1]} ${y}`;
+};
+
 const emptyForm = () => ({
   type: 'kasbon',
   submissionDate: todayISO(),
@@ -127,10 +140,10 @@ export default function Kasbon() {
 
   const [currentUser, setCurrentUser] = useState({ fullName: 'Karyawan Waschen', position: 'Staff Waschen' });
 
-  const now = new Date();
-  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
-  const [filterYear, setFilterYear] = useState(now.getFullYear());
-  const [yearOptions, setYearOptions] = useState([now.getFullYear()]);
+  const cutoffNow = currentCutoff();
+  const [filterMonth, setFilterMonth] = useState(cutoffNow.month);
+  const [filterYear, setFilterYear] = useState(cutoffNow.year);
+  const [yearOptions, setYearOptions] = useState([cutoffNow.year]);
 
   const [summary, setSummary] = useState(null);
   const [items, setItems] = useState([]);
@@ -204,7 +217,7 @@ export default function Kasbon() {
       setItems(res.data?.data || []);
       setSummary(sumRes.data?.data || null);
       const years = Array.isArray(res.data?.years) ? res.data.years.map(Number).filter((y) => y > 0) : [];
-      const options = years.length ? years : [new Date().getFullYear()];
+      const options = [...new Set([...years, filterYear, currentCutoff().year])].sort((a, b) => a - b);
       setYearOptions(options);
       setFilterYear((prev) => (options.includes(prev) ? prev : options[0]));
     } catch (e) {
@@ -387,6 +400,12 @@ export default function Kasbon() {
     []
   );
 
+  const periodLabel = useMemo(() => {
+    if (!filterMonth) return `Semua ${filterYear}`;
+    const range = getPeriodRange(filterMonth, filterYear);
+    return `${formatRangeShort(range.start)} – ${formatRangeShort(range.end)}`;
+  }, [filterMonth, filterYear]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center items-start antialiased font-sans">
       <div className="w-full max-w-[430px] min-h-screen bg-slate-50 shadow-2xl flex flex-col relative pb-[max(16px,env(safe-area-inset-bottom))]">
@@ -506,8 +525,8 @@ export default function Kasbon() {
           <div className="mx-4 mt-5">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider">Riwayat Pengajuan Saya</span>
-              <span className="text-[10px] text-slate-400 font-semibold">
-                {monthOptions.find((m) => m.value === filterMonth)?.label} {filterYear}
+              <span className="text-[10px] text-slate-400 font-semibold text-right">
+                {periodLabel}
               </span>
             </div>
 

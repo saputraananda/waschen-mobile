@@ -50,6 +50,28 @@ const STATUS_META = {
   dibatalkan: { label: 'Dibatalkan', cls: 'text-slate-600 bg-slate-100 border-slate-200' }
 };
 
+/** Cutoff bulan X = tgl 26 bulan sebelumnya s/d tgl 25 bulan X. Hari >= 26 sudah masuk cutoff bulan depan. */
+const currentCutoff = () => {
+  const [y, m, d] = todayWibISO().split('-').map(Number);
+  if (d >= 26) return m === 12 ? { month: 1, year: y + 1 } : { month: m + 1, year: y };
+  return { month: m, year: y };
+};
+
+const getPeriodRange = (month, year) => {
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  return {
+    start: `${prevYear}-${String(prevMonth).padStart(2, '0')}-26`,
+    end: `${year}-${String(month).padStart(2, '0')}-25`
+  };
+};
+
+const formatRangeShort = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const short = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${d} ${short[m - 1]} ${y}`;
+};
+
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -103,7 +125,7 @@ const emptyForm = () => ({
 
 export default function Overtime() {
   const navigate = useNavigate();
-  const now = new Date();
+  const cutoffNow = currentCutoff();
 
   const [currentUser, setCurrentUser] = useState({ fullName: 'Karyawan Waschen', position: 'Staff Waschen' });
   const [isLeader, setIsLeader] = useState(false);
@@ -111,8 +133,8 @@ export default function Overtime() {
   const [mainTab, setMainTab] = useState('pengajuan');
   const [approvalFilter, setApprovalFilter] = useState('pengajuan');
 
-  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
-  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(cutoffNow.month);
+  const [filterYear, setFilterYear] = useState(cutoffNow.year);
 
   const [items, setItems] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -315,9 +337,14 @@ export default function Overtime() {
   );
 
   const yearOptions = useMemo(() => {
-    const y = now.getFullYear();
+    const y = currentCutoff().year;
     return [y - 1, y, y + 1];
-  }, [now]);
+  }, []);
+
+  const periodLabel = useMemo(() => {
+    const range = getPeriodRange(filterMonth, filterYear);
+    return `${formatRangeShort(range.start)} – ${formatRangeShort(range.end)}`;
+  }, [filterMonth, filterYear]);
 
   const openCreate = () => {
     // Diganti start session — tetap buka form hanya untuk edit
@@ -637,8 +664,8 @@ export default function Overtime() {
           <div className="mx-4 mt-5 mb-4">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider">{listTitle}</span>
-              <span className="text-[10px] text-slate-400 font-semibold">
-                {monthOptions.find((m) => m.value === filterMonth)?.label} {filterYear}
+              <span className="text-[10px] text-slate-400 font-semibold text-right">
+                {periodLabel}
               </span>
             </div>
 
