@@ -412,7 +412,9 @@ export default function Attendance() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  useLockBodyScroll(cameraOpen || showOutletModal || !!confirmDelete || !!photoPreview);
+  useLockBodyScroll(
+    cameraOpen || showOutletModal || !!confirmDelete || !!photoPreview || !!noteModal
+  );
 
   useEffect(() => {
     const v = videoRef.current;
@@ -664,8 +666,9 @@ export default function Attendance() {
         form.append('lng', String(coord.lng));
         form.append('outlet_id', String(activeOutletId));
         form.append('selfie', blob, 'selfie.jpg');
-        const res = await api.post('/attendance/punch-selfie', form);
-        setMsg?.({ text: res.data.message, type: 'success' });
+        await api.post('/attendance/punch-selfie', form);
+        // Jangan stack AlertModal sukses di atas modal catatan — bikin nested scroll-lock.
+        setMsg?.(null);
         const [fresh] = await Promise.all([fetchToday(), fetchGc()]);
         // Absen dulu, baru catatan: modal muncul setelah data tersimpan.
         openNoteModal(pendingCapture.punchType, fresh?.record);
