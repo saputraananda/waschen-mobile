@@ -120,7 +120,8 @@ const emptyForm = () => ({
   overtime_date: todayISO(),
   start_time: '19:00',
   end_time: '20:00',
-  reason: ''
+  reason: '',
+  work_note: ''
 });
 
 export default function Overtime() {
@@ -156,8 +157,11 @@ export default function Overtime() {
   const [startOpen, setStartOpen] = useState(false);
   const [startReason, setStartReason] = useState('');
   const [startError, setStartError] = useState(null);
+  const [endOpen, setEndOpen] = useState(false);
+  const [endWorkNote, setEndWorkNote] = useState('');
+  const [endBusy, setEndBusy] = useState(false);
 
-  useLockBodyScroll(formOpen || startOpen || !!cancelTarget || !!reviewTarget);
+  useLockBodyScroll(formOpen || startOpen || endOpen || !!cancelTarget || !!reviewTarget);
 
   const handleAuthError = useCallback((error) => {
     if (error?.response?.status === 401) {
@@ -303,20 +307,28 @@ export default function Overtime() {
   };
 
   const handleEndSession = async () => {
-    if (sessionBusy) return;
-    setSessionBusy(true);
+    if (endBusy) return;
+    setEndOpen(true);
+    setEndWorkNote('');
+  };
+
+  const confirmEndSession = async () => {
+    if (endBusy) return;
+    setEndBusy(true);
     setListError(null);
     try {
-      const res = await api.post('/overtime/end');
+      const res = await api.post('/overtime/end', { work_note: endWorkNote.trim() || undefined });
       setActiveSession(null);
       setInfoBanner(res.data?.message || 'Sesi lembur ditutup — menunggu ACC leader');
+      setEndOpen(false);
+      setEndWorkNote('');
       setMainTab('pengajuan');
       fetchList();
     } catch (err) {
       if (handleAuthError(err)) return;
       setListError(err.response?.data?.message || 'Gagal close lembur');
     } finally {
-      setSessionBusy(false);
+      setEndBusy(false);
     }
   };
 
@@ -361,7 +373,8 @@ export default function Overtime() {
       overtime_date: row.overtime_date || todayISO(),
       start_time: fmtTime(row.start_time),
       end_time: fmtTime(row.end_time),
-      reason: row.reason || ''
+      reason: row.reason || '',
+      work_note: row.work_note || ''
     });
     setSubmitError(null);
     setFormOpen(true);
@@ -391,7 +404,8 @@ export default function Overtime() {
         overtime_date: form.overtime_date,
         start_time: form.start_time,
         end_time: form.end_time,
-        reason: form.reason.trim()
+        reason: form.reason.trim(),
+        work_note: form.work_note.trim() || undefined
       };
       const res = await api.put(`/overtime/${editing.id}`, payload);
       if (res.data?.reset_to_pengajuan) {
@@ -728,6 +742,13 @@ export default function Overtime() {
 
                       <p className="text-[11.5px] text-slate-500 font-medium mt-2.5 leading-relaxed">{row.reason}</p>
 
+                      {row.work_note && (
+                        <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-[11px] text-slate-600 font-medium">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block mb-0.5">Catatan Kerja</span>
+                          {row.work_note}
+                        </div>
+                      )}
+
                       {row.approval_note && (
                         <div className="mt-2 bg-emerald-50 border border-emerald-100 rounded-xl px-2.5 py-2 text-[11px] text-emerald-800 font-semibold">
                           Catatan persetujuan: {row.approval_note}
@@ -890,6 +911,18 @@ export default function Overtime() {
                 />
               </div>
 
+              <div>
+                <label className="text-[10.5px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Catatan Kerja (opsional)</label>
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  value={form.work_note}
+                  onChange={(e) => setForm((prev) => ({ ...prev, work_note: e.target.value }))}
+                  placeholder="Contoh : Kiloan 5901 : 10 Kg, 5671 : 20Kg"
+                  className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
+                />
+              </div>
+
               <button
                 type="submit"
                 disabled={submitting}
@@ -899,6 +932,57 @@ export default function Overtime() {
                 Simpan Perubahan
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* END MODAL — catatan kerja sebelum close */}
+      {endOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-safe-overlay"
+          onClick={() => { if (!endBusy) setEndOpen(false); }}
+        >
+          <div
+            className="w-full max-w-[430px] bg-white rounded-[20px] overflow-hidden shadow-[0_12px_60px_rgba(0,0,0,.35)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <div className="text-[14px] font-extrabold text-slate-900">Catatan Kerja Lembur</div>
+              <button
+                type="button"
+                onClick={() => { if (!endBusy) setEndOpen(false); }}
+                className="w-9 h-9 rounded-[12px] grid place-items-center border border-slate-200 bg-white text-slate-600"
+                aria-label="Tutup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-[11.5px] text-slate-500 font-medium leading-relaxed">
+                Catat pekerjaan yang sudah diselesaikan selama lembur (opsional).
+              </p>
+
+              <textarea
+                rows={4}
+                maxLength={1000}
+                autoFocus
+                value={endWorkNote}
+                onChange={(e) => setEndWorkNote(e.target.value)}
+                placeholder="Contoh : Kiloan 5901 : 10 Kg, 5671 : 20Kg"
+                className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
+              />
+
+              <button
+                type="button"
+                disabled={endBusy}
+                onClick={confirmEndSession}
+                className="w-full py-3.5 rounded-[18px] bg-[#5f1340] hover:bg-[#4d0f34] text-white text-[13.5px] font-black shadow-md shadow-[#5f1340]/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {endBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Timer className="w-4 h-4" />}
+                Tutup Sesi Lembur
+              </button>
+            </div>
           </div>
         </div>
       )}

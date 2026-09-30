@@ -306,6 +306,7 @@ export const endOvertime = async (req, res) => {
     const endTime = wibTimeOf(now);
     const reasonRaw = String(req.body.reason || active.reason || '').trim();
     const reason = reasonRaw.length >= 5 ? reasonRaw : (active.reason || 'Sesi lembur');
+    const workNote = String(req.body.work_note || '').trim().slice(0, 1000) || null;
 
     const startParsed = parseSqlDateTime(active.start_at);
     if (startParsed && now.getTime() <= startParsed.getTime()) {
@@ -315,9 +316,9 @@ export const endOvertime = async (req, res) => {
     await conn.beginTransaction();
     await conn.query(
       `UPDATE tr_overtime SET
-         end_at = ?, end_time = ?, reason = ?, status = 'pengajuan', updated_at = NOW()
+         end_at = ?, end_time = ?, reason = ?, work_note = ?, status = 'pengajuan', updated_at = NOW()
        WHERE id = ? AND status = 'berlangsung'`,
-      [endAt, endTime, reason, active.id]
+      [endAt, endTime, reason, workNote, active.id]
     );
     await conn.commit();
 
@@ -476,6 +477,9 @@ export const updateOvertime = async (req, res) => {
     const start_time = toTimeOnly(req.body.start_time ?? String(existing.start_time).slice(0, 8));
     const end_time = toTimeOnly(req.body.end_time ?? String(existing.end_time).slice(0, 8));
     const reason = String(req.body.reason ?? existing.reason).trim();
+    const workNote = req.body.work_note !== undefined
+      ? String(req.body.work_note).trim().slice(0, 1000) || null
+      : (existing.work_note || null);
 
     if (!overtime_date || !start_time || !end_time) {
       return res.status(422).json({ success: false, message: 'Tanggal dan jam wajib diisi' });
@@ -513,12 +517,12 @@ export const updateOvertime = async (req, res) => {
     await conn.query(
       `UPDATE tr_overtime SET
          overtime_date = ?, start_time = ?, end_time = ?,
-         start_at = ?, end_at = ?, reason = ?,
+         start_at = ?, end_at = ?, reason = ?, work_note = ?,
          status = ?, approval_note = NULL, rejection_note = NULL,
          reviewed_by = NULL, reviewed_by_name = NULL, reviewed_at = NULL,
          updated_at = NOW()
        WHERE id = ?`,
-      [overtime_date, start_time, end_time, startAt, endAt, reason, nextStatus, id]
+      [overtime_date, start_time, end_time, startAt, endAt, reason, workNote, nextStatus, id]
     );
 
     if (resetToPengajuan || existing.status === 'pengajuan') {
