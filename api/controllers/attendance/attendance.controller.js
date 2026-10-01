@@ -13,6 +13,7 @@ import {
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
+const SKIP_GPS_EMPLOYEE_IDS = new Set([165]);
 /** >= 5 km dari semua titik absen: absen tetap diterima, foto wajib bertuliskan Diluar Jangkauan. */
 const OUT_OF_RANGE_M = 5000;
 
@@ -425,11 +426,16 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Outlet absensi belum dipilih.' });
     }
 
-    const locCheck = await validateLocation(lat, lng, outletId);
-    if (!locCheck.ok) {
-      await cleanupUpload();
-      return res.status(400).json({ success: false, message: locCheck.message });
+    const skipGps = SKIP_GPS_EMPLOYEE_IDS.has(Number(employeeId));
+    if (!skipGps) {
+      const locCheck = await validateLocation(lat, lng, outletId);
+      if (!locCheck.ok) {
+        await cleanupUpload();
+        return res.status(400).json({ success: false, message: locCheck.message });
+      }
     }
+    const saveLat = lat === '' || lat == null ? null : lat;
+    const saveLng = lng === '' || lng == null ? null : lng;
 
     const workDate = await getWorkDateNow();
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
@@ -463,7 +469,7 @@ export const punchSelfie = async (req, res) => {
              (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng,
               check_in_photo_path, check_in_photo_name, grooming_status)
              VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
-            [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name, groomingStatus]
+            [userId, employeeId, outletId, workDate, saveLat, saveLng, photo_path, photo_name, groomingStatus]
           );
         } catch (insErr) {
           if (insErr.code !== 'ER_BAD_FIELD_ERROR') throw insErr;
@@ -471,7 +477,7 @@ export const punchSelfie = async (req, res) => {
             `INSERT INTO tr_attendance
              (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name)
              VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?)`,
-            [userId, employeeId, outletId, workDate, lat, lng, photo_path, photo_name]
+            [userId, employeeId, outletId, workDate, saveLat, saveLng, photo_path, photo_name]
           );
         }
       } else {
@@ -483,7 +489,7 @@ export const punchSelfie = async (req, res) => {
                  check_in_photo_path=?, check_in_photo_name=?, check_in_note=NULL,
                  grooming_status=COALESCE(NULLIF(grooming_status,''), ?)
              WHERE employee_id=? AND work_date=?`,
-            [userId, outletId, lat, lng, photo_path, photo_name, groomingStatus, employeeId, workDate]
+            [userId, outletId, saveLat, saveLng, photo_path, photo_name, groomingStatus, employeeId, workDate]
           );
         } catch (updErr) {
           if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
@@ -491,7 +497,7 @@ export const punchSelfie = async (req, res) => {
             `UPDATE tr_attendance
              SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?, check_in_photo_path=?, check_in_photo_name=?
              WHERE employee_id=? AND work_date=?`,
-            [userId, outletId, lat, lng, photo_path, photo_name, employeeId, workDate]
+            [userId, outletId, saveLat, saveLng, photo_path, photo_name, employeeId, workDate]
           );
         }
         if (oldInPhoto && oldInPhoto !== photo_name) {
@@ -531,7 +537,7 @@ export const punchSelfie = async (req, res) => {
          SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?,
              check_out_photo_path=?, check_out_photo_name=?, check_out_note=NULL, outlet_id=?
          WHERE employee_id=? AND work_date=?`,
-        [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
+        [saveLat, saveLng, photo_path, photo_name, outletId, employeeId, workDate]
       );
     } catch (updErr) {
       if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
@@ -539,7 +545,7 @@ export const punchSelfie = async (req, res) => {
         `UPDATE tr_attendance
          SET check_out_time=NOW(), check_out_lat=?, check_out_lng=?, check_out_photo_path=?, check_out_photo_name=?, outlet_id=?
          WHERE employee_id=? AND work_date=?`,
-        [lat, lng, photo_path, photo_name, outletId, employeeId, workDate]
+        [saveLat, saveLng, photo_path, photo_name, outletId, employeeId, workDate]
       );
     }
     if (oldOutPhoto && oldOutPhoto !== photo_name) {

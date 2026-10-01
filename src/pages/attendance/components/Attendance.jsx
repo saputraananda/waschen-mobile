@@ -34,6 +34,8 @@ import {
 
 const MAX_DIST_M = 1000;
 const OUT_OF_RANGE_M = 5000;
+// ponytail: satu id hardcoded; pindah ke flag di mst_employee kalau ada karyawan lain.
+const SKIP_GPS_EMPLOYEE_ID = 165;
 const NOTE_MAX_LEN = 255;
 const NOTE_QUICK_FILL = ['Shift Siang'];
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
@@ -64,6 +66,15 @@ function nearestAbsenMeters(lat, lng, places) {
     if (min == null || d < min) min = d;
   }
   return min;
+}
+
+function storedEmployeeId() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('user') || 'null');
+    return Number(parsed?.employee_id || parsed?.employeeId);
+  } catch {
+    return NaN;
+  }
 }
 
 function formatTime(v) {
@@ -178,9 +189,11 @@ export default function Attendance() {
     return outlets.find((o) => String(o.id) === String(activeOutletId)) || assignedOutlet;
   }, [activeOutletId, outlets, assignedOutlet]);
 
+  const skipGps = Number(currentUser.employee_id || currentUser.employeeId) === SKIP_GPS_EMPLOYEE_ID
+    || storedEmployeeId() === SKIP_GPS_EMPLOYEE_ID;
   const inZone = gpsDist != null && gpsDist <= MAX_DIST_M;
   const outsideRange = gpsState === 'far';
-  const canPunch = timeStatus?.isOpen && (inZone || outsideRange) && (gpsState === 'ok' || gpsState === 'far');
+  const canPunch = timeStatus?.isOpen && (skipGps || ((inZone || outsideRange) && (gpsState === 'ok' || gpsState === 'far')));
 
   // Catatan diisi setelah absen tersimpan. Masuk wajib bila JAM ABSEN >= ambang
   // (default 08:00 WIB) — dihitung dari waktu tercatat, bukan waktu mengetik.
@@ -304,6 +317,12 @@ export default function Attendance() {
   }, []);
 
   useEffect(() => {
+    if (skipGps) {
+      setGpsState('idle');
+      setGpsDist(null);
+      setGpsCoord(null);
+      return;
+    }
     if (!activeOutlet?.lat || !activeOutlet?.lon) {
       setGpsState('idle');
       setGpsDist(null);
@@ -351,7 +370,7 @@ export default function Attendance() {
     });
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [activeOutlet, gpsRefreshKey, outlets]);
+  }, [activeOutlet, gpsRefreshKey, outlets, skipGps]);
 
   const stopCamera = useCallback(() => {
     const v = videoRef.current;
@@ -505,26 +524,28 @@ export default function Attendance() {
       return;
     }
 
-    const coord = gpsCoord;
-    if (!coord) {
-      setMsg({ text: 'GPS belum siap. Tunggu sebentar atau refresh lokasi.', type: 'error' });
-      return;
-    }
+    const coord = skipGps ? null : gpsCoord;
+    if (!skipGps) {
+      if (!coord) {
+        setMsg({ text: 'GPS belum siap. Tunggu sebentar atau refresh lokasi.', type: 'error' });
+        return;
+      }
 
-    const dist = haversineMeters(
-      coord.lat,
-      coord.lng,
-      parseFloat(activeOutlet.lat),
-      parseFloat(activeOutlet.lon)
-    );
-    const nearest = nearestAbsenMeters(coord.lat, coord.lng, outlets);
-    const far = nearest != null && nearest >= OUT_OF_RANGE_M;
-    if (dist > MAX_DIST_M && !far) {
-      setMsg({
-        text: `Anda ${Math.round(dist)}m dari outlet. Maksimal ${MAX_DIST_M / 1000} km.`,
-        type: 'error'
-      });
-      return;
+      const dist = haversineMeters(
+        coord.lat,
+        coord.lng,
+        parseFloat(activeOutlet.lat),
+        parseFloat(activeOutlet.lon)
+      );
+      const nearest = nearestAbsenMeters(coord.lat, coord.lng, outlets);
+      const far = nearest != null && nearest >= OUT_OF_RANGE_M;
+      if (dist > MAX_DIST_M && !far) {
+        setMsg({
+          text: `Anda ${Math.round(dist)}m dari outlet. Maksimal ${MAX_DIST_M / 1000} km.`,
+          type: 'error'
+        });
+        return;
+      }
     }
 
     setNoteText('');
@@ -653,17 +674,21 @@ export default function Attendance() {
         return;
       }
 
-      const coord = (await getFreshCoord(pendingCapture.coord)) || pendingCapture.coord || gpsCoord;
+      const coord = kind === 'punch' && skipGps
+        ? null
+        : ((await getFreshCoord(pendingCapture.coord)) || pendingCapture.coord || gpsCoord);
 
       if (kind === 'punch') {
-        if (!coord) {
+        if (!skipGps && !coord) {
           setCameraErr('GPS tidak tersedia. Aktifkan lokasi lalu coba lagi.');
           return;
         }
         const form = new FormData();
         form.append('punch_type', pendingCapture.punchType);
-        form.append('lat', String(coord.lat));
-        form.append('lng', String(coord.lng));
+        if (coord) {
+          form.append('lat', String(coord.lat));
+          form.append('lng', String(coord.lng));
+        }
         form.append('outlet_id', String(activeOutletId));
         form.append('selfie', blob, 'selfie.jpg');
         await api.post('/attendance/punch-selfie', form);
@@ -839,6 +864,7 @@ export default function Attendance() {
   const checkOutPhotoUrl = getPhotoUrl(record, 'out');
 
   const gpsBadge = () => {
+    if (skipGps) return { label: 'Tanpa cek GPS', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
     if (!activeOutlet?.lat || !activeOutlet?.lon) {
       return { label: 'Pilih outlet untuk cek GPS', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
     }
