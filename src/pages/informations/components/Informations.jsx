@@ -35,6 +35,7 @@ const SECTIONS = [
       'Di beranda, nama, jabatan, dan outlet Anda akan tampil di bagian atas.',
       'Cukup login sekali. Aplikasi mengingat sesi Anda, jadi tidak perlu login ulang setiap hari.',
       'Pilih menu sesuai pekerjaan hari ini (Absensi, Progress, Delivery, dan lain-lain).',
+      'Jika ada notifikasi "Data Diperbarui" berarti ada perubahan dari rekan/leader — data otomatis dimuat ulang.',
       'Kalau bingung, buka lagi halaman petunjuk ini lewat tombol (i) di beranda.'
     ]
   },
@@ -46,12 +47,13 @@ const SECTIONS = [
     bg: 'bg-emerald-50',
     steps: [
       'Buka menu Absensi untuk absen masuk dan pulang.',
-      'Pastikan GPS aktif dan Anda berada di sekitar outlet.',
+      'Pastikan GPS aktif dan Anda berada di sekitar outlet. Tanpa GPS valid, absen gagal.',
       'Ambil foto selfie sesuai instruksi di layar, lalu kirim.',
       'Setelah foto terkirim, muncul kotak catatan. Absen masuk lewat pukul 08.00 WIB wajib diisi alasannya; sebelum jam itu catatan boleh dikosongkan.',
       'Ada tombol cepat "Shift Siang" bila alasannya memang jadwal siang. Catatan absen pulang selalu opsional.',
       'Catatan bisa diubah kapan saja lewat kartu Masuk / Pulang di halaman yang sama.',
-      'Cek status absen hari ini di halaman yang sama (sudah masuk / sudah pulang).'
+      'Cek status absen hari ini di halaman yang sama (sudah masuk / sudah pulang).',
+      'Grooming & kebersihan area menjadi syarat untuk absen pulang dan membuka menu lain. Detailnya di bagian "Grooming & Kebersihan".'
     ]
   },
   {
@@ -66,7 +68,8 @@ const SECTIONS = [
       'Jendela unggah grooming: pukul 05.00–09.00 dan 10.00–11.30 WIB.',
       'Lewat pukul 11.30 WIB unggahan dikunci. Jika foto belum lengkap, Anda wajib mengisi kolom Alasan.',
       'Tanpa alasan tersebut, tombol Absen Pulang terkunci. Alasan yang sudah tersimpan bisa diubah lewat tombol "Ubah Alasan".',
-      'Foto kebersihan area sesuai posisi juga harus diunggah — ini syarat membuka menu Update Progress.'
+      'Foto kebersihan area sesuai posisi juga harus diunggah — ini syarat membuka menu Update Progress.',
+      'Semua foto dikirim langsung dari HP. Pastikan pencahayaan cukup dan foto tidak buram.'
     ]
   },
   {
@@ -79,7 +82,8 @@ const SECTIONS = [
       'Pakai menu ini jika Anda sakit, izin, atau cuti.',
       'Isi jenis pengajuan, tanggal, dan alasan dengan jelas.',
       'Unggah bukti bila diminta (misalnya surat dokter).',
-      'Tunggu persetujuan atasan. Status bisa dicek di riwayat pengajuan.'
+      'Tunggu persetujuan atasan. Status bisa dicek di riwayat pengajuan.',
+      'Jika ditolak, Anda tetap wajib masuk kerja sesuai jadwal.'
     ]
   },
   {
@@ -92,7 +96,8 @@ const SECTIONS = [
       'Buka menu Kasbon & Pinjaman untuk mengajukan dana.',
       'Pilih jenis: Kasbon (cepat) atau Pinjaman (bisa dicicil).',
       'Isi jumlah dan tujuan pengajuan dengan jujur.',
-      'Kirim, lalu pantau status: pengajuan → diproses → disetujui/ditolak.'
+      'Kirim, lalu pantau status: pengajuan → diproses → disetujui/ditolak.',
+      'Pinjaman bisa dicicil. Pastikan Anda paham nominal cicilan sebelum mengajukan.'
     ]
   },
   {
@@ -103,9 +108,15 @@ const SECTIONS = [
     bg: 'bg-sky-50',
     steps: [
       'Jika kerja di luar jam normal, buka menu Lembur.',
-      'Mulai sesi lembur saat mulai kerja tambahan.',
-      'Tutup sesi lembur setelah selesai — jangan lupa ditutup.',
-      'Jika lewat tengah malam belum ditutup, menu lain bisa terkunci sampai lembur ditutup.'
+      'Tekan "Start Lembur". Akan muncul form "Alasan Lembur" — isi singkat kenapa Anda lembur (minimal 5 karakter). Sesi dimulai setelah alasan disimpan.',
+      'Selama sesi berjalan, stopwatch menampilkan durasi lembur secara langsung di bagian atas.',
+      'Tekan "Close Lembur" saat selesai. Akan muncul form "Catatan Kerja" — catat pekerjaan yang sudah dikerjakan (opsional). Contoh: "Kiloan 5901 : 10 Kg, 5671 : 20Kg".',
+      'Setelah ditutup, status otomatis jadi "Pengajuan". Leader atau admin yang akan menyetujui/menolak.',
+      'Anda bisa Edit jam mulai/selesai, alasan, dan catatan kerja selama status masih "Pengajuan" atau "Disetujui".',
+      'Mengedit lembur yang sudah "Disetujui" akan mengembalikan status ke "Pengajuan" dan perlu ACC ulang dari leader.',
+      'Jika lembur ditolak, jam kerja tersebut dianggap sukarela — tidak dihitung sebagai KPI lembur.',
+      'Jika lewat tengah malam belum ditutup, kartu lembur berubah merah sebagai peringatan. Menu lain bisa terkunci sampai lembur ditutup.',
+      'Leader punya tab tambahan "Persetujuan" untuk melihat dan memproses pengajuan lembur timnya (Setujui / Tolak + catatan).'
     ]
   },
   {
@@ -120,7 +131,9 @@ const SECTIONS = [
       'Pilih tab sesuai tugas Anda (Frontliner, Cuci, Setrika, atau Packing).',
       'Bisa cari nota dengan ketik nomor/nama, atau scan barcode/QR nota.',
       'Klik item → isi QC (foto bila perlu) → pilih lanjut / hold / kembalikan sesuai kondisi.',
-      'Nota delivery di tahap antrian punya tanda "Pickup Delivery" — frontliner juga boleh QC jika tim delivery berhalangan.'
+      'Jika ada temuan (misalnya noda membandel), pilih "Hold" dan isi catatan. Leader akan konfirmasi untuk lanjut atau batal.',
+      'Nota delivery di tahap antrian punya tanda "Pickup Delivery" — frontliner juga boleh QC jika tim delivery berhalangan.',
+      'Data diperbarui otomatis kalau ada rekan lain yang memproses nota yang sama — tidak perlu refresh manual.'
     ]
   },
   {
