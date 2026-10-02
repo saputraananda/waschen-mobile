@@ -499,4 +499,53 @@ export const uploadProduksiPhotos = multer({
 /** @deprecated gunakan uploadProduksiPhotos */
 export const uploadProgressPhotos = uploadProduksiPhotos;
 
+const PAYSLIP_PRIVATE_SUBDIR = 'payslip_private';
+
+export function payslipPrivateDir() {
+  return ensureUploadFolder(PAYSLIP_PRIVATE_SUBDIR);
+}
+
+export const uploadWaschenPayslip = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      try { cb(null, payslipPrivateDir()); }
+      catch (err) { cb(err); }
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      const safeExt = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '';
+      cb(null, `payslip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${safeExt}`);
+    }
+  }),
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const mime = String(file.mimetype || '').toLowerCase();
+    const okExt = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+    const okMime = ext === '.pdf' ? mime === 'application/pdf' : /^image\/(jpeg|jpg|png|webp)$/.test(mime);
+    if (!okExt || !okMime) return cb(new Error('Slip gaji harus PDF atau gambar (jpg, png, webp).'));
+    cb(null, true);
+  },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 }
+});
+
+export async function deleteWaschenPayslipFile(fileName) {
+  const name = path.basename(String(fileName || ''));
+  if (!name || name === '.' || name === '..') return;
+  const abs = path.join(payslipPrivateDir(), name);
+  try {
+    await fs.promises.unlink(abs);
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.error('Gagal menghapus slip gaji:', err);
+  }
+}
+
+export function payslipAbsPath(fileName) {
+  const name = path.basename(String(fileName || ''));
+  if (!name || name === '.' || name === '..') return null;
+  const root = path.resolve(payslipPrivateDir());
+  const abs = path.resolve(root, name);
+  if (abs !== root && !abs.startsWith(root + path.sep)) return null;
+  return abs;
+}
+
 export default createUploader;

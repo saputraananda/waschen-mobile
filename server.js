@@ -13,6 +13,8 @@ import kasbonRoutes from './api/routes/kasbon/kasbon.routes.js';
 import produksiRoutes from './api/routes/produksi/produksi.routes.js';
 import deliveryRoutes from './api/routes/delivery/delivery.routes.js';
 import overtimeRoutes from './api/routes/overtime/overtime.routes.js';
+import inventoryRoutes from './api/routes/inventory/inventory.routes.js';
+import payslipRoutes from './api/routes/payslip/payslip.routes.js';
 import historyRoutes from './api/routes/history/history.routes.js';
 import realtimeRoutes from './api/routes/realtime/realtime.routes.js';
 import { getBaseUploadDir } from './api/middleware/upload.js';
@@ -43,6 +45,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+app.use('/uploads/payslip_private', (_req, res) => res.status(404).end());
 app.use('/uploads', express.static(getBaseUploadDir()));
 
 app.use('/api/auth', loginRoutes);
@@ -55,6 +58,8 @@ app.use('/api/kasbon', kasbonRoutes);
 app.use('/api/progress', produksiRoutes);
 app.use('/api/delivery', deliveryRoutes);
 app.use('/api/overtime', overtimeRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/payslips', payslipRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/realtime', realtimeRoutes);
 

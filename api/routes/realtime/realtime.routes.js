@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { emitDataChange, getIO } from '../../socket/io.js';
 import { myWaschenPool } from '../../db/pool.js';
 import { uploadProduksiPhotos } from '../../middleware/upload.js';
@@ -13,6 +14,9 @@ import {
   deleteGroomingPhotoFile,
   deleteCleanlinessPhotoFile,
   uploadKasbonPaymentProof,
+  uploadWaschenPayslip,
+  deleteWaschenPayslipFile,
+  payslipAbsPath,
   KASBON_UPLOAD_PUBLIC_PATH
 } from '../../middleware/upload.js';
 
@@ -78,6 +82,51 @@ router.post('/upload-kasbon-payment', (req, res) => {
     }
     return res.json({ success: true, path: `${KASBON_UPLOAD_PUBLIC_PATH}/${req.file.filename}` });
   });
+});
+
+const PAYSLIP_MIME = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp'
+};
+
+/**
+ * POST /api/realtime/upload-payslip
+ * Alsa menitipkan file slip gaji ke disk Waschen Mobile (tidak publik).
+ */
+router.post('/upload-payslip', (req, res) => {
+  if (!assertRealtimeSecret(req, res)) return;
+  uploadWaschenPayslip.single('file')(req, res, (err) => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Ukuran slip terlalu besar (maks 10MB).'
+        : (err.message || 'Gagal mengunggah slip gaji.');
+      return res.status(400).json({ success: false, message });
+    }
+    if (!req.file) return res.status(422).json({ success: false, message: 'File slip gaji wajib' });
+    return res.json({ success: true, file_path: req.file.filename });
+  });
+});
+
+router.post('/delete-payslip', async (req, res) => {
+  if (!assertRealtimeSecret(req, res)) return;
+  const fileName = path.basename(String(req.body?.file_path || req.body?.fileName || ''));
+  if (!fileName) return res.status(422).json({ success: false, message: 'file_path wajib' });
+  await deleteWaschenPayslipFile(fileName);
+  return res.json({ success: true });
+});
+
+router.get('/payslip-file/:name', (req, res) => {
+  if (!assertRealtimeSecret(req, res)) return;
+  const abs = payslipAbsPath(req.params.name);
+  if (!abs || !fs.existsSync(abs)) {
+    return res.status(404).json({ success: false, message: 'File tidak ditemukan' });
+  }
+  const ext = path.extname(abs).toLowerCase();
+  res.setHeader('Content-Type', PAYSLIP_MIME[ext] || 'application/octet-stream');
+  return fs.createReadStream(abs).pipe(res);
 });
 
 /**

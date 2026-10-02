@@ -11,6 +11,8 @@ const Attendance = lazy(() => import('./pages/attendance/index.jsx'));
 const Leave = lazy(() => import('./pages/leave/index.jsx'));
 const Kasbon = lazy(() => import('./pages/kasbon/index.jsx'));
 const Overtime = lazy(() => import('./pages/overtime/index.jsx'));
+const StockItems = lazy(() => import('./pages/stock/index.jsx'));
+const Payslip = lazy(() => import('./pages/payslip/index.jsx'));
 const Produksi = lazy(() => import('./pages/produksi/index.jsx'));
 const Delivery = lazy(() => import('./pages/delivery/index.jsx'));
 const Informations = lazy(() => import('./pages/informations/index.jsx'));
@@ -143,6 +145,8 @@ export default function App() {
         <Route path="/leave" element={<Leave />} />
         <Route path="/kasbon" element={<Kasbon />} />
         <Route path="/overtime" element={<Overtime />} />
+        <Route path="/stock" element={<StockItems />} />
+        <Route path="/payslip" element={<Payslip />} />
         <Route path="/produksi" element={<Produksi />} />
         <Route path="/delivery" element={<Delivery />} />
         <Route path="/informations" element={<Informations />} />

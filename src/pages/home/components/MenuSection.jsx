@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock } from 'lucide-react';
+import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock, Receipt, Package } from 'lucide-react';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 
 function MotorbikeIcon({ className = 'w-5 h-5' }) {
@@ -135,6 +135,50 @@ export default function MenuSection({
           <div>
             <h4 className="text-[13.5px] font-black text-slate-800 group-hover:text-sky-600 transition-colors leading-tight">Lembur</h4>
             <span className="text-[10.5px] text-slate-400 font-medium block mt-0.5">Start / Close Sesi</span>
+          </div>
+        </button>
+
+        <button
+          id="menu-payslip-btn"
+          type="button"
+          disabled={menusLocked}
+          onClick={() => !menusLocked && onMenuClick('/payslip', 'Slip Gaji')}
+          className={`bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group ${
+            menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(16,185,129,0.12)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+          }`}
+        >
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-teal-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />
+          {lockBadge}
+          <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Receipt className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-[13.5px] font-black text-slate-800 leading-tight">Slip Gaji</h4>
+            <span className="text-[10.5px] text-slate-400 font-medium block mt-0.5">
+              {menusLocked ? 'Tutup lembur dulu' : 'Lihat slip gaji'}
+            </span>
+          </div>
+        </button>
+
+        <button
+          id="menu-stock-btn"
+          type="button"
+          disabled={menusLocked}
+          onClick={() => !menusLocked && onMenuClick('/stock', 'Stok Barang')}
+          className={`bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group ${
+            menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.12)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+          }`}
+        >
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-rose-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />
+          {lockBadge}
+          <div className="w-10 h-10 rounded-2xl bg-[#5f1340]/10 text-[#5f1340] flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Package className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-[13.5px] font-black text-slate-800 leading-tight">Stok Barang</h4>
+            <span className="text-[10.5px] text-slate-400 font-medium block mt-0.5">
+              {menusLocked ? 'Tutup lembur dulu' : 'Stok opname per tim'}
+            </span>
           </div>
         </button>
       </div>
