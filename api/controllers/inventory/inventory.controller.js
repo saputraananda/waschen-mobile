@@ -1,11 +1,7 @@
 import { myWaschenPool } from '../../db/pool.js';
-import { todayWibISO, toWibDateKey } from '../../utils/wib.js';
+import { todayWibISO } from '../../utils/wib.js';
 
 const OWNER_ROLES = ['Frontliner', 'Washing Staff', 'Ironing Staff', 'Packing Staff', 'Delivery Staff'];
-
-function periodStartOf(stock, today) {
-  return toWibDateKey(stock.period_start) || `${today.slice(0, 7)}-01`;
-}
 
 export const listMyStock = async (req, res) => {
   try {
@@ -65,11 +61,12 @@ export const saveOpname = async (req, res) => {
   const outletId = Number(req.user.assignedOutletId);
   const itemId = Number(req.body?.item_id);
   const qty = Number(req.body?.qty);
+  const mode = req.body?.mode === 'set' ? 'set' : 'add';
   if (!outletId) {
     return res.status(400).json({ success: false, message: 'Outlet belum ditetapkan untuk akun ini.' });
   }
-  if (!itemId || !Number.isFinite(qty) || qty < 0) {
-    return res.status(400).json({ success: false, message: 'Jumlah pemakaian tidak valid' });
+  if (!itemId || !Number.isFinite(qty) || qty < 0 || (mode === 'add' && qty <= 0)) {
+    return res.status(400).json({ success: false, message: mode === 'set' ? 'Sisa stok tidak valid' : 'Jumlah pemakaian tidak valid' });
   }
 
   const today = todayWibISO();
@@ -98,42 +95,48 @@ export const saveOpname = async (req, res) => {
     const beforeUsed = parseFloat(existing?.qty_used) || 0;
     const qtyBefore = parseFloat(stock.qty_current) || 0;
 
-    await conn.query(
-      `INSERT INTO tr_stock_opname (outlet_id, item_id, stock_id, usage_date, qty_used, employee_id, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         stock_id = VALUES(stock_id),
-         qty_used = VALUES(qty_used),
-         employee_id = VALUES(employee_id),
-         updated_at = NOW()`,
-      [outletId, itemId, stock.id, today, qty, employeeId, 'SO Waschen Mobile']
-    );
+    let qtyToday = beforeUsed;
+    let qtyAfter = qtyBefore;
 
-    const start = periodStartOf(stock, today);
-    const [[sumRow]] = await conn.query(
-      `SELECT COALESCE(SUM(qty_used), 0) AS total
-       FROM tr_stock_opname
-       WHERE outlet_id = ? AND item_id = ? AND usage_date >= ? AND usage_date <= ?`,
-      [outletId, itemId, start, today]
-    );
-    const qtyAfter = (parseFloat(stock.qty_opening) || 0) - (parseFloat(sumRow?.total) || 0);
-    await conn.query(
-      'UPDATE tr_inventory_stock SET qty_current = ?, updated_at = NOW() WHERE id = ?',
-      [qtyAfter, stock.id]
-    );
-
-    const logQty = Math.abs(qty - beforeUsed);
-    if (logQty > 0) {
+    if (mode === 'add') {
+      await conn.query(
+        `INSERT INTO tr_stock_opname (outlet_id, item_id, stock_id, usage_date, qty_used, employee_id, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           stock_id = VALUES(stock_id),
+           qty_used = qty_used + VALUES(qty_used),
+           employee_id = VALUES(employee_id),
+           updated_at = NOW()`,
+        [outletId, itemId, stock.id, today, qty, employeeId, 'SO Waschen Mobile']
+      );
+      qtyToday = beforeUsed + qty;
+      qtyAfter = qtyBefore - qty;
+      await conn.query(
+        'UPDATE tr_inventory_stock SET qty_current = ?, updated_at = NOW() WHERE id = ?',
+        [qtyAfter, stock.id]
+      );
+      await conn.query(
+        `INSERT INTO tr_inventory_log
+         (outlet_id, item_id, stock_id, movement_type, qty, qty_before, qty_after, employee_id, reference_type, notes)
+         VALUES (?, ?, ?, 'Usage', ?, ?, ?, ?, 'opname', 'SO Waschen Mobile')`,
+        [outletId, itemId, stock.id, qty, qtyBefore, qtyAfter, employeeId]
+      );
+    } else {
+      qtyAfter = qty;
+      await conn.query(
+        'UPDATE tr_inventory_stock SET qty_current = ?, updated_at = NOW() WHERE id = ?',
+        [qtyAfter, stock.id]
+      );
       await conn.query(
         `INSERT INTO tr_inventory_log
          (outlet_id, item_id, stock_id, movement_type, qty, qty_before, qty_after, employee_id, reference_type, notes)
          VALUES (?, ?, ?, 'Adjust', ?, ?, ?, ?, 'opname', 'SO Waschen Mobile')`,
-        [outletId, itemId, stock.id, logQty, qtyBefore, qtyAfter, employeeId]
+        [outletId, itemId, stock.id, Math.abs(qtyAfter - qtyBefore), qtyBefore, qtyAfter, employeeId]
       );
     }
 
     await conn.commit();
-    return res.json({ success: true, message: 'Stok diperbarui', data: { qty_today: qty, qty_current: qtyAfter } });
+    return res.json({ success: true, message: 'Stok diperbarui', data: { qty_today: qtyToday, qty_current: qtyAfter } });
   } catch (error) {
     await conn.rollback();
     console.error('saveOpname:', error);

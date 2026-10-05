@@ -6,6 +6,7 @@ import formatName from '../../../utils/FormatName.js';
 import { getHeaderSubtitle } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 
@@ -48,10 +49,12 @@ export default function StockItems() {
   const [search, setSearch] = useState('');
   const [outletName, setOutletName] = useState('');
   const [items, setItems] = useState([]);
-  const [drafts, setDrafts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [savingId, setSavingId] = useState(null);
+  const [active, setActive] = useState(null);
+  const [mode, setMode] = useState('add');
+  const [qtyInput, setQtyInput] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleAuthError = useCallback((err) => {
     if (err?.response?.status === 401) {
@@ -70,10 +73,6 @@ export default function StockItems() {
     const rows = data.items || [];
     setOutletName(data.outletName || '');
     setItems(rows);
-    setDrafts(Object.fromEntries(rows.map((row) => {
-      const n = parseFloat(row.qty_today);
-      return [row.item_id, n > 0 ? String(n) : ''];
-    })));
   }, [role]);
 
   useEffect(() => {
@@ -113,6 +112,7 @@ export default function StockItems() {
   }, [load, handleAuthError]);
 
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(load);
+  useLockBodyScroll(Boolean(active));
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -120,28 +120,34 @@ export default function StockItems() {
     return items.filter((item) => String(item.name || '').toLowerCase().includes(q));
   }, [items, search]);
 
-  const save = async (item) => {
-    const raw = String(drafts[item.item_id] ?? '').trim();
+  const openItem = (item) => {
+    setActive(item);
+    setMode('add');
+    setQtyInput('');
+    setError('');
+  };
+
+  const save = async () => {
+    if (!active) return;
+    const raw = qtyInput.trim();
     const qty = Number(raw);
-    if (raw === '' || !Number.isFinite(qty) || qty < 0) {
-      setError('Isi jumlah pemakaian dengan angka');
+    if (raw === '' || !Number.isFinite(qty) || qty < 0 || (mode === 'add' && qty <= 0)) {
+      setError(mode === 'set' ? 'Isi sisa stok dengan angka' : 'Isi jumlah pemakaian dengan angka');
       return;
     }
-    setSavingId(item.item_id);
+    setSaving(true);
     setError('');
     try {
-      const res = await api.post('/inventory/opname', { item_id: item.item_id, qty });
+      const res = await api.post('/inventory/opname', { item_id: active.item_id, qty, mode });
       const next = res.data?.data || {};
-      setItems((prev) => prev.map((row) => (
-        row.item_id === item.item_id
-          ? { ...row, qty_today: next.qty_today, qty_current: next.qty_current }
-          : row
-      )));
+      const updated = { ...active, qty_today: next.qty_today, qty_current: next.qty_current };
+      setItems((prev) => prev.map((row) => (row.item_id === active.item_id ? { ...row, ...updated } : row)));
+      setActive(null);
     } catch (err) {
       if (handleAuthError(err)) return;
       setError(err?.response?.data?.message || 'Gagal menyimpan stok');
     } finally {
-      setSavingId(null);
+      setSaving(false);
     }
   };
 
@@ -214,6 +220,15 @@ export default function StockItems() {
             <p className="mt-2 text-[11px] text-slate-400 font-medium">
               {outletName || 'Outlet belum ditetapkan'}
             </p>
+            {role ? (
+              <button
+                type="button"
+                onClick={() => setRole('')}
+                className="mt-3 w-full rounded-xl border border-[#5f1340]/30 bg-[#5f1340]/5 py-2.5 text-[12px] font-black text-[#5f1340] active:scale-[0.98]"
+              >
+                Tampilkan Semua Item
+              </button>
+            ) : null}
           </div>
 
           <div className="mx-4 mt-5">
@@ -243,38 +258,22 @@ export default function StockItems() {
             ) : (
               <div className="flex flex-col gap-2.5">
                 {visibleItems.map((item) => (
-                  <div key={item.item_id} className="bg-white rounded-[20px] border border-slate-100 p-4 shadow-[0_4px_16px_rgba(0,0,0,0.03)]">
+                  <button
+                    key={item.item_id}
+                    type="button"
+                    onClick={() => openItem(item)}
+                    className="bg-white rounded-[20px] border border-slate-100 p-4 shadow-[0_4px_16px_rgba(0,0,0,0.03)] text-left active:scale-[0.99]"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-[13px] font-black text-slate-800">{item.name}</span>
                       <span className="text-[11px] font-bold text-slate-500 flex-shrink-0">
                         Sisa {fmtQty(item.qty_current)} {item.unit || ''}
                       </span>
                     </div>
-                    <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide block mt-3 mb-1">
-                      Pemakaian hari ini
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={drafts[item.item_id] ?? ''}
-                        placeholder="Isi dengan angka"
-                        onChange={(e) => setDrafts((prev) => ({ ...prev, [item.item_id]: e.target.value }))}
-                        className="flex-1 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2.5 outline-none placeholder:font-medium placeholder:text-slate-400"
-                        aria-label={`Pemakaian ${item.name}`}
-                      />
-                      <button
-                        type="button"
-                        disabled={savingId === item.item_id}
-                        onClick={() => save(item)}
-                        className="px-4 rounded-xl bg-[#5f1340] text-white text-[12px] font-black active:scale-[0.98] disabled:opacity-50"
-                      >
-                        {savingId === item.item_id ? '...' : 'Simpan'}
-                      </button>
-                    </div>
-                  </div>
+                    <p className="mt-2 text-[11px] font-semibold text-slate-400">
+                      Pemakaian hari ini {fmtQty(item.qty_today)} {item.unit || ''}
+                    </p>
+                  </button>
                 ))}
               </div>
             )}
@@ -282,6 +281,59 @@ export default function StockItems() {
         </div>
 
         <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
+
+        {active ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center overscroll-none bg-slate-900/40" onClick={() => !saving && setActive(null)}>
+            <div
+              className="w-full max-w-[430px] rounded-t-[28px] bg-white px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-[15px] font-black text-slate-800">{active.name}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                Sisa {fmtQty(active.qty_current)} {active.unit || ''} · Hari ini {fmtQty(active.qty_today)}
+              </p>
+              <div className="mt-4 flex rounded-xl bg-slate-100 p-1">
+                {[['add', 'Pemakaian'], ['set', 'Set']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => { setMode(id); setQtyInput(''); setError(''); }}
+                    className={`flex-1 rounded-lg py-2 text-[12px] font-black ${mode === id ? 'bg-white text-[#5f1340] shadow-sm' : 'text-slate-500'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="mt-4 block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {mode === 'set' ? 'Sisa stok sekarang' : 'Tambah pemakaian'}
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={qtyInput}
+                onChange={(e) => setQtyInput(e.target.value)}
+                placeholder="Isi dengan angka"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] font-bold text-slate-700 outline-none"
+              />
+              <p className="mt-2 text-[11px] font-medium text-slate-400">
+                {mode === 'set'
+                  ? 'Angka ini langsung menjadi sisa stok.'
+                  : 'Ditambahkan ke pemakaian hari ini. 5 lalu 5 menjadi 10.'}
+              </p>
+              {error ? <p className="mt-2 text-[11px] font-bold text-rose-600">{error}</p> : null}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={save}
+                className="mt-4 w-full rounded-xl bg-[#5f1340] py-3 text-[13px] font-black text-white disabled:opacity-50"
+              >
+                {saving ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
