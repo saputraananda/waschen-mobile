@@ -32,6 +32,12 @@ function fmtQty(n) {
   return v.toLocaleString('id-ID', { maximumFractionDigits: 2 });
 }
 
+function isLowStock(item) {
+  const min = parseFloat(item?.min_stock);
+  const qty = parseFloat(item?.qty_current);
+  return Number.isFinite(min) && min > 0 && Number.isFinite(qty) && qty < min;
+}
+
 function initialRole() {
   try {
     const parsed = JSON.parse(localStorage.getItem('user') || 'null');
@@ -266,7 +272,7 @@ export default function StockItems() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-[13px] font-black text-slate-800">{item.name}</span>
-                      <span className="text-[11px] font-bold text-slate-500 flex-shrink-0">
+                      <span className={`text-[11px] font-bold flex-shrink-0 ${isLowStock(item) ? 'text-rose-600' : 'text-emerald-600'}`}>
                         Sisa {fmtQty(item.qty_current)} {item.unit || ''}
                       </span>
                     </div>
@@ -290,7 +296,10 @@ export default function StockItems() {
             >
               <p className="text-[15px] font-black text-slate-800">{active.name}</p>
               <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
-                Sisa {fmtQty(active.qty_current)} {active.unit || ''} · Hari ini {fmtQty(active.qty_today)}
+                <span className={isLowStock(active) ? 'text-rose-600' : 'text-emerald-600'}>
+                  Sisa {fmtQty(active.qty_current)} {active.unit || ''}
+                </span>
+                {' · Hari ini '}{fmtQty(active.qty_today)}
               </p>
               <div className="mt-4 flex rounded-xl bg-slate-100 p-1">
                 {[['add', 'Pemakaian'], ['set', 'Set']].map(([id, label]) => (

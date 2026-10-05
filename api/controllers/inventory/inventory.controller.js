@@ -28,7 +28,7 @@ export const listMyStock = async (req, res) => {
     );
     const [rows] = await myWaschenPool.query(
       `SELECT s.id AS stock_id, i.id AS item_id, i.name, i.owner_role, u.symbol AS unit,
-              s.qty_opening, s.qty_current,
+              s.qty_opening, s.qty_current, s.min_stock,
               COALESCE((
                 SELECT o.qty_used FROM tr_stock_opname o
                 WHERE o.outlet_id = s.outlet_id AND o.item_id = s.item_id AND o.usage_date = ?
