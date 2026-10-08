@@ -8,7 +8,8 @@ import {
   cancelDayOff,
   listLeaderDayOffs,
   leaderApproveDayOff,
-  leaderRejectDayOff
+  leaderRejectDayOff,
+  getMyBackups
 } from '../../controllers/history/history.controller.js';
 
 const router = express.Router();
@@ -19,6 +20,7 @@ router.get('/calendar', getCalendar);
 router.get('/day-offs', getDayOffs);
 router.get('/day-offs/outlet', getOutletDayOffs);
 router.get('/day-off/approvals', listLeaderDayOffs);
+router.get('/day-off/backups', getMyBackups);
 router.post('/day-off', requestDayOff);
 router.patch('/day-off/:id/leader-approve', leaderApproveDayOff);
 router.patch('/day-off/:id/leader-reject', leaderRejectDayOff);

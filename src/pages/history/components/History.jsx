@@ -160,6 +160,21 @@ function PersonChip({ person, className }) {
   );
 }
 
+function BackupDuty({ items }) {
+  if (!items?.length) return null;
+  return (
+    <div className="bg-sky-50 rounded-[14px] p-3 mt-2 border border-sky-100 text-left space-y-1.5">
+      {items.map((row) => (
+        <p key={row.day_off_id} className="text-[11.5px] font-bold text-sky-800">
+          Anda backup {formatName(row.employee_name || 'karyawan')}
+          {row.outlet_name ? ` · ${formatName(row.outlet_name)}` : ''}
+          {row.role_name ? ` · sebagai ${row.role_name}` : ''}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function OutletBoard({ board }) {
   const own = board?.own;
   const others = (board?.others || []).filter((g) => g.people?.length);
@@ -210,13 +225,14 @@ export default function History() {
   const [stats, setStats] = useState({ hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 });
   const [policy, setPolicy] = useState({ max_days_per_month: 4, request_open_day: 20 });
   const [dayOffList, setDayOffList] = useState([]);
+  const [backupList, setBackupList] = useState([]);
   const [outletBoard, setOutletBoard] = useState(null);
   const [isLeader, setIsLeader] = useState(false);
   const [leaderQueue, setLeaderQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [showDayOffFilter, setShowDayOffFilter] = useState(false);
+  const [listTab, setListTab] = useState('');
   const [showPickerModal, setShowPickerModal] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestReason, setRequestReason] = useState('');
@@ -278,10 +294,22 @@ export default function History() {
     }
   }, [calYear, monthParam]);
 
+  const fetchBackups = useCallback(async () => {
+    try {
+      const { data } = await api.get('/history/day-off/backups', {
+        params: { year: calYear, month: monthParam }
+      });
+      if (data.success) setBackupList(data.data || []);
+    } catch {
+      setBackupList([]);
+    }
+  }, [calYear, monthParam]);
+
   useEffect(() => {
     fetchCalendar();
     fetchDayOffs();
-  }, [fetchCalendar, fetchDayOffs]);
+    fetchBackups();
+  }, [fetchCalendar, fetchDayOffs, fetchBackups]);
 
   const bounds = cutoffBounds(calYear, calMonth);
   const calCells = [];
@@ -331,6 +359,7 @@ export default function History() {
   useRealtimeRefresh(['history', 'attendance', 'leave'], () => {
     fetchCalendar();
     fetchDayOffs();
+    fetchBackups();
     fetchLeaderQueue();
     if (selectedKey) fetchOutletMates(selectedKey);
   });
@@ -339,10 +368,11 @@ export default function History() {
     await Promise.all([
       fetchCalendar(),
       fetchDayOffs(),
+      fetchBackups(),
       fetchLeaderQueue(),
       selectedKey ? fetchOutletMates(selectedKey) : Promise.resolve()
     ]);
-  }, [fetchCalendar, fetchDayOffs, fetchLeaderQueue, fetchOutletMates, selectedKey]);
+  }, [fetchCalendar, fetchDayOffs, fetchBackups, fetchLeaderQueue, fetchOutletMates, selectedKey]);
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   const prevMonth = () => {
@@ -410,9 +440,14 @@ export default function History() {
   };
 
   const monthLogKeys = Object.keys(calendarDays).sort();
-  const filteredLogKeys = showDayOffFilter
-    ? monthLogKeys.filter((k) => ['libur', 'libur_pengajuan'].includes(calendarDays[k]?.kind))
-    : monthLogKeys;
+  const filteredLogKeys = monthLogKeys;
+  const backupOnSelected = selectedKey
+    ? backupList.filter((row) => String(row.off_date).slice(0, 10) === selectedKey)
+    : [];
+  const highlightedDates = new Set(
+    (listTab === 'libur' ? dayOffList : listTab === 'backup' ? backupList : [])
+      .map((row) => String(row.off_date).slice(0, 10))
+  );
 
   const openDay = Number(policy.request_open_day) || 20;
   const requestWindow = requestPeriodOnDay(todayKey, openDay);
@@ -517,18 +552,30 @@ export default function History() {
             </div>
 
             <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between gap-2">
-              <button
-                onClick={() => setShowDayOffFilter((v) => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all ${
-                  showDayOffFilter
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
-                    : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
-                }`}
-              >
-                <Palmtree className="w-3.5 h-3.5" />
-                Jadwal Libur Anda
-              </button>
-              <span className="text-[10px] text-slate-400 font-bold">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <button
+                  onClick={() => setListTab((v) => (v === 'libur' ? '' : 'libur'))}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10.5px] font-black transition-all ${
+                    listTab === 'libur'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
+                      : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  <Palmtree className="w-3.5 h-3.5" />
+                  Jadwal Libur Anda
+                </button>
+                <button
+                  onClick={() => setListTab((v) => (v === 'backup' ? '' : 'backup'))}
+                  className={`px-2.5 py-1.5 rounded-xl text-[10.5px] font-black transition-all ${
+                    listTab === 'backup'
+                      ? 'bg-sky-600 text-white shadow-md shadow-sky-500/25'
+                      : 'bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100'
+                  }`}
+                >
+                  Jadwal Backup
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold shrink-0">
                 Kuota: {liburUsed}/{policy.max_days_per_month || 4}
               </span>
             </div>
@@ -560,22 +607,31 @@ export default function History() {
                     const rec = calendarDays[key];
                     const isSelected = selectedDate === key;
                     const today = key === todayKey;
-                    const dotColor = rec?.dot || '';
+                    const marked = highlightedDates.has(key);
+                    const dotColor = marked ? '' : (rec?.dot || '');
 
                     return (
                       <button
                         key={key}
                         onClick={() => setSelectedDate(isSelected ? null : key)}
                         className={`flex flex-col items-center justify-center rounded-[14px] py-2 gap-0.5 transition-all duration-150 active:scale-90 ${
-                          isSelected
-                            ? 'bg-[#5f1340] text-white scale-[1.08] shadow-md shadow-[#5f1340]/25'
-                            : today
-                              ? 'bg-[#5f1340]/10 text-[#5f1340] border border-[#5f1340]/30 font-black'
-                              : 'hover:bg-slate-50 text-slate-700'
+                          marked
+                            ? isSelected ? 'scale-[1.08]' : ''
+                            : isSelected
+                              ? 'bg-[#5f1340] text-white scale-[1.08] shadow-md shadow-[#5f1340]/25'
+                              : today
+                                ? 'bg-[#5f1340]/10 text-[#5f1340] border border-[#5f1340]/30 font-black'
+                                : 'hover:bg-slate-50 text-slate-700'
                         }`}
                       >
-                        <span className={`text-[12.5px] font-extrabold leading-none ${
-                          isSelected ? 'text-white' : today ? 'text-[#5f1340]' : 'text-slate-800'
+                        <span className={`text-[12.5px] font-extrabold leading-none inline-flex items-center justify-center ${
+                          marked
+                            ? 'h-7 min-w-7 rounded-full bg-purple-600 text-white shadow-sm'
+                            : isSelected
+                              ? 'text-white'
+                              : today
+                                ? 'text-[#5f1340]'
+                                : 'text-slate-800'
                         }`}>
                           {Number(key.slice(8, 10))}
                         </span>
@@ -641,6 +697,9 @@ export default function History() {
                       {selectedRecord.reason && (
                         <span className="text-[10.5px] text-purple-600 font-medium block mt-1">{selectedRecord.reason}</span>
                       )}
+                      {selectedRecord.backup_name && (
+                        <span className="text-[11px] text-sky-800 font-bold block mt-1">Backup: {formatName(selectedRecord.backup_name)}</span>
+                      )}
                     </div>
                   )}
 
@@ -660,6 +719,7 @@ export default function History() {
                       )}
                     </div>
                   )}
+                  <BackupDuty items={backupOnSelected} />
                   <div className="mt-3">
                     <OutletBoard board={outletBoard} />
                   </div>
@@ -681,6 +741,7 @@ export default function History() {
                 </div>
               ) : (
                 <div className="bg-white rounded-[22px] border border-slate-100 shadow-[0_6px_20px_rgba(0,0,0,0.03)] p-4">
+                  <BackupDuty items={backupOnSelected} />
                   <span className="text-[12px] text-slate-500 font-bold block text-center mb-3">
                     Belum ada data absensi untuk tanggal ini.
                   </span>
@@ -707,21 +768,26 @@ export default function History() {
           <div className="mx-4 mt-5 mb-4">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider block">
-                {showDayOffFilter ? 'Jadwal Libur Periode Ini' : 'Riwayat Absensi Periode Ini'}
+                {listTab === 'libur' ? 'Jadwal Libur Periode Ini' : listTab === 'backup' ? 'Jadwal Backup Periode Ini' : 'Riwayat Absensi Periode Ini'}
               </span>
               <span className="text-[10px] text-[#5f1340] font-black uppercase tracking-wider bg-[#5f1340]/10 px-2.5 py-0.5 rounded-full">
-                {filteredLogKeys.length} Hari
+                {(listTab === 'libur' ? dayOffList.length : listTab === 'backup' ? backupList.length : filteredLogKeys.length)} Hari
               </span>
             </div>
 
-            {showDayOffFilter && dayOffList.length === 0 && !loading && (
+            {listTab === 'libur' && dayOffList.length === 0 && !loading && (
               <div className="bg-white rounded-[20px] border border-dashed border-purple-200 p-6 text-center text-[12px] text-purple-600 font-bold">
                 Belum ada jadwal libur di periode ini. Tap tanggal di kalender untuk permintaan libur.
               </div>
             )}
+            {listTab === 'backup' && backupList.length === 0 && !loading && (
+              <div className="bg-white rounded-[20px] border border-dashed border-sky-200 p-6 text-center text-[12px] text-sky-700 font-bold">
+                Belum ada jadwal backup di periode ini.
+              </div>
+            )}
 
             <div className="flex flex-col gap-2.5">
-              {(showDayOffFilter ? dayOffList.map((row) => {
+              {(listTab === 'libur' ? dayOffList.map((row) => {
                 const d = new Date(`${String(row.off_date).slice(0, 10)}T12:00:00`);
                 const dayNum = d.getDate();
                 const dayName = DAYS[d.getDay()];
@@ -748,12 +814,34 @@ export default function History() {
                         <span className={`text-[13px] font-black ${rec.listColor}`}>{rec.label}</span>
                       </div>
                       <span className="text-[11px] text-slate-400 font-bold block mt-0.5 truncate">{row.reason}</span>
+                      {row.status === 'disetujui' && row.backup_name && (
+                        <span className="text-[11px] text-sky-700 font-bold block mt-0.5 truncate">Backup: {formatName(row.backup_name)}</span>
+                      )}
                     </div>
                     {row.status === 'pengajuan' && (
                       <button onClick={() => cancelDayOff(row.day_off_id)} className="p-2 rounded-xl text-red-500 hover:bg-red-50">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                  </div>
+                );
+              }) : listTab === 'backup' ? backupList.map((row) => {
+                const d = new Date(`${String(row.off_date).slice(0, 10)}T12:00:00`);
+                const dayNum = d.getDate();
+                const dayName = DAYS[d.getDay()];
+                return (
+                  <div key={row.day_off_id} className="bg-white rounded-[20px] border border-slate-100 p-3.5 flex items-center gap-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.03)]">
+                    <div className="w-10.5 h-10.5 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 border bg-sky-50 text-sky-700 border-sky-100">
+                      <span className="text-[14.5px] font-black leading-none">{dayNum}</span>
+                      <span className="text-[8.5px] font-extrabold uppercase mt-0.5 opacity-80">{dayName}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[13px] font-black text-sky-800 block truncate">Backup {formatName(row.employee_name || 'karyawan')}</span>
+                      <span className="text-[11px] text-slate-500 font-bold block mt-0.5 truncate">
+                        {formatName(row.outlet_name || 'Tanpa outlet')}
+                        {row.role_name ? ` · sebagai ${row.role_name}` : ''}
+                      </span>
+                    </div>
                   </div>
                 );
               }) : filteredLogKeys.slice().reverse().map((key) => {

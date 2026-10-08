@@ -12,6 +12,18 @@ const leaveLabel = (type) => {
 const QUOTA_STATUSES = ['pengajuan', 'disetujui_leader', 'disetujui'];
 const VISIBLE_STATUSES = ['pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui'];
 
+async function employeeNameMap(ids) {
+  const unique = [...new Set(ids.map(Number).filter(Boolean))];
+  const map = new Map();
+  if (!unique.length) return map;
+  const [rows] = await mainPool.query(
+    `SELECT employee_id, full_name FROM mst_employee WHERE employee_id IN (${unique.map(() => '?').join(',')})`,
+    unique
+  );
+  rows.forEach((row) => map.set(Number(row.employee_id), row.full_name || null));
+  return map;
+}
+
 const dayOffLabel = (status) => {
   if (status === 'pengajuan') return 'Menunggu leader';
   if (status === 'disetujui_leader') return 'Disetujui leader';
@@ -126,13 +138,14 @@ export const getCalendar = async (req, res) => {
         [employeeId, end, start]
       ),
       myWaschenPool.query(
-        `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at
+        `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, backup_employee_id
          FROM tr_employee_day_off
          WHERE employee_id = ? AND off_date BETWEEN ? AND ?
            AND status IN ('pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui')`,
         [employeeId, start, end]
       )
     ]);
+    const backupNames = await employeeNameMap(dayOffRows[0].map((row) => row.backup_employee_id));
 
     const days = {};
     const stats = { hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 };
@@ -189,7 +202,8 @@ export const getCalendar = async (req, res) => {
         day_off_id: row.day_off_id,
         day_off_status: row.status,
         requested_date: toWibDateKey(row.requested_date),
-        source: row.source
+        source: row.source,
+        backup_name: isFinal ? (backupNames.get(Number(row.backup_employee_id)) || null) : null
       };
       if (isFinal) stats.libur += 1;
       else if (QUOTA_STATUSES.includes(row.status)) stats.pengajuan_libur += 1;
@@ -250,15 +264,20 @@ export const getDayOffs = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, created_at
+      `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, created_at, backup_employee_id
        FROM tr_employee_day_off
        WHERE employee_id = ? AND off_date BETWEEN ? AND ?
          AND ${statusClause}
        ORDER BY off_date ASC`,
       params
     );
+    const backupNames = await employeeNameMap(rows.map((row) => row.backup_employee_id));
+    const data = rows.map((row) => ({
+      ...row,
+      backup_name: row.status === 'disetujui' ? (backupNames.get(Number(row.backup_employee_id)) || null) : null
+    }));
 
-    return res.status(200).json({ success: true, message: 'OK', data: rows });
+    return res.status(200).json({ success: true, message: 'OK', data });
   } catch (error) {
     console.error('getDayOffs error:', error);
     return res.status(500).json({ success: false, message: 'Gagal memuat jadwal libur', error: error.message });
@@ -586,6 +605,56 @@ async function reviewAsLeader(req, res, decision) {
     if (conn) conn.release();
   }
 }
+
+/**
+ * GET /api/history/day-off/backups?year=&month=
+ * Jadwal di mana user ini ditunjuk sebagai backup (hanya libur yang sudah disetujui HRD).
+ */
+export const getMyBackups = async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    const cur = currentCutoff();
+    const year = parseInt(req.query.year || cur.year, 10);
+    const month = parseInt(req.query.month || cur.month, 10);
+    const { start, end } = cutoffFor(year, month);
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT d.day_off_id, d.off_date, d.employee_id, d.reason,
+              (SELECT r.role FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS role_name,
+              (SELECT r.outlet_id FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS outlet_id
+       FROM tr_employee_day_off d
+       WHERE d.backup_employee_id = ? AND d.status = 'disetujui' AND d.off_date BETWEEN ? AND ?
+       ORDER BY d.off_date ASC`,
+      [employeeId, start, end]
+    );
+
+    const names = await employeeNameMap(rows.map((row) => row.employee_id));
+    const outletIds = [...new Set(rows.map((row) => Number(row.outlet_id)).filter(Boolean))];
+    const outletName = new Map();
+    if (outletIds.length) {
+      const [outlets] = await mainPool.query(
+        `SELECT id, name, full_name FROM mst_outlet WHERE id IN (${outletIds.map(() => '?').join(',')})`,
+        outletIds
+      );
+      outlets.forEach((outlet) => outletName.set(Number(outlet.id), outlet.name || outlet.full_name || null));
+    }
+
+    const data = rows.map((row) => ({
+      day_off_id: row.day_off_id,
+      off_date: toWibDateKey(row.off_date),
+      employee_id: row.employee_id,
+      employee_name: names.get(Number(row.employee_id)) || null,
+      outlet_name: outletName.get(Number(row.outlet_id)) || null,
+      role_name: row.role_name || null,
+      reason: row.reason || null
+    }));
+
+    return res.json({ success: true, message: 'OK', data });
+  } catch (error) {
+    console.error('getMyBackups error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat jadwal backup' });
+  }
+};
 
 export const leaderApproveDayOff = (req, res) => reviewAsLeader(req, res, 'approve');
 export const leaderRejectDayOff = (req, res) => reviewAsLeader(req, res, 'reject');
