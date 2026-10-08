@@ -7,6 +7,7 @@ import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
+import formatName from '../../../utils/FormatName.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 import {
   Calendar,
@@ -50,6 +51,24 @@ function cutoffBounds(year, monthIndex) {
   const startDate = new Date(year, monthIndex - 1, 26);
   const endDate = new Date(year, monthIndex, 25);
   return { startDate, endDate, start: isoFromDate(startDate), end: isoFromDate(endDate) };
+}
+
+function requestPeriodOnDay(todayKey, openDay = 20) {
+  const day = Number(openDay) || 20;
+  const [y, m, d] = String(todayKey || '').split('-').map(Number);
+  if (d !== day || !y || !m) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  let startY = y;
+  let startM = m;
+  if (day >= 26) {
+    startM += 1;
+    if (startM > 12) { startM = 1; startY += 1; }
+  }
+  const start = `${startY}-${pad(startM)}-26`;
+  let endM = startM + 1;
+  let endY = startY;
+  if (endM > 12) { endM = 1; endY += 1; }
+  return { start, end: `${endY}-${pad(endM)}-25` };
 }
 
 function cutoffPeriodFromKey(key) {
@@ -121,6 +140,63 @@ const mapDayRecord = (raw) => {
   };
 };
 
+const OUTLET_BADGE = [
+  'bg-pink-100 text-pink-900 border-pink-200',
+  'bg-sky-100 text-sky-900 border-sky-200',
+  'bg-emerald-100 text-emerald-900 border-emerald-200',
+  'bg-violet-100 text-violet-900 border-violet-200',
+  'bg-orange-100 text-orange-900 border-orange-200',
+  'bg-teal-100 text-teal-900 border-teal-200',
+  'bg-rose-100 text-rose-900 border-rose-200',
+  'bg-indigo-100 text-indigo-900 border-indigo-200',
+];
+
+function PersonChip({ person, className }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black ${className}`}>
+      {formatName(person.name)}
+      <span className="text-[9px] font-bold opacity-70">{person.status_label}</span>
+    </span>
+  );
+}
+
+function OutletBoard({ board }) {
+  const own = board?.own;
+  const others = (board?.others || []).filter((g) => g.people?.length);
+  if (!own?.people?.length && !others.length) return null;
+  return (
+    <div className="text-left space-y-2.5">
+      {own?.people?.length > 0 && (
+        <div>
+          <div className="text-[12px] font-black text-slate-800 mb-1.5">{formatName(own.outlet_name) || 'Outlet Anda'}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {own.people.map((p) => (
+              <PersonChip key={p.employee_id} person={p} className="bg-amber-100 text-amber-900 border-amber-200" />
+            ))}
+          </div>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div>
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Outlet lain</div>
+          <div className="space-y-2">
+            {others.map((g, i) => (
+              <div key={g.outlet_id}>
+                <div className="text-[12px] font-black text-slate-800 mb-1">{formatName(g.outlet_name)}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.people.map((p) => (
+                    <PersonChip key={`${g.outlet_id}-${p.employee_id}`} person={p} className={OUTLET_BADGE[i % OUTLET_BADGE.length]} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function History() {
   const navigate = useNavigate();
   const todayKey = todayWibISO();
@@ -132,9 +208,11 @@ export default function History() {
 
   const [calendarDays, setCalendarDays] = useState({});
   const [stats, setStats] = useState({ hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 });
-  const [policy, setPolicy] = useState({ max_days_per_month: 4 });
+  const [policy, setPolicy] = useState({ max_days_per_month: 4, request_open_day: 20 });
   const [dayOffList, setDayOffList] = useState([]);
-  const [outletMates, setOutletMates] = useState([]);
+  const [outletBoard, setOutletBoard] = useState(null);
+  const [isLeader, setIsLeader] = useState(false);
+  const [leaderQueue, setLeaderQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -154,6 +232,14 @@ export default function History() {
     setPageTitle('Riwayat Absensi Karyawan');
     const token = localStorage.getItem('token');
     if (!token) { navigate('/login'); return; }
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        const leader = parsed.is_leader === 1 || parsed.is_leader === true || parsed.isLeader === 1 || parsed.is_leader === '1';
+        setIsLeader(!!leader);
+      } catch { /* ignore */ }
+    }
   }, [navigate]);
 
   const monthParam = calMonth + 1;
@@ -172,7 +258,7 @@ export default function History() {
       });
       setCalendarDays(mapped);
       setStats(data.data.stats || { hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 });
-      setPolicy(data.data.policy || { max_days_per_month: 4 });
+      setPolicy(data.data.policy || { max_days_per_month: 4, request_open_day: 20 });
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Gagal memuat kalender');
       setCalendarDays({});
@@ -208,38 +294,55 @@ export default function History() {
 
   const fetchOutletMates = useCallback(async (dateKey) => {
     if (!dateKey) {
-      setOutletMates([]);
+      setOutletBoard(null);
       return;
     }
     try {
       const { data } = await api.get('/history/day-offs/outlet', { params: { date: dateKey } });
-      setOutletMates(data.success ? data.data || [] : []);
+      setOutletBoard(data.success ? data.data || null : null);
     } catch {
-      setOutletMates([]);
+      setOutletBoard(null);
     }
   }, []);
 
+  const fetchLeaderQueue = useCallback(async () => {
+    if (!isLeader) {
+      setLeaderQueue([]);
+      return;
+    }
+    try {
+      const { data } = await api.get('/history/day-off/approvals');
+      setLeaderQueue(data.success ? data.data || [] : []);
+    } catch {
+      setLeaderQueue([]);
+    }
+  }, [isLeader]);
+
+  useEffect(() => { fetchLeaderQueue(); }, [fetchLeaderQueue]);
+
   useEffect(() => {
-    if (!selectedKey || calendarDays[selectedKey]) {
-      setOutletMates([]);
+    if (!selectedKey) {
+      setOutletBoard(null);
       return;
     }
     fetchOutletMates(selectedKey);
-  }, [selectedKey, calendarDays, fetchOutletMates]);
+  }, [selectedKey, fetchOutletMates]);
 
   useRealtimeRefresh(['history', 'attendance', 'leave'], () => {
     fetchCalendar();
     fetchDayOffs();
-    if (selectedKey && !calendarDays[selectedKey]) fetchOutletMates(selectedKey);
+    fetchLeaderQueue();
+    if (selectedKey) fetchOutletMates(selectedKey);
   });
 
   const softRefresh = useCallback(async () => {
     await Promise.all([
       fetchCalendar(),
       fetchDayOffs(),
-      selectedKey && !calendarDays[selectedKey] ? fetchOutletMates(selectedKey) : Promise.resolve()
+      fetchLeaderQueue(),
+      selectedKey ? fetchOutletMates(selectedKey) : Promise.resolve()
     ]);
-  }, [fetchCalendar, fetchDayOffs, fetchOutletMates, selectedKey, calendarDays]);
+  }, [fetchCalendar, fetchDayOffs, fetchLeaderQueue, fetchOutletMates, selectedKey]);
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   const prevMonth = () => {
@@ -311,7 +414,26 @@ export default function History() {
     ? monthLogKeys.filter((k) => ['libur', 'libur_pengajuan'].includes(calendarDays[k]?.kind))
     : monthLogKeys;
 
-  const canRequestDayOff = selectedKey && selectedKey >= todayKey && !selectedRecord && !loading;
+  const openDay = Number(policy.request_open_day) || 20;
+  const requestWindow = requestPeriodOnDay(todayKey, openDay);
+  const canRequestDayOff = Boolean(
+    requestWindow &&
+    selectedKey &&
+    selectedKey >= requestWindow.start &&
+    selectedKey <= requestWindow.end &&
+    !selectedRecord &&
+    !loading
+  );
+
+  const decideLeader = async (dayOffId, decision) => {
+    try {
+      await api.patch(`/history/day-off/${dayOffId}/leader-${decision}`);
+      await fetchLeaderQueue();
+      if (selectedKey) await fetchOutletMates(selectedKey);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Gagal menyimpan keputusan leader');
+    }
+  };
 
   const liburUsed = (stats.libur || 0) + (stats.pengajuan_libur || 0);
   const tidakMasukTotal = (stats.izin || 0) + (stats.sakit || 0) + (stats.cuti || 0) + (stats.tidak_masuk || 0);
@@ -329,22 +451,25 @@ export default function History() {
           </div>
           <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-gradient-to-br from-pink-500/20 to-transparent rounded-full blur-2xl pointer-events-none z-0" />
 
-          <div className="relative z-10 text-center mb-5 pt-1">
+          <div className="relative z-10 flex items-start gap-3 mb-5 pt-1">
+            <div className="w-10 shrink-0" aria-hidden="true" />
+            <div className="flex-1 min-w-0 text-center">
+              <h1 className="text-[17.5px] font-black text-white tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+                Riwayat Absensi Karyawan
+              </h1>
+              <span className="text-[11px] text-pink-200/80 font-medium block mt-0.5">
+                Rekapitulasi Kehadiran &amp; Jadwal Libur
+              </span>
+            </div>
             <button
               type="button"
               onClick={handleRefresh}
               disabled={refreshing}
-              className="absolute right-0 top-0 w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all disabled:opacity-60"
+              className="w-10 h-10 shrink-0 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all disabled:opacity-60"
               aria-label="Muat ulang"
             >
-              <RefreshCw className={`w-5 h-5 text-white ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-5 h-5 text-white pointer-events-none ${refreshing ? 'animate-spin' : ''}`} />
             </button>
-            <h1 className="text-[17.5px] font-black text-white tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
-              Riwayat Absensi Karyawan
-            </h1>
-            <span className="text-[11px] text-pink-200/80 font-medium block mt-0.5">
-              Rekapitulasi Kehadiran &amp; Jadwal Libur
-            </span>
           </div>
 
           <div className="relative z-10 grid grid-cols-4 gap-2">
@@ -464,6 +589,24 @@ export default function History() {
             )}
           </div>
 
+          {isLeader && leaderQueue.length > 0 && (
+            <div className="mx-4 mt-3 bg-white rounded-[22px] border border-slate-100 shadow-sm p-4">
+              <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wider block mb-2">Persetujuan libur cabang</span>
+              <div className="flex flex-col gap-2">
+                {leaderQueue.map((row) => (
+                  <div key={row.day_off_id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                    <div className="text-[13px] font-black text-slate-800">{formatName(row.employee_name)}</div>
+                    <div className="text-[11px] text-slate-500 font-bold">{formatKey(String(row.off_date).slice(0, 10))} · {row.reason}</div>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" onClick={() => decideLeader(row.day_off_id, 'approve')} className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-black">Setujui</button>
+                      <button type="button" onClick={() => decideLeader(row.day_off_id, 'reject')} className="flex-1 py-2 rounded-xl bg-white border border-rose-200 text-rose-600 text-[11px] font-black">Tolak</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {selectedDate && !loading && (
             <div className="mx-4 mt-3 relative z-10 animate-fade-in">
               {selectedRecord ? (
@@ -503,11 +646,11 @@ export default function History() {
 
                   {selectedRecord.kind === 'libur_pengajuan' && (
                     <div className="bg-purple-50/70 rounded-[14px] p-3 mt-1 border border-purple-100">
-                      <span className="text-[12px] text-purple-800 font-bold block">Menunggu persetujuan admin</span>
+                      <span className="text-[12px] text-purple-800 font-bold block">{selectedRecord.label}</span>
                       {selectedRecord.reason && (
                         <span className="text-[10.5px] text-purple-600 font-medium block mt-1">{selectedRecord.reason}</span>
                       )}
-                      {selectedRecord.day_off_id && (
+                      {selectedRecord.day_off_status === 'pengajuan' && selectedRecord.day_off_id && (
                         <button
                           onClick={() => cancelDayOff(selectedRecord.day_off_id)}
                           className="mt-3 w-full py-2 rounded-xl bg-white border border-red-200 text-red-600 text-[11px] font-black flex items-center justify-center gap-1.5"
@@ -517,6 +660,9 @@ export default function History() {
                       )}
                     </div>
                   )}
+                  <div className="mt-3">
+                    <OutletBoard board={outletBoard} />
+                  </div>
 
                   {(selectedRecord.kind === 'leave' || selectedRecord.kind === 'tidak_masuk') && (
                     <div className="bg-red-50 rounded-[16px] p-3 text-center mt-1 border border-red-100">
@@ -538,31 +684,21 @@ export default function History() {
                   <span className="text-[12px] text-slate-500 font-bold block text-center mb-3">
                     Belum ada data absensi untuk tanggal ini.
                   </span>
-                  {outletMates.length > 0 && (
-                    <div className="mb-3 text-left">
-                      <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block mb-1.5">
-                        Libur di cabang ini
-                      </span>
-                      <div className="flex flex-col gap-1.5">
-                        {outletMates.map((mate) => (
-                          <div key={mate.employee_id} className="flex items-center justify-between gap-2 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2">
-                            <span className="text-[12px] font-black text-slate-800 truncate">{mate.name}</span>
-                            <span className={`text-[10px] font-bold shrink-0 ${mate.status === 'disetujui' ? 'text-emerald-700' : 'text-purple-700'}`}>
-                              {mate.status === 'disetujui' ? 'Disetujui' : 'Pengajuan'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {canRequestDayOff && (
+                  {canRequestDayOff ? (
                     <button
                       onClick={openRequestModal}
-                      className="w-full py-3 rounded-2xl bg-purple-600 text-white text-[12.5px] font-black shadow-md shadow-purple-500/25 flex items-center justify-center gap-2"
+                      className="w-full mb-3 py-3 rounded-2xl bg-purple-600 text-white text-[12.5px] font-black shadow-md shadow-purple-500/25 flex items-center justify-center gap-2"
                     >
                       <Palmtree className="w-4 h-4" /> Permintaan Libur
                     </button>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 font-bold text-center mb-3">
+                      {requestWindow
+                        ? `Pengajuan tanggal ${openDay} hanya untuk ${formatKey(requestWindow.start)} – ${formatKey(requestWindow.end)}.`
+                        : `Pengajuan libur hanya dibuka tanggal ${openDay}.`}
+                    </p>
                   )}
+                  <OutletBoard board={outletBoard} />
                 </div>
               )}
             </div>
@@ -589,10 +725,15 @@ export default function History() {
                 const d = new Date(`${String(row.off_date).slice(0, 10)}T12:00:00`);
                 const dayNum = d.getDate();
                 const dayName = DAYS[d.getDay()];
-                const isApproved = row.status === 'disetujui';
+                const statusLabel = {
+                  disetujui: 'Jadwal Libur',
+                  disetujui_leader: 'Disetujui leader',
+                  ditolak_leader: 'Ditolak leader',
+                  pengajuan: 'Menunggu leader'
+                }[row.status] || 'Pengajuan Libur';
                 const rec = mapDayRecord({
-                  kind: isApproved ? 'libur' : 'libur_pengajuan',
-                  label: isApproved ? 'Jadwal Libur' : 'Pengajuan Libur',
+                  kind: row.status === 'disetujui' ? 'libur' : 'libur_pengajuan',
+                  label: statusLabel,
                   reason: row.reason
                 });
                 return (
@@ -703,7 +844,7 @@ export default function History() {
                 value={requestReason}
                 onChange={(e) => setRequestReason(e.target.value)}
                 rows={4}
-                placeholder="Contoh : Libur tahun baru keluarga"
+                placeholder="Contoh : Pulang Kampung"
                 className="w-full rounded-2xl border border-slate-200 p-3 text-[13px] font-medium text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400/40"
               />
               <AlertModal message={requestError} onClose={() => setRequestError('')} />

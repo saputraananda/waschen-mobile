@@ -1,4 +1,4 @@
-import { myWaschenPool } from '../../db/pool.js';
+import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { emitDataChange } from '../../socket/io.js';
 import { toWibDateKey, formatWibTime } from '../../utils/wib.js';
 import { cutoffFor, currentCutoff } from '../../utils/kasbonLimit.js';
@@ -9,7 +9,36 @@ const leaveLabel = (type) => {
   return 'Izin';
 };
 
-const dayOffLabel = (status) => (status === 'pengajuan' ? 'Pengajuan Libur' : 'Jadwal Libur');
+const QUOTA_STATUSES = ['pengajuan', 'disetujui_leader', 'disetujui'];
+const VISIBLE_STATUSES = ['pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui'];
+
+const dayOffLabel = (status) => {
+  if (status === 'pengajuan') return 'Menunggu leader';
+  if (status === 'disetujui_leader') return 'Disetujui leader';
+  if (status === 'ditolak_leader') return 'Ditolak leader';
+  if (status === 'disetujui') return 'Jadwal Libur';
+  return 'Jadwal Libur';
+};
+
+/** Pengajuan hanya di tanggal rules (default 20). Periode tetap 26 s/d 25. */
+export function requestPeriodOnDay(todayKey, openDay = 20) {
+  const day = Number(openDay);
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  const [y, m, d] = String(todayKey || '').split('-').map(Number);
+  if (d !== day || !y || !m) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  let startY = y;
+  let startM = m;
+  if (day >= 26) {
+    startM += 1;
+    if (startM > 12) { startM = 1; startY += 1; }
+  }
+  const start = `${startY}-${pad(startM)}-26`;
+  let endM = startM + 1;
+  let endY = startY;
+  if (endM > 12) { endM = 1; endY += 1; }
+  return { start, end: `${endY}-${pad(endM)}-25`, openDay: day };
+}
 
 /** Expand date range inclusive → array of YYYY-MM-DD */
 const expandDateRange = (start, end) => {
@@ -43,14 +72,16 @@ const buildPhotoUrl = (req, photoPath, photoName) => {
 
 async function getDayOffPolicy() {
   const [rows] = await myWaschenPool.query(
-    `SELECT max_days_per_month, min_notice_days, allow_past_date_request
+    `SELECT max_days_per_month, min_notice_days, allow_past_date_request, request_open_day
      FROM mst_day_off_policy WHERE is_active = 1
      ORDER BY policy_id ASC LIMIT 1`
   );
-  return rows[0] || { max_days_per_month: 4, min_notice_days: 1, allow_past_date_request: 0 };
+  const row = rows[0] || { max_days_per_month: 4, min_notice_days: 1, allow_past_date_request: 0, request_open_day: 20 };
+  const openDay = Number(row.request_open_day);
+  return { ...row, request_open_day: openDay >= 1 && openDay <= 31 ? openDay : 20 };
 }
 
-async function countDayOffInRange(employeeId, start, end, statuses = ['pengajuan', 'disetujui']) {
+async function countDayOffInRange(employeeId, start, end, statuses = QUOTA_STATUSES) {
   const [rows] = await myWaschenPool.query(
     `SELECT COUNT(*) AS cnt FROM tr_employee_day_off
      WHERE employee_id = ? AND off_date BETWEEN ? AND ?
@@ -98,7 +129,7 @@ export const getCalendar = async (req, res) => {
         `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at
          FROM tr_employee_day_off
          WHERE employee_id = ? AND off_date BETWEEN ? AND ?
-           AND status IN ('pengajuan', 'disetujui')`,
+           AND status IN ('pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui')`,
         [employeeId, start, end]
       )
     ]);
@@ -149,10 +180,10 @@ export const getCalendar = async (req, res) => {
       if (!key || key < start || key > end) return;
       if (days[key]?.kind === 'hadir' || days[key]?.kind === 'leave') return;
 
-      const isPending = row.status === 'pengajuan';
+      const isFinal = row.status === 'disetujui';
       days[key] = {
         date: key,
-        kind: isPending ? 'libur_pengajuan' : 'libur',
+        kind: isFinal ? 'libur' : 'libur_pengajuan',
         label: dayOffLabel(row.status),
         reason: row.reason,
         day_off_id: row.day_off_id,
@@ -160,8 +191,8 @@ export const getCalendar = async (req, res) => {
         requested_date: toWibDateKey(row.requested_date),
         source: row.source
       };
-      if (isPending) stats.pengajuan_libur += 1;
-      else stats.libur += 1;
+      if (isFinal) stats.libur += 1;
+      else if (QUOTA_STATUSES.includes(row.status)) stats.pengajuan_libur += 1;
     });
 
     // Hari lampau tanpa absensi / izin / libur → tidak masuk (alpha / lupa absen)
@@ -207,13 +238,15 @@ export const getDayOffs = async (req, res) => {
     const status = req.query.status || 'disetujui';
 
     const { start, end } = cutoffFor(year, month);
-    let statusClause = "status IN ('disetujui', 'pengajuan')";
-    const params = [employeeId, start, end];
+    let statusClause = `status IN (${VISIBLE_STATUSES.map(() => '?').join(',')})`;
+    const params = [employeeId, start, end, ...VISIBLE_STATUSES];
 
     if (status === 'disetujui') {
       statusClause = "status = 'disetujui'";
+      params.length = 3;
     } else if (status === 'pengajuan') {
       statusClause = "status = 'pengajuan'";
+      params.length = 3;
     }
 
     const [rows] = await myWaschenPool.query(
@@ -234,37 +267,66 @@ export const getDayOffs = async (req, res) => {
 
 /**
  * GET /api/history/day-offs/outlet?date=YYYY-MM-DD
- * Karyawan outlet yang sama yang sudah mengajukan / disetujui libur di tanggal itu.
+ * Outlet sendiri di atas, outlet lain dikelompokkan di bawah.
  */
 export const getOutletDayOffs = async (req, res) => {
   try {
     const date = toWibDateKey(req.query.date);
-    const outletId = Number(req.user.assignedOutletId) || 0;
+    const myOutletId = Number(req.user.assignedOutletId) || 0;
     if (!date) {
       return res.status(422).json({ success: false, message: 'Tanggal tidak valid' });
     }
-    if (!outletId) {
-      return res.status(200).json({ success: true, data: [] });
-    }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT d.employee_id, d.status, MIN(r.employee_name) AS employee_name
+      `SELECT d.employee_id, d.status,
+              (SELECT r.outlet_id FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS outlet_id,
+              (SELECT r.employee_name FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS employee_name
        FROM tr_employee_day_off d
-       INNER JOIN mst_role r ON r.employee_id = d.employee_id AND r.outlet_id = ?
-       WHERE d.off_date = ? AND d.status IN ('pengajuan', 'disetujui')
-         AND d.employee_id <> ?
-       GROUP BY d.employee_id, d.status
+       WHERE d.off_date = ? AND d.status IN ('pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui')
        ORDER BY employee_name ASC`,
-      [outletId, date, req.user.employee_id]
+      [date]
     );
+
+    const outletIds = [...new Set(rows.map((r) => Number(r.outlet_id)).filter(Boolean))];
+    const nameById = new Map();
+    if (outletIds.length) {
+      const [outlets] = await mainPool.query(
+        `SELECT id, name, full_name FROM mst_outlet WHERE id IN (${outletIds.map(() => '?').join(',')})`,
+        outletIds
+      );
+      outlets.forEach((o) => nameById.set(Number(o.id), o.name || o.full_name || `Outlet ${o.id}`));
+    }
+
+    const peopleOf = (list) => list.map((row) => ({
+      employee_id: row.employee_id,
+      name: row.employee_name || `Karyawan ${row.employee_id}`,
+      status: row.status,
+      status_label: dayOffLabel(row.status)
+    }));
+
+    const ownRows = rows.filter((r) => Number(r.outlet_id) === myOutletId && myOutletId);
+    const otherIds = [...new Set(rows.map((r) => Number(r.outlet_id)).filter((id) => id && id !== myOutletId))];
+    const others = otherIds.map((id) => ({
+      outlet_id: id,
+      outlet_name: nameById.get(id) || `Outlet ${id}`,
+      people: peopleOf(rows.filter((r) => Number(r.outlet_id) === id))
+    }));
+    const noOutlet = rows.filter((r) => !Number(r.outlet_id));
+    if (noOutlet.length) {
+      others.push({ outlet_id: 0, outlet_name: 'Tanpa outlet', people: peopleOf(noOutlet) });
+    }
+    others.sort((a, b) => String(a.outlet_name).localeCompare(String(b.outlet_name), 'id'));
 
     return res.status(200).json({
       success: true,
-      data: rows.map((row) => ({
-        employee_id: row.employee_id,
-        name: row.employee_name || `Karyawan ${row.employee_id}`,
-        status: row.status
-      }))
+      data: {
+        own: {
+          outlet_id: myOutletId || null,
+          outlet_name: nameById.get(myOutletId) || null,
+          people: peopleOf(ownRows)
+        },
+        others
+      }
     });
   } catch (error) {
     console.error('getOutletDayOffs error:', error);
@@ -294,15 +356,15 @@ export const requestDayOff = async (req, res) => {
 
     const policy = await getDayOffPolicy();
     const today = toWibDateKey(new Date());
-    if (offDate < today && !policy.allow_past_date_request) {
-      return res.status(422).json({ success: false, message: 'Tidak dapat mengajukan libur untuk tanggal lampau' });
+    const openDay = Number(policy.request_open_day) || 20;
+    const window = requestPeriodOnDay(today, openDay);
+    if (!window) {
+      return res.status(422).json({ success: false, message: `Pengajuan libur hanya bisa pada tanggal ${openDay}.` });
     }
-
-    const diffDays = Math.floor((d - new Date(`${today}T12:00:00+07:00`)) / 86400000);
-    if (diffDays >= 0 && diffDays < Number(policy.min_notice_days || 0)) {
+    if (offDate < window.start || offDate > window.end) {
       return res.status(422).json({
         success: false,
-        message: `Pengajuan libur minimal H-${policy.min_notice_days} dari tanggal libur`
+        message: `Pilih tanggal libur antara ${window.start} dan ${window.end}.`
       });
     }
 
@@ -361,7 +423,7 @@ export const requestDayOff = async (req, res) => {
     emitDataChange({ domain: 'history', employeeId, action: 'day_off_request' });
     return res.status(201).json({
       success: true,
-      message: 'Pengajuan libur berhasil dikirim. Menunggu persetujuan admin.',
+      message: 'Pengajuan libur berhasil dikirim. Menunggu persetujuan leader.',
       data: inserted[0]
     });
   } catch (error) {
@@ -422,3 +484,108 @@ export const cancelDayOff = async (req, res) => {
     if (conn) conn.release();
   }
 };
+
+export const listLeaderDayOffs = async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    const [roleRows] = await myWaschenPool.query(
+      'SELECT is_leader, outlet_id FROM mst_role WHERE employee_id = ? AND is_leader = 1 LIMIT 1',
+      [employeeId]
+    );
+    const role = roleRows[0];
+    if (!role || Number(role.is_leader) !== 1 || !role.outlet_id) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT d.day_off_id, d.employee_id, d.off_date, d.reason, MIN(r.employee_name) AS employee_name
+       FROM tr_employee_day_off d
+       INNER JOIN mst_role r ON r.employee_id = d.employee_id AND r.outlet_id = ?
+       WHERE d.status = 'pengajuan' AND d.employee_id <> ?
+       GROUP BY d.day_off_id, d.employee_id, d.off_date, d.reason
+       ORDER BY d.off_date ASC`,
+      [role.outlet_id, employeeId]
+    );
+    return res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({
+        ...row,
+        off_date: toWibDateKey(row.off_date),
+        employee_name: row.employee_name || `Karyawan ${row.employee_id}`
+      }))
+    });
+  } catch (error) {
+    console.error('listLeaderDayOffs error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat pengajuan libur' });
+  }
+};
+
+async function reviewAsLeader(req, res, decision) {
+  let conn;
+  try {
+    const actorId = req.user.employee_id;
+    const id = Number(req.params.id);
+    const note = String(req.body?.note || '').trim();
+    const [roleRows] = await myWaschenPool.query(
+      'SELECT is_leader, outlet_id FROM mst_role WHERE employee_id = ? AND is_leader = 1 LIMIT 1',
+      [actorId]
+    );
+    const role = roleRows[0];
+    if (!role || Number(role.is_leader) !== 1) {
+      return res.status(403).json({ success: false, message: 'Hanya leader cabang yang dapat memutuskan pengajuan ini.' });
+    }
+
+    const [rows] = await myWaschenPool.query(
+      'SELECT * FROM tr_employee_day_off WHERE day_off_id = ?',
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Pengajuan tidak ditemukan' });
+    const row = rows[0];
+    if (Number(row.employee_id) === Number(actorId)) {
+      return res.status(403).json({ success: false, message: 'Tidak dapat memutuskan pengajuan sendiri.' });
+    }
+    if (row.status !== 'pengajuan') {
+      return res.status(409).json({ success: false, message: 'Pengajuan ini sudah diputuskan leader.' });
+    }
+
+    const [owner] = await myWaschenPool.query(
+      'SELECT outlet_id FROM mst_role WHERE employee_id = ? AND outlet_id = ? LIMIT 1',
+      [row.employee_id, role.outlet_id]
+    );
+    if (!owner.length) {
+      return res.status(403).json({ success: false, message: 'Leader hanya dapat memutuskan pengajuan di outlet sendiri.' });
+    }
+
+    const nextStatus = decision === 'approve' ? 'disetujui_leader' : 'ditolak_leader';
+    const action = decision === 'approve' ? 'leader_approve' : 'leader_reject';
+    conn = await myWaschenPool.getConnection();
+    await conn.beginTransaction();
+    await conn.query(
+      `UPDATE tr_employee_day_off
+       SET status = ?, leader_employee_id = ?, leader_note = ?, leader_reviewed_at = NOW()
+       WHERE day_off_id = ? AND status = 'pengajuan'`,
+      [nextStatus, actorId, note || null, id]
+    );
+    await conn.query(
+      `INSERT INTO tr_day_off_change_log
+       (day_off_id, employee_id, action, old_off_date, new_off_date, note, changed_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, row.employee_id, action, row.off_date, row.off_date, note || dayOffLabel(nextStatus), actorId]
+    );
+    await conn.commit();
+    emitDataChange({ domain: 'history', employeeId: row.employee_id, action });
+    return res.json({
+      success: true,
+      message: decision === 'approve' ? 'Pengajuan disetujui leader.' : 'Pengajuan ditolak leader.'
+    });
+  } catch (error) {
+    if (conn) { try { await conn.rollback(); } catch (_) { /* ignore */ } }
+    console.error('reviewAsLeader error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal menyimpan keputusan leader' });
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+export const leaderApproveDayOff = (req, res) => reviewAsLeader(req, res, 'approve');
+export const leaderRejectDayOff = (req, res) => reviewAsLeader(req, res, 'reject');
