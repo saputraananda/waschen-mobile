@@ -270,7 +270,7 @@ export const updateProfile = async (req, res) => {
     const queryParams = [];
 
     const allowedCols = [
-      'full_name', 'gender', 'birth_place', 'birth_date', 'address', 
+      'full_name', 'gender', 'birth_place', 'birth_date', 'blood_type', 'address', 
       'ktp_number', 'phone_number', 'private_email', 'mother_name', 
       'emergency_contact', 'join_date', 'contract_end_date', 
       'education_level_id', 'school_name', 'major_name', 
@@ -279,10 +279,27 @@ export const updateProfile = async (req, res) => {
     ];
 
     for (const col of allowedCols) {
-      if (data[col] !== undefined) {
+      if (data[col] === undefined) continue;
+      if (col === 'blood_type') {
+        const raw = data[col];
+        if (raw == null || String(raw).trim() === '') {
+          updateFields.push(`${col} = ?`);
+          queryParams.push(null);
+          continue;
+        }
+        const v = String(raw).trim().toUpperCase().replace(/\s+/g, '');
+        if (!/^(A|B|AB|O)[+-]?$/.test(v)) {
+          return res.status(422).json({
+            success: false,
+            message: 'Golongan darah tidak valid. Isi A, B, AB, atau O.'
+          });
+        }
         updateFields.push(`${col} = ?`);
-        queryParams.push(data[col] === '' ? null : data[col]);
+        queryParams.push(v);
+        continue;
       }
+      updateFields.push(`${col} = ?`);
+      queryParams.push(data[col] === '' ? null : data[col]);
     }
 
     if (updateFields.length > 0) {

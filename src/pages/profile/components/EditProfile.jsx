@@ -264,7 +264,7 @@ function Section({ title, children }) {
 }
 
 /* ── Text/Date/Select field (standalone, bukan list border-b) ── */
-function FieldRow({ label, name, type = 'text', value, onChange, options, placeholder, error }) {
+function FieldRow({ label, name, type = 'text', value, onChange, options, placeholder, error, maxLength }) {
     // iOS Safari kasih intrinsic width sendiri ke input[type=date] -> wajib appearance-none + min-w-0
     const controlCls = `block w-full min-w-0 max-w-full box-border appearance-none text-[13px] font-semibold text-slate-900 bg-slate-50 border rounded-[12px] px-3 h-[42px] leading-[42px] focus:outline-none focus:ring-2 transition ${
         error
@@ -293,7 +293,9 @@ function FieldRow({ label, name, type = 'text', value, onChange, options, placeh
                     value={value || ''}
                     onChange={e => onChange(name, e.target.value)}
                     placeholder={placeholder || ''}
-                    className={`${controlCls} placeholder:text-slate-300`}
+                    maxLength={maxLength}
+                    autoCapitalize={name === 'blood_type' ? 'characters' : undefined}
+                    className={`${controlCls} placeholder:text-slate-300${name === 'blood_type' ? ' uppercase' : ''}`}
                 />
             )}
             {error && <div className="text-[10.5px] text-red-500 font-semibold mt-1">{error}</div>}
@@ -379,6 +381,7 @@ export default function ProfileEditPage() {
             gender: d.gender || '',
             birth_place: d.birth_place || '',
             birth_date: d.birth_date ? d.birth_date.slice(0, 10) : '',
+            blood_type: d.blood_type || '',
             address: d.address || '',
             ktp_number: d.ktp_number || '',
             phone_number: d.phone_number || '',
@@ -442,6 +445,9 @@ export default function ProfileEditPage() {
         if (name === 'username') {
             next = String(value || '').replace(/\s/g, '').slice(0, 32);
             setUsernameError(null);
+        }
+        if (name === 'blood_type') {
+            next = String(value || '').toUpperCase().replace(/\s+/g, '').slice(0, 3);
         }
         setForm(prev => ({ ...prev, [name]: next }));
         if (name === 'phone_number' || name === 'emergency_contact') {
@@ -696,6 +702,7 @@ export default function ProfileEditPage() {
                         <FieldRow label="Jenis Kelamin" name="gender" value={form.gender} onChange={handleChange} options={GENDER_OPTS} />
                         <FieldRow label="Tempat Lahir" name="birth_place" value={form.birth_place} onChange={handleChange} placeholder="Contoh : Jakarta" />
                         <FieldRow label="Tanggal Lahir" name="birth_date" value={form.birth_date} onChange={handleChange} type="date" />
+                        <FieldRow label="Golongan Darah" name="blood_type" value={form.blood_type} onChange={handleChange} placeholder="Contoh : B" maxLength={3} />
                         <FieldRow label="No. HP" name="phone_number" value={form.phone_number} onChange={handleChange} placeholder="Contoh : 087770597000" error={phoneErrors.phone_number} />
                         <FieldRow label="Email Pribadi" name="private_email" value={form.private_email} onChange={handleChange} placeholder="Contoh : nama@email.com" type="email" />
                         <FieldRow label="No. KTP" name="ktp_number" value={form.ktp_number} onChange={handleChange} placeholder="Contoh : 3174012345678901" />
