@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PauseCircle, Loader2, CheckCircle2, XCircle, X, MessageCircle } from 'lucide-react';
 import {
-  api, formatDateTime, STAGE_LABEL, buildHoldWaLink, isKiloanItem
+  api, formatDateTime, STAGE_LABEL, buildHoldWaLink, downloadPhotoUrls, qcItemLabel
 } from '../../../utils/produksiShared.js';
 import formatName from '../../../utils/FormatName.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
@@ -14,6 +14,7 @@ import { AlertModal } from '../../../components/ConfirmModal.jsx';
 export default function HoldList({ holds, loading, stage, onResolved }) {
   const [resolvingId, setResolvingId] = useState(null);
   const [noteMap, setNoteMap] = useState({});
+  const [waFindings, setWaFindings] = useState({});
   const [error, setError] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
 
@@ -68,7 +69,6 @@ export default function HoldList({ holds, loading, stage, onResolved }) {
       <AlertModal message={error} onClose={() => setError(null)} />
       {holds.map((h) => {
         const fromOtherStage = h.reported_stage && h.reported_stage !== 'frontliner';
-        const kiloan = isKiloanItem(h);
         const showWa = isFrontliner && fromOtherStage && h.customer_phone;
 
         return (
@@ -124,21 +124,35 @@ export default function HoldList({ holds, loading, stage, onResolved }) {
             )}
 
             {showWa && (
-              <a
-                href={buildHoldWaLink(h.customer_phone, {
-                  customerName: h.customer_name,
-                  orderNo: h.order_no,
-                  reportedStage: h.reported_stage,
-                  reportNotes: h.report_notes,
-                  isKiloan: kiloan
-                })}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 w-full py-3 rounded-[14px] bg-emerald-500 text-white text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[.98] transition"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Hubungi Customer via WA
-              </a>
+              <>
+                <textarea
+                  rows={2}
+                  value={waFindings[h.detail_id] !== undefined ? waFindings[h.detail_id] : (h.report_notes || '')}
+                  onChange={(e) => setWaFindings((prev) => ({ ...prev, [h.detail_id]: e.target.value }))}
+                  placeholder="Tulis temuan untuk customer, sesuai catatan tim"
+                  className="mt-3 w-full text-[12px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const finding = (waFindings[h.detail_id] !== undefined ? waFindings[h.detail_id] : (h.report_notes || '')).trim();
+                    if (!finding) {
+                      setError('Isi temuan untuk customer dulu.');
+                      return;
+                    }
+                    const popup = window.open('about:blank', '_blank');
+                    const urls = (h.photos || []).map((p) => p.photo_url).filter(Boolean);
+                    if (urls.length) await downloadPhotoUrls(urls);
+                    const link = buildHoldWaLink(h.customer_phone, finding, qcItemLabel(h));
+                    if (popup) popup.location.href = link;
+                    else window.open(link, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="mt-3 w-full py-3 rounded-[14px] bg-emerald-500 text-white text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[.98] transition"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Hubungi Customer via WA
+                </button>
+              </>
             )}
 
             <input

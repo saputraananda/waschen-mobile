@@ -21,7 +21,9 @@ export default function CameraCaptureModal({
   onCapture,
   onClose,
   initialFacingMode = 'environment',
-  buildOverlayLines = null
+  buildOverlayLines = null,
+  jpegQuality = 0.88,
+  maxEdge = 0
 }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -93,8 +95,11 @@ export default function CameraCaptureModal({
     if (!video?.videoWidth || capturing) return;
     setCapturing(true);
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
+    const srcW = video.videoWidth;
+    const srcH = video.videoHeight;
+    const scale = maxEdge > 0 && srcW > maxEdge ? maxEdge / srcW : 1;
+    const w = Math.round(srcW * scale);
+    const h = Math.round(srcH * scale);
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -111,7 +116,7 @@ export default function CameraCaptureModal({
       setCapturing(false);
       if (!blob) return;
       onCapture(new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' }));
-    }, 'image/jpeg', 0.88);
+    }, 'image/jpeg', jpegQuality);
   };
 
   useLockBodyScroll(open);

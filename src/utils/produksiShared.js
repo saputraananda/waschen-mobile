@@ -1,5 +1,4 @@
 import axios from 'axios';
-import formatName from './FormatName.js';
 
 export const api = axios.create({ baseURL: '/api', timeout: 45000 });
 api.interceptors.request.use((config) => {
@@ -33,41 +32,86 @@ export const formatDateTime = (v) => {
   });
 };
 
-export const getGreeting = () => {
-  const h = Number(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Jakarta',
-      hour: '2-digit',
-      hour12: false
-    }).formatToParts(new Date()).find((p) => p.type === 'hour')?.value || 0
-  );
-  if (h < 11) return 'pagi';
-  if (h < 15) return 'siang';
-  return 'sore';
+export function qcItemLabel(item) {
+  const name = String(item?.service_name || 'Item').trim();
+  const qtyNum = Number(item?.qty);
+  const unit = String(item?.unit || '').trim();
+  const qty = Number.isFinite(qtyNum) && qtyNum > 0
+    ? (Number.isInteger(qtyNum) ? String(qtyNum) : String(qtyNum).replace('.', ','))
+    : '';
+  const prefix = qty && unit ? `${qty} ${unit}` : '';
+  if (!prefix || name.toLowerCase().startsWith(prefix.toLowerCase())) return name;
+  return `${prefix} ${name}`;
+}
+
+export function sortirWaText(notes, itemLabel) {
+  return [
+    'Halo Bapak/Ibu 🙏',
+    '',
+    `Saat proses sortir sebelum pencucian, kami menemukan ${String(notes || '').trim()} pada item`,
+    '',
+    `*${itemLabel}* (foto terlampir).`,
+    '',
+    'Mohon konfirmasinya apakah kami boleh melanjutkan ke proses pencucian dengan kondisi tersebut.',
+    'Jika tidak ada konfirmasi, akan kami lanjutkan ke proses pencucian.',
+    '',
+    'Terima kasih 🙏',
+    '*Total Care For Happy Life*'
+  ].join('\n');
+}
+
+function saveBlob(blobOrUrl, name, revoke) {
+  const a = document.createElement('a');
+  a.href = blobOrUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  if (revoke) setTimeout(() => URL.revokeObjectURL(blobOrUrl), 5000);
+}
+
+export function downloadQcPhotos(photos) {
+  photos.forEach((p, i) => {
+    if (!p?.file) return;
+    const name = photos.length > 1 ? `temuan-${i + 1}.jpg` : 'temuan-qc.jpg';
+    saveBlob(URL.createObjectURL(p.file), name, true);
+  });
+}
+
+export async function downloadPhotoUrls(urls) {
+  const list = (urls || []).filter(Boolean);
+  await Promise.all(list.map(async (url, i) => {
+    const name = list.length > 1 ? `temuan-${i + 1}.jpg` : 'temuan-qc.jpg';
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('foto');
+      saveBlob(URL.createObjectURL(await res.blob()), name, true);
+    } catch {
+      saveBlob(url, name, false);
+    }
+  }));
+}
+
+export function holdWaText(finding, itemLabel) {
+  return [
+    'Halo Bapak/Ibu. Kami dari Waschen Laundry ingin menginformasikan terkait item.',
+    '',
+    `*${itemLabel}*`,
+    '',
+    `Tim kami menemukan kondisi pada cucian kiloan Bapak/Ibu berupa ${String(finding || '').trim()}`,
+    '',
+    'Mohon konfirmasinya, terima kasih 🙏'
+  ].join('\n');
+}
+
+export const buildWaLink = (phone, notes, itemLabel) => {
+  const digits = String(phone || '').replace(/\D/g, '').replace(/^0/, '62');
+  return `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(sortirWaText(notes, itemLabel))}`;
 };
 
-export const buildWaLink = (phone, isKiloan) => {
-  const normalized = String(phone || '').replace(/[^0-9]/g, '').replace(/^0/, '62');
-  let msg = `Selamat ${getGreeting()}, Kak. Saat proses sortir sebelum pencucian, kami menemukan noda/kerusakan pada salah satu cucian ${isKiloan ? 'kiloan ' : ''}Kakak. Berikut foto kondisinya sebagai referensi`;
-  if (isKiloan) {
-    msg += '\n\nUntuk hasil terbaik, kami sarankan cucian ini diproses sebagai layanan satuan agar penanganannya lebih optimal. Apakah Kakak berkenan kami proses sebagai satuan? Mohon konfirmasinya, Kak';
-  }
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
-};
-
-/** Template WA hold list frontliner — temuan dari tahap produksi lain */
-export const buildHoldWaLink = (phone, { customerName, orderNo, reportedStage, reportNotes, isKiloan }) => {
-  const normalized = String(phone || '').replace(/[^0-9]/g, '').replace(/^0/, '62');
-  const team = STAGE_LABEL[reportedStage] || reportedStage || 'Produksi';
-  let msg = `Selamat ${getGreeting()}, Kak ${formatName(customerName) || ''}. Kami dari Waschen ingin menginformasikan terkait nota ${orderNo || '-'}.`;
-  msg += `\n\nTim ${team} kami menemukan kondisi pada cucian ${isKiloan ? 'kiloan ' : ''}Kakak:`;
-  msg += `\n"${reportNotes || 'Temuan pada proses pengerjaan — mohon konfirmasi.'}"`;
-  if (isKiloan) {
-    msg += '\n\nUntuk hasil terbaik, kami sarankan cucian ini diproses sebagai layanan satuan. Apakah Kakak berkenan? Mohon konfirmasinya, Kak.';
-  } else {
-    msg += '\n\nMohon konfirmasinya agar kami dapat melanjutkan proses, Kak. Terima kasih.';
-  }
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
+export const buildHoldWaLink = (phone, finding, itemLabel) => {
+  const digits = String(phone || '').replace(/\D/g, '').replace(/^0/, '62');
+  return `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(holdWaText(finding, itemLabel))}`;
 };
 
 export const STAGE_LABEL = {

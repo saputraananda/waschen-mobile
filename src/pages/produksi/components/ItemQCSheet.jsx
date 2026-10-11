@@ -6,13 +6,43 @@ import {
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import {
-  api, isKiloanItem, buildWaLink, prevBagStagesFor, STAGE_LABEL, bagGap, BAG_ENTRY_STAGES
+  api, isKiloanItem, buildWaLink, downloadQcPhotos, qcItemLabel, prevBagStagesFor, STAGE_LABEL, bagGap, BAG_ENTRY_STAGES
 } from '../../../utils/produksiShared.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import StageBagHistory from './StageBagHistory.jsx';
 import { buildProduksiPhotoLines, burnPhotoOverlay, getCurrentUserName } from '../../../utils/photoStamp.js';
 
 const MAX_PHOTOS = 5;
+const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
+
+const TEMUAN_NOTE = {
+  frontliner: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda tinta di bagian lengan'
+  },
+  washing: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda tinta di bagian lengan'
+  },
+  ironing: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda membandel dibagian dada'
+  },
+  packing: {
+    kiloan: 'Contoh : Ada beberapa baju yang lecak, baju biru, dst.',
+    satuan: 'Contoh : Masih ada noda di kerah kemeja'
+  },
+  delivery: {
+    kiloan: 'Contoh : Packing tidak berurutan dan tidak presisi',
+    satuan: 'Contoh : Packing tidak sempurna, plastik robek sedikit'
+  }
+};
+
+function qcNotePlaceholder(stage, kiloan, status) {
+  if (status !== 'temuan') return 'Boleh Kosong Jika Aman';
+  const row = TEMUAN_NOTE[stage === 'handover' ? 'delivery' : stage] || TEMUAN_NOTE.frontliner;
+  return kiloan ? row.kiloan : row.satuan;
+}
 
 /** Tahap yang bisa dituju saat QC temuan → kembalikan */
 const RETURN_STAGE_OPTIONS = {
@@ -149,7 +179,7 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
     try {
       const finalFile = alreadyStamped
         ? file
-        : await burnPhotoOverlay(file, buildPhotoOverlay());
+        : await burnPhotoOverlay(file, buildPhotoOverlay(), QC_PHOTO);
       pushPhoto(finalFile);
     } catch {
       setError('Gagal memproses foto. Coba lagi.');
@@ -192,6 +222,10 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
   const handleSubmit = async () => {
     setError(null);
 
+    if (qcStatus === 'temuan' && !notes.trim()) {
+      setError('Catatan temuan wajib diisi.');
+      return;
+    }
     if (photos.length === 0) {
       setError(isHandover
         ? 'Serah terima wajib menyertakan minimal 1 foto bukti pengantaran.'
@@ -272,9 +306,9 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
 
   return (
     <>
-      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-safe-overlay" onClick={resetAndClose}>
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={resetAndClose}>
         <div
-          className="w-full max-w-[430px] max-h-safe-sheet bg-white rounded-[20px] overflow-hidden shadow-[0_12px_60px_rgba(0,0,0,.35)] flex flex-col"
+          className="w-full max-w-[430px] max-h-[min(88dvh,760px)] bg-white rounded-[20px] overflow-hidden shadow-[0_12px_60px_rgba(0,0,0,.35)] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
@@ -566,17 +600,13 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
             {/* Catatan */}
             <div>
               <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
-                Catatan {qcStatus === 'aman' && <span className="normal-case font-normal text-slate-500">(opsional)</span>}
+                Catatan{qcStatus === 'temuan' ? ' (Wajib)' : ''}
               </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder={
-                  isHandover
-                    ? (qcStatus === 'temuan' ? 'Contoh : Customer tidak di rumah' : 'Contoh : Diterima customer / ditaruh di satpam')
-                    : (qcStatus === 'temuan' ? 'Contoh : Noda pada kemeja bagian depan' : 'Contoh : Semua item lengkap')
-                }
+                placeholder={qcNotePlaceholder(stage, kiloan, qcStatus)}
                 className="w-full text-[12.5px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none resize-none"
               />
             </div>
@@ -650,16 +680,26 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
             {qcStatus === 'temuan' && !isHandover && (
               <>
                 {stage === 'frontliner' && txn?.customer_phone && (
-                  <a
-                    href={buildWaLink(txn.customer_phone, kiloan)}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => setWaContacted(true)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!notes.trim()) {
+                        setError('Isi catatan temuan dulu.');
+                        return;
+                      }
+                      if (!photos.length) {
+                        setError('Ambil foto temuan dulu. Foto terunduh ke galeri saat WhatsApp dibuka.');
+                        return;
+                      }
+                      downloadQcPhotos(photos);
+                      setWaContacted(true);
+                      window.open(buildWaLink(txn.customer_phone, notes, qcItemLabel(item)), '_blank', 'noopener,noreferrer');
+                    }}
                     className="w-full py-3 rounded-[14px] bg-emerald-500 text-white text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[.98] transition"
                   >
                     <MessageCircle className="w-4 h-4" />
                     Hubungi Customer via WA
-                  </a>
+                  </button>
                 )}
 
                 <div>
@@ -784,6 +824,8 @@ export default function ItemQCSheet({ open, stage, item, txn, onClose, onDone })
         open={cameraOpen}
         title={isHandover ? 'Ambil Foto Serah Terima' : 'Ambil Foto QC'}
         buildOverlayLines={buildPhotoOverlay}
+        jpegQuality={QC_PHOTO.quality}
+        maxEdge={QC_PHOTO.maxEdge}
         onCapture={(file) => { addPhoto(file, { alreadyStamped: true }); setCameraOpen(false); }}
         onClose={() => setCameraOpen(false)}
       />

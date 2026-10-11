@@ -120,10 +120,9 @@ function loadImage(source) {
 }
 
 /** Burn watermark ke file/gambar — dipakai upload galeri */
-export async function burnPhotoOverlay(source, lines) {
+export async function burnPhotoOverlay(source, lines, { maxEdge = 2048, quality = 0.92 } = {}) {
   const img = await loadImage(source);
-  const maxW = 1600;
-  const scale = img.width > maxW ? maxW / img.width : 1;
+  const scale = img.width > maxEdge ? maxEdge / img.width : 1;
   const w = Math.round(img.width * scale);
   const h = Math.round(img.height * scale);
 
@@ -136,7 +135,7 @@ export async function burnPhotoOverlay(source, lines) {
   ctx.drawImage(img, 0, 0, w, h);
   drawTextOverlay(ctx, w, h, lines);
 
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
   if (!blob) throw new Error('Gagal memproses foto');
 
   const baseName = source instanceof File
