@@ -14,7 +14,7 @@ import {
   evaluateNotaForStage,
   STAGE_ITEM_STATUS
 } from '../../../utils/notaScan.js';
-import ItemQCSheet from '../../produksi/components/ItemQCSheet.jsx';
+import ItemQCSheet from '../../produksi/pages/ItemQCSheet.jsx';
 import TransactionDetailModal from '../../produksi/components/TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';
 import ConfirmModal, { AlertModal } from '../../../components/ConfirmModal.jsx';

@@ -7,7 +7,7 @@ import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, Search, Scan
 import { api, STAGES, stageForRole } from '../../../utils/produksiShared.js';
 import { evaluateNotaForStage, STAGE_ITEM_STATUS } from '../../../utils/notaScan.js';
 import TransactionCard from './TransactionCard.jsx';
-import ItemQCSheet from './ItemQCSheet.jsx';
+import ItemQCSheet from '../pages/ItemQCSheet.jsx';
 import HoldList from './HoldList.jsx';
 import TransactionDetailModal from './TransactionDetailModal.jsx';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal.jsx';

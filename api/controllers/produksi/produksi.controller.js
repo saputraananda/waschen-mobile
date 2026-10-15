@@ -79,6 +79,18 @@ const assertSameOutlet = (req, res, rowOutletId) => {
   return true;
 };
 
+/**
+ * Event Haji: nota dibuat di outlet virtual Event (t.outlet_id), tetapi tahap Pencucian dst.
+ * dikerjakan cabang tujuan (d.production_outlet_id). Item event yang belum dibagi (NULL)
+ * tidak muncul di antrean cabang mana pun. Tahap frontliner tetap di outlet Event (via POS).
+ */
+const EFF_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND d.item_work_status <> 'Antrean' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+const HOLD_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+
+/** Outlet tempat tahap tertentu dikerjakan untuk satu item (baris dengan kolom is_event, production_outlet_id, outlet_id). */
+const workOutletOf = (row, stage) =>
+  Number(row.is_event) === 1 && stage !== 'frontliner' ? row.production_outlet_id : row.outlet_id;
+
 const resolveEmployeeName = async (employeeId, fallback) => {
   try {
     const [rows] = await myWaschenPool.query(
@@ -129,7 +141,7 @@ export const getSummary = async (req, res) => {
               COUNT(*) AS item_count
        FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
-       WHERE t.outlet_id = ?
+       WHERE ${EFF_OUTLET_SQL} = ?
          AND d.item_work_status IN ('Antrean','Pencucian','Penyetrikaan','Pengemasan')
        GROUP BY d.item_work_status`,
       [outletId]
@@ -142,7 +154,7 @@ export const getSummary = async (req, res) => {
        JOIN tr_transaction t ON t.id = d.transaction_id
        JOIN tr_item_progress p ON p.transaction_detail_id = d.id
          AND p.status IN ('hold','returned') AND p.hold_resolved_at IS NULL
-       WHERE d.is_on_hold = 1 AND t.outlet_id = ?
+       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_SQL} = ?
        GROUP BY resolver_stage`,
       [outletId]
     );
@@ -185,7 +197,7 @@ export const getList = async (req, res) => {
 
     if (search) {
       const like = `%${search}%`;
-      whereClause = `t.outlet_id = ? AND (
+      whereClause = `${EFF_OUTLET_SQL} = ? AND (
         t.order_no = ? OR t.barcode = ? OR CAST(t.id AS CHAR) = ?
         OR t.order_no LIKE ? OR t.barcode LIKE ?
         OR c.name LIKE ? OR c.phone LIKE ?
@@ -204,7 +216,7 @@ export const getList = async (req, res) => {
         return res.status(422).json({ success: false, message: 'Tahap tidak valid' });
       }
       const stageStatus = STAGE_STATUS[stage];
-      whereClause = 'd.item_work_status = ? AND t.outlet_id = ?';
+      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_SQL} = ?`;
       params = [stageStatus, outletId];
       if (stage === 'frontliner' && date) {
         whereClause += ' AND DATE(t.order_date) = ?';
@@ -218,7 +230,7 @@ export const getList = async (req, res) => {
               t.cashier_employee_id,
               t.total_weight_kg, t.total_pcs, t.work_status, t.order_date,
               t.estimated_finished_at, t.special_notes, t.is_delivery, t.delivery_address,
-              t.delivery_notes,
+              t.delivery_notes, t.is_event, eo.name AS event_name,
               c.name AS customer_name, c.phone AS customer_phone,
               c.full_address, c.address, c.block, c.house_number,
               c.sub_district, c.district, c.city, c.postal_code, c.landmark,
@@ -231,6 +243,7 @@ export const getList = async (req, res) => {
        FROM tr_transaction t
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
+       LEFT JOIN mst_outlet eo ON eo.id = t.outlet_id AND t.is_event = 1
        WHERE ${whereClause}
        ${orderClause}`,
       params
@@ -251,8 +264,9 @@ export const getList = async (req, res) => {
        FROM tr_transaction_detail d
        LEFT JOIN mst_service s ON s.id = d.service_id
        LEFT JOIN mst_service_category cat ON cat.id = s.category_id
-       WHERE d.transaction_id IN (?) AND d.is_production = 1`,
-      [txnIds]
+       WHERE d.transaction_id IN (?) AND d.is_production = 1
+         AND (d.is_event = 0 OR d.production_outlet_id = ?)`,
+      [txnIds, outletId]
     );
 
     // Nama pembuat nota ada di DB lain (waschen.mst_employee), jadi query terpisah.
@@ -302,18 +316,20 @@ export const getTransactionDetail = async (req, res) => {
     const { id } = req.params;
 
     const [txns] = await myWaschenPool.query(
-      `SELECT t.*, c.name AS customer_name, c.phone AS customer_phone
+      `SELECT t.*, c.name AS customer_name, c.phone AS customer_phone, eo.name AS event_name
        FROM tr_transaction t
        LEFT JOIN mst_customer c ON c.id = t.customer_id
+       LEFT JOIN mst_outlet eo ON eo.id = t.outlet_id AND t.is_event = 1
        WHERE t.id = ? LIMIT 1`,
       [id]
     );
     if (txns.length === 0) {
       return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
     }
-    if (!assertSameOutlet(req, res, txns[0].outlet_id)) return;
+    const isEventTxn = Number(txns[0].is_event) === 1;
+    if (!isEventTxn && !assertSameOutlet(req, res, txns[0].outlet_id)) return;
 
-    const [details] = await myWaschenPool.query(
+    let [details] = await myWaschenPool.query(
       `SELECT d.*, s.category_id, cat.code AS category_code
        FROM tr_transaction_detail d
        LEFT JOIN mst_service s ON s.id = d.service_id
@@ -321,6 +337,15 @@ export const getTransactionDetail = async (req, res) => {
        WHERE d.transaction_id = ? AND d.is_production = 1`,
       [id]
     );
+
+    if (isEventTxn) {
+      // Cabang hanya melihat item event yang dibagi ke cabangnya
+      const mine = Number(req.user?.assignedOutletId) || null;
+      details = details.filter((d) => mine && Number(d.production_outlet_id) === mine);
+      if (!details.length) {
+        return res.status(403).json({ success: false, message: 'Data ini milik outlet lain' });
+      }
+    }
 
     const detailIds = details.map((d) => d.id);
     let progress = [];
@@ -512,7 +537,11 @@ export const submitQC = async (req, res) => {
     }
     const detail = detailRows[0];
 
-    if (!assertSameOutlet(req, res, detail.outlet_id)) {
+    // Event: QC awal dikerjakan staf Event (bisa dari outlet mana pun) lewat POS;
+    // tahap berikutnya hanya oleh cabang tujuan.
+    const isEventItem = Number(detail.is_event) === 1;
+    const workOutletId = workOutletOf(detail, stage);
+    if (!(isEventItem && stage === 'frontliner') && !assertSameOutlet(req, res, workOutletId)) {
       await cleanupFiles();
       return;
     }
@@ -591,7 +620,7 @@ export const submitQC = async (req, res) => {
         employeeId,
         employeeName,
         roleUsed,
-        detail.outlet_id,
+        workOutletId,
         qc_status,
         qc_decision,
         qc_decision === 'kembali' ? resolvedReturnStage : null,
@@ -775,11 +804,20 @@ export const submitQC = async (req, res) => {
 
     emitDataChange({
       domain: 'progress',
-      outletId: detail.outlet_id,
+      outletId: workOutletId,
       employeeId,
       action: 'qc',
       meta: { stage, transaction_id: detail.txn_id }
     });
+    if (isEventItem && Number(workOutletId) !== Number(detail.outlet_id)) {
+      emitDataChange({
+        domain: 'progress',
+        outletId: detail.outlet_id,
+        employeeId,
+        action: 'qc',
+        meta: { stage, transaction_id: detail.txn_id }
+      });
+    }
     // Halaman Delivery ikut di-refresh saat item masuk/keluar antrean kurir.
     // 'Siap Diantar' penting: itulah saat nota baru muncul di tab Delivery (hasil QC packing).
     const touchesDelivery =
@@ -838,7 +876,8 @@ export const getHolds = async (req, res) => {
     const [rows] = await myWaschenPool.query(
       `SELECT d.id AS detail_id, d.transaction_id, d.service_name, d.qty, d.unit,
               d.item_work_status, d.has_finding, d.finding_note, d.hold_stage,
-              t.order_no, c.name AS customer_name, c.phone AS customer_phone,
+              t.order_no, t.is_event, eo.name AS event_name,
+              c.name AS customer_name, c.phone AS customer_phone,
               cat.code AS category_code,
               p.id AS progress_id, p.stage AS reported_stage, p.qc_decision, p.returned_to_stage,
               p.notes AS report_notes, p.employee_name AS reported_by, p.created_at AS reported_at,
@@ -846,11 +885,12 @@ export const getHolds = async (req, res) => {
        FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
+       LEFT JOIN mst_outlet eo ON eo.id = t.outlet_id AND t.is_event = 1
        LEFT JOIN mst_service s ON s.id = d.service_id
        LEFT JOIN mst_service_category cat ON cat.id = s.category_id
        JOIN tr_item_progress p ON p.transaction_detail_id = d.id AND p.status IN ('hold','returned')
          AND p.hold_resolved_at IS NULL
-       WHERE d.is_on_hold = 1 AND t.outlet_id = ?
+       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_SQL} = ?
          AND COALESCE(p.returned_to_stage, p.stage) = ?
        ORDER BY p.created_at ASC`,
       [outletId, stage]
@@ -906,7 +946,19 @@ export const resolveHold = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Item tidak ditemukan' });
     }
     const detail = detailRows[0];
-    if (!assertSameOutlet(req, res, detail.outlet_id)) return;
+    let holdResolverStage = 'frontliner';
+    if (Number(detail.is_event) === 1) {
+      const [holdRows] = await myWaschenPool.query(
+        `SELECT COALESCE(returned_to_stage, stage) AS resolver_stage FROM tr_item_progress
+         WHERE transaction_detail_id = ? AND status IN ('hold','returned') AND hold_resolved_at IS NULL
+         ORDER BY id DESC LIMIT 1`,
+        [detailId]
+      );
+      holdResolverStage = holdRows[0]?.resolver_stage || 'frontliner';
+    }
+    const holdWorkOutletId = workOutletOf(detail, holdResolverStage);
+    const holdByEventStand = Number(detail.is_event) === 1 && holdResolverStage === 'frontliner';
+    if (!holdByEventStand && !assertSameOutlet(req, res, holdWorkOutletId)) return;
     if (Number(detail.is_on_hold) !== 1) {
       return res.status(409).json({ success: false, message: 'Item tidak sedang di-hold' });
     }
@@ -963,7 +1015,7 @@ export const resolveHold = async (req, res) => {
 
     emitDataChange({
       domain: 'progress',
-      outletId: detail.outlet_id,
+      outletId: holdWorkOutletId,
       employeeId,
       action: 'resolve_hold',
       meta: { transaction_id: detail.txn_id }
@@ -1008,7 +1060,7 @@ export const getItemBagHistory = async (req, res) => {
     }
 
     const [ownerRows] = await myWaschenPool.query(
-      `SELECT t.outlet_id FROM tr_transaction_detail d
+      `SELECT t.outlet_id, d.is_event, d.production_outlet_id FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
        WHERE d.id = ? LIMIT 1`,
       [detailId]
@@ -1016,7 +1068,14 @@ export const getItemBagHistory = async (req, res) => {
     if (ownerRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Item tidak ditemukan' });
     }
-    if (!assertSameOutlet(req, res, ownerRows[0].outlet_id)) return;
+    const mineOutlet = Number(req.user?.assignedOutletId) || null;
+    const ownsBagHistory =
+      mineOutlet &&
+      (Number(ownerRows[0].outlet_id) === mineOutlet ||
+        (Number(ownerRows[0].is_event) === 1 && Number(ownerRows[0].production_outlet_id) === mineOutlet));
+    if (!ownsBagHistory) {
+      return res.status(403).json({ success: false, message: 'Data ini milik outlet lain' });
+    }
 
     const [rows] = await myWaschenPool.query(
       `SELECT b.bag_no, b.qty_pcs, b.notes,
