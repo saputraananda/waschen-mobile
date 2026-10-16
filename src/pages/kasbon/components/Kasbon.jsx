@@ -320,19 +320,27 @@ export default function Kasbon() {
       setSubmitError('Take Home Pay belum diisi HRD. Pengajuan belum bisa dikirim.');
       return;
     }
-    const ownHold = editTarget && (editTarget.status === 'pengajuan' || editTarget.status === 'proses')
-      ? Number(editTarget.amount_requested) || 0
-      : 0;
-    if (summary && amount > (Number(summary.sisa) || 0) + ownHold) {
-      setSubmitError(`Jumlah melebihi sisa limit (${formatRupiah((Number(summary.sisa) || 0) + ownHold)})`);
-      return;
-    }
     if (form.type === 'pinjaman') {
       const tenor = parseInt(form.tenorCount, 10);
       if (!Number.isInteger(tenor) || tenor < 1 || tenor > 36) {
         setSubmitError('Jumlah termin pinjaman harus 1 sampai 36');
         return;
       }
+    }
+    // Pinjaman hanya menahan limit sebesar termin pertama di cutoff ini (sama dengan backend).
+    const holdOf = (type, total, tenor) => (type === 'pinjaman'
+      ? Math.floor((Number(total) || 0) / Math.max(1, parseInt(tenor, 10) || 1))
+      : Number(total) || 0);
+    const ownHold = editTarget && (editTarget.status === 'pengajuan' || editTarget.status === 'proses')
+      ? holdOf(editTarget.type, editTarget.amount_requested, editTarget.tenor_count)
+      : 0;
+    const charge = holdOf(form.type, amount, form.type === 'pinjaman' ? form.tenorCount : 1);
+    const available = (Number(summary?.sisa) || 0) + ownHold;
+    if (summary && charge > available) {
+      setSubmitError(form.type === 'pinjaman'
+        ? `Cicilan bulan ini (${formatRupiah(charge)}) melebihi sisa limit (${formatRupiah(available)})`
+        : `Jumlah melebihi sisa limit (${formatRupiah(available)})`);
+      return;
     }
 
     setSubmitting(true);

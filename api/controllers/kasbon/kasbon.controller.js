@@ -1,7 +1,7 @@
 import { myWaschenPool } from '../../db/pool.js';
 import { KASBON_UPLOAD_PUBLIC_PATH, deleteKasbonProofFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
-import { buildKasbonSummary } from '../../utils/kasbonLimit.js';
+import { buildKasbonSummary, splitInstallments } from '../../utils/kasbonLimit.js';
 
 const KASBON_TYPES = ['kasbon', 'pinjaman'];
 
@@ -12,13 +12,18 @@ const resolveTenor = (type, raw) => {
   return n;
 };
 
-const assertWithinLimit = async (employeeId, amount, excludeId = null) => {
+// Pinjaman: yang menahan limit cutoff ini hanya termin pertama; termin berikutnya jatuh di cutoff berikutnya.
+const assertWithinLimit = async (employeeId, type, amount, tenor, excludeId = null) => {
   const summary = await buildKasbonSummary(employeeId, excludeId);
   if (!summary.hasSalary) {
     return { ok: false, message: 'Take Home Pay belum diisi HRD. Pengajuan belum bisa dikirim.' };
   }
-  if (amount > summary.sisa) {
-    return { ok: false, message: `Jumlah melebihi sisa limit (Rp ${summary.sisa.toLocaleString('id-ID')}).` };
+  const charge = type === 'pinjaman' ? splitInstallments(amount, tenor)[0] : amount;
+  if (charge > summary.sisa) {
+    const message = type === 'pinjaman'
+      ? `Cicilan bulan ini (Rp ${charge.toLocaleString('id-ID')}) melebihi sisa limit (Rp ${summary.sisa.toLocaleString('id-ID')}).`
+      : `Jumlah melebihi sisa limit (Rp ${summary.sisa.toLocaleString('id-ID')}).`;
+    return { ok: false, message };
   }
   return { ok: true, summary };
 };
@@ -88,8 +93,8 @@ export const getKasbonList = async (req, res) => {
 
 /**
  * GET /api/kasbon/summary
- * Limit = 50% Take Home Pay. Sisa = limit dikurangi pengajuan berjalan dan pokok yang belum lunas.
- * Sekarang = termin belum lunas yang jatuh tempo sampai akhir cutoff berjalan.
+ * Limit = 50% Take Home Pay. Sekarang = beban cutoff berjalan (kasbon penuh + cicilan pinjaman
+ * yang jatuh tempo di cutoff ini, termasuk termin pertama pengajuan). Sisa = Limit - Sekarang.
  */
 export const getKasbonSummary = async (req, res) => {
   try {
@@ -181,7 +186,7 @@ export const submitKasbon = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Jumlah termin pinjaman harus 1 sampai 36' });
     }
-    const limitCheck = await assertWithinLimit(employeeId, amount);
+    const limitCheck = await assertWithinLimit(employeeId, type, amount, tenor);
     if (!limitCheck.ok) {
       await cleanupFile();
       return res.status(422).json({ success: false, message: limitCheck.message });
@@ -273,7 +278,7 @@ export const updateKasbon = async (req, res) => {
       await cleanupFile();
       return res.status(422).json({ success: false, message: 'Jumlah termin pinjaman harus 1 sampai 36' });
     }
-    const limitCheck = await assertWithinLimit(employeeId, amount, id);
+    const limitCheck = await assertWithinLimit(employeeId, type, amount, tenor, id);
     if (!limitCheck.ok) {
       await cleanupFile();
       return res.status(422).json({ success: false, message: limitCheck.message });

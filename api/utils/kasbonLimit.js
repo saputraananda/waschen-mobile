@@ -61,61 +61,73 @@ export async function getEmployeeSalary(employeeId) {
   return rows[0] || null;
 }
 
+/**
+ * Limit dipakai per cutoff: pinjaman hanya menahan cicilan yang jatuh tempo di cutoff ini
+ * (pengajuan pinjaman = termin pertama), bukan sisa pokok. Kasbon tetap penuh.
+ * Sama dengan AloraSuperApp/backend/controllers/MyWaschen/HRIS/kasbonLimit.js.
+ */
 export async function reservedAmount(employeeId, excludeId = null) {
   const exclude = excludeId ? ' AND k.id <> ?' : '';
+  const cutoffEnd = currentCutoff().end;
   const params = excludeId ? [employeeId, excludeId] : [employeeId];
+  const openParams = excludeId ? [employeeId, cutoffEnd, excludeId] : [employeeId, cutoffEnd];
   const [pending] = await myWaschenPool.query(
-    `SELECT COALESCE(SUM(k.amount_requested), 0) AS hold
+    `SELECT k.type, COALESCE(SUM(
+        CASE WHEN k.type = 'pinjaman'
+          THEN FLOOR(k.amount_requested / GREATEST(COALESCE(k.tenor_count, 1), 1))
+          ELSE k.amount_requested END
+      ), 0) AS hold
      FROM tr_kasbon k
-     WHERE k.employee_id = ? AND k.status IN ('pengajuan','proses')${exclude}`,
+     WHERE k.employee_id = ? AND k.status IN ('pengajuan','proses')${exclude}
+     GROUP BY k.type`,
     params
   );
   const [open] = await myWaschenPool.query(
-    `SELECT COALESCE(SUM(p.amount), 0) AS hold
+    `SELECT k.type, COALESCE(SUM(p.amount), 0) AS hold
      FROM tr_kasbon_payment p
      JOIN tr_kasbon k ON k.id = p.kasbon_id
-     WHERE k.employee_id = ? AND k.status = 'disetujui' AND p.status = 'belum'${exclude}`,
-    params
+     WHERE k.employee_id = ? AND k.status = 'disetujui' AND p.status = 'belum'
+       AND (k.type <> 'pinjaman' OR p.due_date <= ?)${exclude}
+     GROUP BY k.type`,
+    openParams
   );
   const [legacy] = await myWaschenPool.query(
-    `SELECT COALESCE(SUM(COALESCE(k.amount_approved, k.amount_requested)), 0) AS hold
+    `SELECT k.type, COALESCE(SUM(
+        CASE WHEN k.type = 'pinjaman'
+          THEN COALESCE(k.installment_amount, FLOOR(COALESCE(k.amount_approved, k.amount_requested) / GREATEST(COALESCE(k.tenor_count, 1), 1)))
+          ELSE COALESCE(k.amount_approved, k.amount_requested) END
+      ), 0) AS hold
      FROM tr_kasbon k
      WHERE k.employee_id = ? AND k.status = 'disetujui'${exclude}
-       AND NOT EXISTS (SELECT 1 FROM tr_kasbon_payment p WHERE p.kasbon_id = k.id)`,
+       AND NOT EXISTS (SELECT 1 FROM tr_kasbon_payment p WHERE p.kasbon_id = k.id)
+     GROUP BY k.type`,
     params
   );
-  return Number(pending[0].hold) + Number(open[0].hold) + Number(legacy[0].hold);
+  const out = { kasbon: 0, pinjaman: 0, total: 0 };
+  for (const bucket of [pending, open, legacy]) {
+    for (const row of bucket) {
+      out[row.type === 'pinjaman' ? 'pinjaman' : 'kasbon'] += Number(row.hold) || 0;
+    }
+  }
+  out.total = out.kasbon + out.pinjaman;
+  return out;
 }
 
+/** Sekarang = beban cutoff berjalan; Sisa = Limit - Sekarang. Bulan berikutnya beban turun sesuai termin. */
 export async function buildKasbonSummary(employeeId, excludeId = null) {
   const emp = await getEmployeeSalary(employeeId);
   const salary = Number(emp?.take_home_pay) || 0;
   const limit = Math.floor(salary / 2);
   const cutoff = currentCutoff();
   const reserved = await reservedAmount(employeeId, excludeId);
-  const exclude = excludeId ? ' AND k.id <> ?' : '';
-  const dueParams = excludeId ? [employeeId, cutoff.end, excludeId] : [employeeId, cutoff.end];
-  const pendingParams = excludeId ? [employeeId, excludeId] : [employeeId];
-  const [dueRows] = await myWaschenPool.query(
-    `SELECT COALESCE(SUM(p.amount), 0) AS due
-     FROM tr_kasbon_payment p
-     JOIN tr_kasbon k ON k.id = p.kasbon_id
-     WHERE k.employee_id = ? AND k.status = 'disetujui'
-       AND p.status = 'belum' AND p.due_date <= ?${exclude}`,
-    dueParams
-  );
-  const [pendingRows] = await myWaschenPool.query(
-    `SELECT COALESCE(SUM(k.amount_requested), 0) AS hold
-     FROM tr_kasbon k
-     WHERE k.employee_id = ? AND k.status IN ('pengajuan','proses')${exclude}`,
-    pendingParams
-  );
   return {
     basicSalary: salary,
     limit,
-    sekarang: (Number(dueRows[0].due) || 0) + (Number(pendingRows[0].hold) || 0),
-    reserved,
-    sisa: Math.max(0, limit - reserved),
+    sekarang: reserved.total,
+    reserved: reserved.total,
+    reservedKasbon: reserved.kasbon,
+    reservedPinjaman: reserved.pinjaman,
+    sisa: Math.max(0, limit - reserved.total),
     cutoffStart: cutoff.start,
     cutoffEnd: cutoff.end,
     hasSalary: salary > 0,
