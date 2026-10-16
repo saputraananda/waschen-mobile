@@ -274,6 +274,8 @@ export const getDayOffs = async (req, res) => {
     const backupNames = await employeeNameMap(rows.map((row) => row.backup_employee_id));
     const data = rows.map((row) => ({
       ...row,
+      off_date: toWibDateKey(row.off_date),
+      requested_date: toWibDateKey(row.requested_date),
       backup_name: row.status === 'disetujui' ? (backupNames.get(Number(row.backup_employee_id)) || null) : null
     }));
 
