@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../../../components/Navbar';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
-import { AlertModal } from '../../../components/ConfirmModal.jsx';
+import ConfirmModal, { AlertModal } from '../../../components/ConfirmModal.jsx';
+import { createPortal } from 'react-dom';
 import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
@@ -238,6 +239,8 @@ export default function History() {
   const [requestReason, setRequestReason] = useState('');
   const [requestLoading, setRequestLoading] = useState(false);
   const [requestError, setRequestError] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const [tempPickerMonth, setTempPickerMonth] = useState(periodNow.monthIndex);
   const [tempPickerYear, setTempPickerYear] = useState(periodNow.year);
@@ -429,13 +432,21 @@ export default function History() {
     }
   };
 
-  const cancelDayOff = async (dayOffId) => {
+  const cancelDayOff = (dayOffId, offDate) => setCancelTarget({ id: dayOffId, offDate });
+
+  const confirmCancelDayOff = async () => {
+    if (!cancelTarget) return;
+    setCancelLoading(true);
     try {
-      await api.delete(`/history/day-off/${dayOffId}`);
+      await api.delete(`/history/day-off/${cancelTarget.id}`);
+      setCancelTarget(null);
       await fetchCalendar();
       await fetchDayOffs();
     } catch (err) {
+      setCancelTarget(null);
       setError(err.response?.data?.message || 'Gagal membatalkan pengajuan');
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -528,6 +539,21 @@ export default function History() {
 
         <div className="w-full relative">
           <AlertModal message={error} onClose={() => setError('')} />
+          {createPortal(
+            <ConfirmModal
+              isOpen={!!cancelTarget}
+              onClose={() => !cancelLoading && setCancelTarget(null)}
+              onConfirm={confirmCancelDayOff}
+              title="Batalkan Pengajuan Libur?"
+              message={`Pengajuan libur tanggal ${cancelTarget?.offDate ? new Date(`${String(cancelTarget.offDate).slice(0, 10)}T12:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'ini'} akan dibatalkan.`}
+              confirmText="Ya, Batalkan"
+              cancelText="Tidak"
+              variant="danger"
+              isLoading={cancelLoading}
+              closeOnOverlayClick={!cancelLoading}
+            />,
+            document.body
+          )}
 
           <div className="mx-4 -mt-6 relative z-20 bg-white rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-3.5 pb-2.5 border-b border-slate-100">
@@ -711,7 +737,7 @@ export default function History() {
                       )}
                       {(selectedRecord.can_cancel ?? selectedRecord.day_off_status === 'pengajuan') && selectedRecord.day_off_id && (
                         <button
-                          onClick={() => cancelDayOff(selectedRecord.day_off_id)}
+                          onClick={() => cancelDayOff(selectedRecord.day_off_id, selectedKey)}
                           className="mt-3 w-full py-2 rounded-xl bg-white border border-red-200 text-red-600 text-[11px] font-black flex items-center justify-center gap-1.5"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Batalkan Pengajuan
@@ -819,7 +845,7 @@ export default function History() {
                       )}
                     </div>
                     {(row.can_cancel ?? row.status === 'pengajuan') && (
-                      <button onClick={() => cancelDayOff(row.day_off_id)} className="p-2 rounded-xl text-red-500 hover:bg-red-50">
+                      <button onClick={() => cancelDayOff(row.day_off_id, row.off_date)} className="p-2 rounded-xl text-red-500 hover:bg-red-50">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
