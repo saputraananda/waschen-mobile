@@ -24,9 +24,18 @@ async function employeeNameMap(ids) {
   return map;
 }
 
-const dayOffLabel = (status) => {
+/** Pengajuan leader sendiri: lewati tahap leader, langsung antre HR. */
+const isSelfLeaderApproved = (row) =>
+  row?.status === 'disetujui_leader' &&
+  Number(row.leader_employee_id) > 0 &&
+  Number(row.leader_employee_id) === Number(row.employee_id);
+
+/** Yang bisa dibatalkan karyawan: masih menunggu leader, atau pengajuan leader yang belum diputuskan HR. */
+const canCancelDayOff = (row) => row?.status === 'pengajuan' || isSelfLeaderApproved(row);
+
+const dayOffLabel = (status, row = null) => {
   if (status === 'pengajuan') return 'Menunggu leader';
-  if (status === 'disetujui_leader') return 'Disetujui leader';
+  if (status === 'disetujui_leader') return isSelfLeaderApproved(row) ? 'Menunggu HR' : 'Disetujui leader';
   if (status === 'ditolak_leader') return 'Ditolak leader';
   if (status === 'disetujui') return 'Jadwal Libur';
   return 'Jadwal Libur';
@@ -138,7 +147,7 @@ export const getCalendar = async (req, res) => {
         [employeeId, end, start]
       ),
       myWaschenPool.query(
-        `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, backup_employee_id
+        `SELECT day_off_id, employee_id, leader_employee_id, off_date, requested_date, reason, status, source, reviewed_at, backup_employee_id
          FROM tr_employee_day_off
          WHERE employee_id = ? AND off_date BETWEEN ? AND ?
            AND status IN ('pengajuan', 'disetujui_leader', 'ditolak_leader', 'disetujui')`,
@@ -197,10 +206,11 @@ export const getCalendar = async (req, res) => {
       days[key] = {
         date: key,
         kind: isFinal ? 'libur' : 'libur_pengajuan',
-        label: dayOffLabel(row.status),
+        label: dayOffLabel(row.status, row),
         reason: row.reason,
         day_off_id: row.day_off_id,
         day_off_status: row.status,
+        can_cancel: canCancelDayOff(row),
         requested_date: toWibDateKey(row.requested_date),
         source: row.source,
         backup_name: isFinal ? (backupNames.get(Number(row.backup_employee_id)) || null) : null
@@ -264,7 +274,7 @@ export const getDayOffs = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT day_off_id, off_date, requested_date, reason, status, source, reviewed_at, created_at, backup_employee_id
+      `SELECT day_off_id, employee_id, leader_employee_id, off_date, requested_date, reason, status, source, reviewed_at, created_at, backup_employee_id
        FROM tr_employee_day_off
        WHERE employee_id = ? AND off_date BETWEEN ? AND ?
          AND ${statusClause}
@@ -276,6 +286,8 @@ export const getDayOffs = async (req, res) => {
       ...row,
       off_date: toWibDateKey(row.off_date),
       requested_date: toWibDateKey(row.requested_date),
+      status_label: dayOffLabel(row.status, row),
+      can_cancel: canCancelDayOff(row),
       backup_name: row.status === 'disetujui' ? (backupNames.get(Number(row.backup_employee_id)) || null) : null
     }));
 
@@ -299,7 +311,7 @@ export const getOutletDayOffs = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT d.employee_id, d.status,
+      `SELECT d.employee_id, d.status, d.leader_employee_id,
               (SELECT r.outlet_id FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS outlet_id,
               (SELECT r.employee_name FROM mst_role r WHERE r.employee_id = d.employee_id ORDER BY r.is_leader DESC, r.outlet_id ASC LIMIT 1) AS employee_name
        FROM tr_employee_day_off d
@@ -322,7 +334,7 @@ export const getOutletDayOffs = async (req, res) => {
       employee_id: row.employee_id,
       name: row.employee_name || `Karyawan ${row.employee_id}`,
       status: row.status,
-      status_label: dayOffLabel(row.status)
+      status_label: dayOffLabel(row.status, row)
     }));
 
     const ownRows = rows.filter((r) => Number(r.outlet_id) === myOutletId && myOutletId);
@@ -417,34 +429,72 @@ export const requestDayOff = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Tanggal ini sudah ada pengajuan izin/sakit/cuti' });
     }
 
+    // Leader tidak perlu menunggu leader: langsung antre konfirmasi HR (admin Alsa)
+    const [leaderRows] = await myWaschenPool.query(
+      'SELECT 1 FROM mst_role WHERE employee_id = ? AND is_leader = 1 LIMIT 1',
+      [employeeId]
+    );
+    const isLeader = leaderRows.length > 0;
+    const newStatus = isLeader ? 'disetujui_leader' : 'pengajuan';
+    const leaderEmployeeId = isLeader ? employeeId : null;
+    const leaderNote = isLeader ? 'Diajukan oleh leader, langsung menunggu HR' : null;
+
     conn = await myWaschenPool.getConnection();
     await conn.beginTransaction();
 
-    const [result] = await conn.query(
-      `INSERT INTO tr_employee_day_off
-       (employee_id, off_date, schedule_year, schedule_month, reason, status, source)
-       VALUES (?, ?, ?, ?, ?, 'pengajuan', 'employee')`,
-      [employeeId, offDate, scheduleYear, scheduleMonth, reasonTrim]
+    // Unique (employee_id, off_date): pengajuan yang pernah dibatalkan dipakai ulang, bukan INSERT baru
+    const [existing] = await conn.query(
+      'SELECT day_off_id, status FROM tr_employee_day_off WHERE employee_id = ? AND off_date = ? LIMIT 1 FOR UPDATE',
+      [employeeId, offDate]
     );
+    let dayOffId;
+    if (existing.length) {
+      if (existing[0].status !== 'dibatalkan') {
+        await conn.rollback();
+        const message = existing[0].status === 'ditolak_leader'
+          ? 'Pengajuan libur di tanggal ini sudah ditolak leader'
+          : 'Tanggal libur ini sudah pernah diajukan';
+        return res.status(409).json({ success: false, message });
+      }
+      dayOffId = existing[0].day_off_id;
+      await conn.query(
+        `UPDATE tr_employee_day_off
+         SET schedule_year = ?, schedule_month = ?, reason = ?, status = ?, source = 'employee',
+             leader_employee_id = ?, leader_note = ?, leader_reviewed_at = IF(? IS NULL, NULL, NOW())
+         WHERE day_off_id = ?`,
+        [scheduleYear, scheduleMonth, reasonTrim, newStatus, leaderEmployeeId, leaderNote, leaderEmployeeId, dayOffId]
+      );
+    } else {
+      const [result] = await conn.query(
+        `INSERT INTO tr_employee_day_off
+         (employee_id, off_date, schedule_year, schedule_month, reason, status, source,
+          leader_employee_id, leader_note, leader_reviewed_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'employee', ?, ?, IF(? IS NULL, NULL, NOW()))`,
+        [employeeId, offDate, scheduleYear, scheduleMonth, reasonTrim, newStatus, leaderEmployeeId, leaderNote, leaderEmployeeId]
+      );
+      dayOffId = result.insertId;
+    }
 
     await conn.query(
       `INSERT INTO tr_day_off_change_log
        (day_off_id, employee_id, action, old_off_date, new_off_date, note, changed_by)
        VALUES (?, ?, 'request', NULL, ?, ?, ?)`,
-      [result.insertId, employeeId, offDate, reasonTrim, employeeId]
+      [dayOffId, employeeId, offDate, reasonTrim, employeeId]
     );
 
     await conn.commit();
 
     const [inserted] = await myWaschenPool.query(
       'SELECT * FROM tr_employee_day_off WHERE day_off_id = ?',
-      [result.insertId]
+      [dayOffId]
     );
 
     emitDataChange({ domain: 'history', employeeId, action: 'day_off_request' });
     return res.status(201).json({
       success: true,
-      message: 'Pengajuan libur berhasil dikirim. Menunggu persetujuan leader.',
+      message: isLeader
+        ? 'Pengajuan libur berhasil dikirim. Menunggu konfirmasi HR.'
+        : 'Pengajuan libur berhasil dikirim. Menunggu persetujuan leader.',
       data: inserted[0]
     });
   } catch (error) {
@@ -476,17 +526,21 @@ export const cancelDayOff = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Pengajuan libur tidak ditemukan' });
     }
     const row = rows[0];
-    if (row.status !== 'pengajuan') {
+    if (!canCancelDayOff(row)) {
       return res.status(409).json({ success: false, message: 'Hanya pengajuan yang masih pending yang bisa dibatalkan' });
     }
 
     conn = await myWaschenPool.getConnection();
     await conn.beginTransaction();
 
-    await conn.query(
-      `UPDATE tr_employee_day_off SET status = 'dibatalkan' WHERE day_off_id = ?`,
-      [id]
+    const [upd] = await conn.query(
+      `UPDATE tr_employee_day_off SET status = 'dibatalkan' WHERE day_off_id = ? AND status = ?`,
+      [id, row.status]
     );
+    if (!upd.affectedRows) {
+      await conn.rollback();
+      return res.status(409).json({ success: false, message: 'Pengajuan ini sudah diproses, tidak bisa dibatalkan' });
+    }
     await conn.query(
       `INSERT INTO tr_day_off_change_log
        (day_off_id, employee_id, action, old_off_date, new_off_date, note, changed_by)

@@ -709,7 +709,7 @@ export default function History() {
                       {selectedRecord.reason && (
                         <span className="text-[10.5px] text-purple-600 font-medium block mt-1">{selectedRecord.reason}</span>
                       )}
-                      {selectedRecord.day_off_status === 'pengajuan' && selectedRecord.day_off_id && (
+                      {(selectedRecord.can_cancel ?? selectedRecord.day_off_status === 'pengajuan') && selectedRecord.day_off_id && (
                         <button
                           onClick={() => cancelDayOff(selectedRecord.day_off_id)}
                           className="mt-3 w-full py-2 rounded-xl bg-white border border-red-200 text-red-600 text-[11px] font-black flex items-center justify-center gap-1.5"
@@ -791,7 +791,7 @@ export default function History() {
                 const d = new Date(`${String(row.off_date).slice(0, 10)}T12:00:00`);
                 const dayNum = d.getDate();
                 const dayName = DAYS[d.getDay()];
-                const statusLabel = {
+                const statusLabel = row.status_label || {
                   disetujui: 'Jadwal Libur',
                   disetujui_leader: 'Disetujui leader',
                   ditolak_leader: 'Ditolak leader',
@@ -818,7 +818,7 @@ export default function History() {
                         <span className="text-[11px] text-sky-700 font-bold block mt-0.5 truncate">Backup: {formatName(row.backup_name)}</span>
                       )}
                     </div>
-                    {row.status === 'pengajuan' && (
+                    {(row.can_cancel ?? row.status === 'pengajuan') && (
                       <button onClick={() => cancelDayOff(row.day_off_id)} className="p-2 rounded-xl text-red-500 hover:bg-red-50">
                         <Trash2 className="w-4 h-4" />
                       </button>
