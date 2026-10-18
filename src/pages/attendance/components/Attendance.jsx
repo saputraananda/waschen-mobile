@@ -35,7 +35,7 @@ import {
 const MAX_DIST_M = 1000;
 const OUT_OF_RANGE_M = 5000;
 // ponytail: satu id hardcoded; pindah ke flag di mst_employee kalau ada karyawan lain.
-const SKIP_GPS_EMPLOYEE_ID = 165;
+const SKIP_GPS_EMPLOYEE_IDS = new Set([165, 163]);
 const NOTE_MAX_LEN = 255;
 const NOTE_QUICK_FILL = ['Shift Siang'];
 const api = axios.create({ baseURL: '/api', timeout: 45000 });
@@ -189,8 +189,8 @@ export default function Attendance() {
     return outlets.find((o) => String(o.id) === String(activeOutletId)) || assignedOutlet;
   }, [activeOutletId, outlets, assignedOutlet]);
 
-  const skipGps = Number(currentUser.employee_id || currentUser.employeeId) === SKIP_GPS_EMPLOYEE_ID
-    || storedEmployeeId() === SKIP_GPS_EMPLOYEE_ID;
+  const skipGps = SKIP_GPS_EMPLOYEE_IDS.has(Number(currentUser.employee_id || currentUser.employeeId))
+    || SKIP_GPS_EMPLOYEE_IDS.has(storedEmployeeId());
   const inZone = gpsDist != null && gpsDist <= MAX_DIST_M;
   const outsideRange = gpsState === 'far';
   const canPunch = timeStatus?.isOpen && (skipGps || ((inZone || outsideRange) && (gpsState === 'ok' || gpsState === 'far')));

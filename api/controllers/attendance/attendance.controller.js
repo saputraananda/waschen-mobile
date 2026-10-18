@@ -13,7 +13,7 @@ import {
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
-const SKIP_GPS_EMPLOYEE_IDS = new Set([165]);
+const SKIP_GPS_EMPLOYEE_IDS = new Set([165, 163]);
 /** >= 5 km dari semua titik absen: absen tetap diterima, foto wajib bertuliskan Diluar Jangkauan. */
 const OUT_OF_RANGE_M = 5000;
 
