@@ -41,12 +41,29 @@ const dayOffLabel = (status, row = null) => {
   return 'Jadwal Libur';
 };
 
+/** Tanggal pengajuan rules: "20", range "18-22", atau custom "1,3,5" → [hari] urut unik ([] kalau tidak valid). */
+export function parseOpenDays(spec) {
+  const days = new Set();
+  for (const part of String(spec ?? '').replace(/\s+/g, '').split(',').filter(Boolean)) {
+    const m = part.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+    if (!m) return [];
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    if (from < 1 || to > 31 || from > to) return [];
+    for (let d = from; d <= to; d += 1) days.add(d);
+  }
+  return [...days].sort((a, b) => a - b);
+}
+
+/** "18-22" → "18–22", "1,3,5" → "1, 3, 5" untuk pesan ke karyawan. */
+const formatOpenDays = (spec) => String(spec).replace(/-/g, '–').replace(/,/g, ', ');
+
 /** Pengajuan hanya di tanggal rules (default 20). Periode tetap 26 s/d 25. */
-export function requestPeriodOnDay(todayKey, openDay = 20) {
-  const day = Number(openDay);
-  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+export function requestPeriodOnDay(todayKey, openDays = '20') {
+  const allowed = parseOpenDays(openDays);
   const [y, m, d] = String(todayKey || '').split('-').map(Number);
-  if (d !== day || !y || !m) return null;
+  if (!allowed.includes(d) || !y || !m) return null;
+  const day = d;
   const pad = (n) => String(n).padStart(2, '0');
   let startY = y;
   let startM = m;
@@ -97,9 +114,9 @@ async function getDayOffPolicy() {
      FROM mst_day_off_policy WHERE is_active = 1
      ORDER BY policy_id ASC LIMIT 1`
   );
-  const row = rows[0] || { max_days_per_month: 4, min_notice_days: 1, allow_past_date_request: 0, request_open_day: 20 };
-  const openDay = Number(row.request_open_day);
-  return { ...row, request_open_day: openDay >= 1 && openDay <= 31 ? openDay : 20 };
+  const row = rows[0] || { max_days_per_month: 4, min_notice_days: 1, allow_past_date_request: 0, request_open_day: '20' };
+  const spec = String(row.request_open_day ?? '').replace(/\s+/g, '');
+  return { ...row, request_open_day: parseOpenDays(spec).length ? spec : '20' };
 }
 
 async function countDayOffInRange(employeeId, start, end, statuses = QUOTA_STATUSES) {
@@ -389,10 +406,10 @@ export const requestDayOff = async (req, res) => {
 
     const policy = await getDayOffPolicy();
     const today = toWibDateKey(new Date());
-    const openDay = Number(policy.request_open_day) || 20;
-    const window = requestPeriodOnDay(today, openDay);
+    const openDays = policy.request_open_day;
+    const window = requestPeriodOnDay(today, openDays);
     if (!window) {
-      return res.status(422).json({ success: false, message: `Pengajuan libur hanya bisa pada tanggal ${openDay}.` });
+      return res.status(422).json({ success: false, message: `Pengajuan libur hanya bisa pada tanggal ${formatOpenDays(openDays)}.` });
     }
     if (offDate < window.start || offDate > window.end) {
       return res.status(422).json({

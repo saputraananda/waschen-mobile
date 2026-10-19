@@ -54,10 +54,27 @@ function cutoffBounds(year, monthIndex) {
   return { startDate, endDate, start: isoFromDate(startDate), end: isoFromDate(endDate) };
 }
 
-function requestPeriodOnDay(todayKey, openDay = 20) {
-  const day = Number(openDay) || 20;
+/** Tanggal pengajuan rules: "20", range "18-22", atau custom "1,3,5" → [hari] urut unik. */
+function parseOpenDays(spec) {
+  const days = new Set();
+  for (const part of String(spec ?? '').replace(/\s+/g, '').split(',').filter(Boolean)) {
+    const m = part.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+    if (!m) return [];
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    if (from < 1 || to > 31 || from > to) return [];
+    for (let d = from; d <= to; d += 1) days.add(d);
+  }
+  return [...days].sort((a, b) => a - b);
+}
+
+const formatOpenDays = (spec) => String(spec).replace(/-/g, '–').replace(/,/g, ', ');
+
+function requestPeriodOnDay(todayKey, openDays = '20') {
+  const allowed = parseOpenDays(openDays);
   const [y, m, d] = String(todayKey || '').split('-').map(Number);
-  if (d !== day || !y || !m) return null;
+  if (!allowed.includes(d) || !y || !m) return null;
+  const day = d;
   const pad = (n) => String(n).padStart(2, '0');
   let startY = y;
   let startM = m;
@@ -277,7 +294,7 @@ export default function History() {
       });
       setCalendarDays(mapped);
       setStats(data.data.stats || { hadir: 0, izin: 0, sakit: 0, cuti: 0, libur: 0, pengajuan_libur: 0, tidak_masuk: 0 });
-      setPolicy(data.data.policy || { max_days_per_month: 4, request_open_day: 20 });
+      setPolicy(data.data.policy || { max_days_per_month: 4, request_open_day: '20' });
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Gagal memuat kalender');
       setCalendarDays({});
@@ -460,8 +477,9 @@ export default function History() {
       .map((row) => String(row.off_date).slice(0, 10))
   );
 
-  const openDay = Number(policy.request_open_day) || 20;
-  const requestWindow = requestPeriodOnDay(todayKey, openDay);
+  const openDays = parseOpenDays(policy.request_open_day).length ? String(policy.request_open_day) : '20';
+  const openDayLabel = formatOpenDays(openDays);
+  const requestWindow = requestPeriodOnDay(todayKey, openDays);
   const canRequestDayOff = Boolean(
     requestWindow &&
     selectedKey &&
@@ -781,8 +799,8 @@ export default function History() {
                   ) : (
                     <p className="text-[11px] text-slate-400 font-bold text-center mb-3">
                       {requestWindow
-                        ? `Pengajuan tanggal ${openDay} hanya untuk ${formatKey(requestWindow.start)} – ${formatKey(requestWindow.end)}.`
-                        : `Pengajuan libur hanya dibuka tanggal ${openDay}.`}
+                        ? `Pengajuan hari ini hanya untuk ${formatKey(requestWindow.start)} – ${formatKey(requestWindow.end)}.`
+                        : `Pengajuan libur hanya dibuka tanggal ${openDayLabel}.`}
                     </p>
                   )}
                   <OutletBoard board={outletBoard} />
