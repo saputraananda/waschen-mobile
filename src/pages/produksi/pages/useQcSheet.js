@@ -37,6 +37,33 @@ export function qcNotePlaceholder(stage, kiloan, status) {
   return kiloan ? row.kiloan : row.satuan;
 }
 
+/** Bentuk state plastik (kg map + lainnya) → payload kg_items untuk API. */
+function bagsToKgItems(bags) {
+  return bags.flatMap((b, i) => [
+    ...Object.entries(b.kg || {})
+      .filter(([, q]) => Number(q) > 0)
+      .map(([id, q]) => ({ bag_no: i + 1, item_kg_id: Number(id), qty_pcs: Number(q) })),
+    ...(b.others || [])
+      .filter((o) => Number(o.qty) > 0)
+      .map((o) => ({ bag_no: i + 1, item_name: o.name.trim(), qty_pcs: Number(o.qty) }))
+  ]);
+}
+
+/** Rincian tersimpan (kg_items API) → state plastik, untuk prefill form Tim Cuci. */
+function kgItemsToBags(kgItems, baseBags = []) {
+  const count = Math.max(baseBags.length, ...kgItems.map((k) => Number(k.bag_no) || 0), 0);
+  return Array.from({ length: count }, (_, i) => {
+    const no = i + 1;
+    const rows = kgItems.filter((k) => Number(k.bag_no) === no);
+    return {
+      bag_no: no,
+      qty_pcs: '',
+      kg: Object.fromEntries(rows.filter((k) => k.item_kg_id).map((k) => [k.item_kg_id, String(k.qty_pcs)])),
+      others: rows.filter((k) => !k.item_kg_id).map((k) => ({ name: k.item_name || '', qty: String(k.qty_pcs) }))
+    };
+  });
+}
+
 const RETURN_STAGE_OPTIONS = {
   washing: ['frontliner'],
   ironing: ['washing', 'frontliner'],
@@ -64,6 +91,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [kgMaster, setKgMaster] = useState([]);
   const [kgHistory, setKgHistory] = useState([]);
+  const [kgSource, setKgSource] = useState(null);
 
   const buildPhotoOverlay = useCallback((date = new Date()) => buildProduksiPhotoLines({
     orderNo: txn?.order_no,
@@ -79,6 +107,8 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   const askIroning = stage === 'frontliner' && !kiloan;
   const needPackings = kiloan && stage === 'packing';
   const needKgItems = kiloan && stage === 'washing';
+  // Frontliner / Pickup Delivery boleh membantu merinci (opsional) saat load Tim Cuci penuh
+  const optionalKg = kiloan && stage === 'frontliner';
   const draftKey = `qc-kg-draft:${item?.id}`;
   const showBagHistory = kiloan && prevBagStagesFor(stage).length > 0;
   const returnStageOptions = RETURN_STAGE_OPTIONS[stage] || ['frontliner'];
@@ -90,18 +120,19 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   }, [open, stage]);
 
   useEffect(() => {
-    if (!open || !needKgItems) return undefined;
+    if (!open || !(needKgItems || optionalKg)) return undefined;
     let cancelled = false;
     api.get('/progress/item-kg')
       .then((res) => { if (!cancelled) setKgMaster(res.data?.data || []); })
       .catch(() => { if (!cancelled) setKgMaster([]); });
     return () => { cancelled = true; };
-  }, [open, needKgItems]);
+  }, [open, needKgItems, optionalKg]);
 
   useEffect(() => {
     if (!open || !item?.id || !kiloan || stage === 'frontliner') {
       setBagHistory([]);
       setKgHistory([]);
+      setKgSource(null);
       return undefined;
     }
 
@@ -110,7 +141,10 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     api.get(`/progress/item/${item.id}/bag-history`)
       .then((res) => {
         if (cancelled) return;
-        setKgHistory(res.data?.kg_items || []);
+        const kgItems = res.data?.kg_items || [];
+        const versions = res.data?.kg_versions || [];
+        setKgHistory(kgItems);
+        setKgSource(versions[versions.length - 1] || null);
         const all = res.data?.data || [];
         const allowed = prevBagStagesFor(stage);
         const filtered = all.filter((h) => allowed.includes(h.stage));
@@ -121,13 +155,16 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
           setBags(latest.bags.map((b) => ({ bag_no: b.bag_no, qty_pcs: '' })));
         }
         if (needKgItems) {
+          let draft = null;
           try {
-            const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
-            if (Array.isArray(draft) && draft.length) setBags(draft);
+            draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
           } catch { /* draft rusak, abaikan */ }
+          if (Array.isArray(draft) && draft.length) setBags(draft);
+          // Sudah dirinci Frontliner/Delivery → form Tim Cuci terisi otomatis, tinggal cek & ubah
+          else if (kgItems.length) setBags(kgItemsToBags(kgItems, latest?.bags || []));
         }
       })
-      .catch(() => { if (!cancelled) { setBagHistory([]); setKgHistory([]); } })
+      .catch(() => { if (!cancelled) { setBagHistory([]); setKgHistory([]); setKgSource(null); } })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
 
     return () => { cancelled = true; };
@@ -192,6 +229,8 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     setBags([{ bag_no: 1, qty_pcs: '' }]);
     setPackings([{ packing_no: 1, qty_pcs: '' }]);
     setBagHistory([]);
+    setKgHistory([]);
+    setKgSource(null);
     setHistoryLoading(false);
     setPhotoPreview(null);
     setError(null);
@@ -227,6 +266,18 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
         setError('Isi jumlah pakaian per plastik (semua plastik).');
         return;
       }
+      if (optionalKg) {
+        const mismatchIdx = bags.findIndex((b) => bagSum(b) > 0 && bagSum(b) !== Number(b.qty_pcs));
+        if (mismatchIdx >= 0) {
+          const b = bags[mismatchIdx];
+          setError(`Plastik ${mismatchIdx + 1}: total rincian (${bagSum(b)}) harus sama dengan jumlah plastik (${Number(b.qty_pcs)}), atau kosongkan rinciannya.`);
+          return;
+        }
+        if (bags.some((b) => (b.others || []).some((o) => Number(o.qty) > 0 && !o.name.trim()))) {
+          setError('Rincian "Lainnya": nama jenis pakaian wajib diisi.');
+          return;
+        }
+      }
     }
     if (needPackings && qcStatus === 'aman') {
       const valid = packings.every((p) => Number(p.qty_pcs) > 0);
@@ -255,15 +306,9 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
           qty_pcs: needKgItems ? bagSum(b) : Number(b.qty_pcs)
         }))));
       }
-      if (needKgItems) {
-        fd.append('kg_items', JSON.stringify(bags.flatMap((b, i) => [
-          ...Object.entries(b.kg || {})
-            .filter(([, q]) => Number(q) > 0)
-            .map(([id, q]) => ({ bag_no: i + 1, item_kg_id: Number(id), qty_pcs: Number(q) })),
-          ...(b.others || [])
-            .filter((o) => Number(o.qty) > 0)
-            .map((o) => ({ bag_no: i + 1, item_name: o.name.trim(), qty_pcs: Number(o.qty) }))
-        ])));
+      if (needKgItems || optionalKg) {
+        const kgItems = bagsToKgItems(bags);
+        if (needKgItems || kgItems.length) fd.append('kg_items', JSON.stringify(kgItems));
       }
       if (needPackings && qcStatus === 'aman') {
         fd.append('packings', JSON.stringify(packings.map((p, i) => ({ packing_no: i + 1, qty_pcs: Number(p.qty_pcs) }))));
@@ -305,6 +350,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     photoPreview, setPhotoPreview,
     kgMaster,
     kgHistory,
+    kgSource,
     kiloan,
     carriedFinding,
     isHandover,
@@ -312,6 +358,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     askIroning,
     needPackings,
     needKgItems,
+    optionalKg,
     showBagHistory,
     returnStageOptions,
     referenceBags,

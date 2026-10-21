@@ -499,7 +499,6 @@ export default function History() {
     }
   };
 
-  const liburUsed = (stats.libur || 0) + (stats.pengajuan_libur || 0);
   const tidakMasukTotal = (stats.izin || 0) + (stats.sakit || 0) + (stats.cuti || 0) + (stats.tidak_masuk || 0);
 
   return (
@@ -619,9 +618,6 @@ export default function History() {
                   Jadwal Backup
                 </button>
               </div>
-              <span className="text-[10px] text-slate-400 font-bold shrink-0">
-                Kuota: {liburUsed}/{policy.max_days_per_month || 4}
-              </span>
             </div>
 
             <div className="px-4 py-2 flex flex-wrap gap-3 text-[9.5px] font-bold text-slate-500 border-b border-slate-50">

@@ -4,6 +4,7 @@ import { formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
 import { STAGE_ITEM_STATUS as STAGE_STATUS } from '../../../utils/notaScan.js';
 import formatName from '../../../utils/FormatName.js';
 import EventBadge from '../../../components/EventBadge.jsx';
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 /**
  * Kartu nota di list progres — header info nota + nested section item yang bisa di-QC
@@ -12,6 +13,7 @@ import EventBadge from '../../../components/EventBadge.jsx';
 export default function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
   const hasFinding = !!txn.has_finding;
   const hasHold = !!txn.has_hold;
+  const place = customerPickLabel({ street: txn.address, block: txn.block, houseNumber: txn.house_number });
 
   const stageItems = (txn.items || []).filter(
     (it) => it.item_work_status === STAGE_STATUS[activeStage]
@@ -36,8 +38,12 @@ export default function TransactionCard({ txn, activeStage, onOpen, onItemClick 
               {hasFinding && <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
               {hasHold && <PauseCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
             </div>
-            <span className="text-[11px] text-slate-400 font-medium block mt-0.5 truncate">
-              {formatName(txn.customer_name) || 'Customer'} · {formatDateTime(txn.order_date)}
+            <span className="text-[13px] font-black text-slate-800 leading-tight block mt-1 truncate">
+              {formatName(txn.customer_name) || 'Customer'}
+              {place && <span className="text-[11px] font-bold text-[#5f1340]"> · {place}</span>}
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+              {formatDateTime(txn.order_date)}
             </span>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" />

@@ -161,7 +161,7 @@ export function BagHistoryBlock({ qc }) {
 
 export function SimpleBags({ qc }) {
   if (!qc.needBags || qc.needKgItems) return null;
-  const { bags, setBags, referenceBags, bagGap, stage } = qc;
+  const { bags, setBags, referenceBags, bagGap, stage, optionalKg, bagSum, kgMaster } = qc;
   return (
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
@@ -170,12 +170,21 @@ export function SimpleBags({ qc }) {
           <span className="normal-case font-normal text-slate-500"> (isi ulang & bandingkan)</span>
         )}
       </label>
+      {optionalKg && (
+        <p className="mb-2 text-[10.5px] font-semibold text-slate-500 leading-snug">
+          Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci). Jika diisi, total rincian per plastik harus sama dengan jumlah plastik.
+        </p>
+      )}
       <div className="flex flex-col gap-2">
         {bags.map((b, i) => {
           const refBag = referenceBags.find((x) => Number(x.bag_no) === i + 1);
           const gap = refBag ? bagGap(b.qty_pcs, refBag.qty_pcs) : null;
+          const patchBag = (fn) => setBags((prev) => prev.map((x, xi) => (xi === i ? fn(x) : x)));
+          const kgSum = optionalKg ? bagSum(b) : 0;
+          const kgMatch = kgSum > 0 && kgSum === Number(b.qty_pcs);
           return (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold text-slate-500 w-[70px] flex-shrink-0">Plastik {i + 1}</span>
               <input
                 type="number"
@@ -202,12 +211,31 @@ export function SimpleBags({ qc }) {
                 </button>
               )}
             </div>
+            {optionalKg && (
+              <details className="group ml-[78px] rounded-xl border border-dashed border-[#5f1340]/30 bg-[#5f1340]/[0.03] overflow-hidden">
+                <summary className="list-none cursor-pointer px-3 py-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-extrabold text-[#5f1340]">Rinci jenis pakaian (opsional)</span>
+                  <span className="flex items-center gap-1.5 text-[10.5px] font-extrabold">
+                    {kgSum > 0 && (
+                      <span className={kgMatch ? 'text-emerald-600' : 'text-amber-600'}>
+                        {kgSum}/{Number(b.qty_pcs) || 0} pcs
+                      </span>
+                    )}
+                    <ChevronDown className="w-4 h-4 text-[#5f1340] transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="border-t border-[#5f1340]/10 bg-white p-2 flex flex-col gap-1.5">
+                  <KgFields bag={b} bagIndex={i} patchBag={patchBag} kgMaster={kgMaster} />
+                </div>
+              </details>
+            )}
+            </div>
           );
         })}
       </div>
       <button
         type="button"
-        onClick={() => setBags((prev) => [...prev, { bag_no: prev.length + 1, qty_pcs: '' }])}
+        onClick={() => setBags((prev) => [...prev, { bag_no: prev.length + 1, qty_pcs: '', kg: {}, others: [] }])}
         className="mt-2 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
       >
         <Plus className="w-3.5 h-3.5" /> Tambah Plastik
@@ -216,14 +244,93 @@ export function SimpleBags({ qc }) {
   );
 }
 
+/** Isian jenis pakaian satu plastik (master + "Lainnya"). Dipakai Tim Cuci & rinci opsional Frontliner. */
+function KgFields({ bag: b, bagIndex: i, patchBag, kgMaster }) {
+  return (
+    <>
+      {kgMaster.map((m) => (
+        <div key={m.id} className="flex items-center justify-between gap-2">
+          <span className="text-[12px] font-semibold text-slate-700 min-w-0 truncate">{m.name}</span>
+          <input
+            type="number"
+            min="0"
+            max="999"
+            inputMode="numeric"
+            placeholder="0"
+            aria-label={`Plastik ${i + 1} ${m.name}`}
+            value={b.kg?.[m.id] ?? ''}
+            onChange={(e) => patchBag((x) => ({ ...x, kg: { ...x.kg, [m.id]: e.target.value } }))}
+            className="w-[64px] flex-shrink-0 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 outline-none text-center"
+          />
+        </div>
+      ))}
+      {(b.others || []).map((o, oi) => {
+        const patchOther = (p) => patchBag((x) => ({ ...x, others: x.others.map((y, yi) => (yi === oi ? { ...y, ...p } : y)) }));
+        return (
+          <div key={`o${oi}`} className="flex items-center gap-2">
+            <input
+              type="text"
+              maxLength={100}
+              placeholder="Lainnya, contoh : Selimut"
+              value={o.name}
+              onChange={(e) => patchOther({ name: e.target.value })}
+              className="flex-1 min-w-0 text-[12px] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 outline-none"
+            />
+            <input
+              type="number"
+              min="0"
+              max="999"
+              inputMode="numeric"
+              placeholder="0"
+              aria-label={`Plastik ${i + 1} lainnya ${oi + 1}`}
+              value={o.qty}
+              onChange={(e) => patchOther({ qty: e.target.value })}
+              className="w-[64px] flex-shrink-0 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 outline-none text-center"
+            />
+            <button
+              type="button"
+              onClick={() => patchBag((x) => ({ ...x, others: x.others.filter((_, yi) => yi !== oi) }))}
+              className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center flex-shrink-0"
+              aria-label={`Hapus lainnya ${oi + 1}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => patchBag((x) => ({ ...x, others: [...(x.others || []), { name: '', qty: '' }] }))}
+        className="self-start pt-1 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
+      >
+        <Plus className="w-3.5 h-3.5" /> Lainnya
+      </button>
+    </>
+  );
+}
+
+/** "Dirinci oleh …" — sumber rincian yang sedang ditampilkan / diprefill. */
+function KgSourceNote({ source }) {
+  if (!source) return null;
+  return (
+    <p className="mb-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-800">
+      Dirinci oleh {STAGE_LABEL[source.stage] || source.stage || '—'}
+      {source.employee_name ? ` · ${formatName(source.employee_name)}` : ''}
+      {source.completed_at ? ` · ${formatDateTime(source.completed_at)}` : ''}
+    </p>
+  );
+}
+
 export function KgBags({ qc }) {
   if (!qc.needKgItems) return null;
-  const { bags, setBags, referenceBags, bagGap, bagSum, kgMaster } = qc;
+  const { bags, setBags, referenceBags, bagGap, bagSum, kgMaster, kgSource } = qc;
   return (
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
         Rincian Plastik & Jenis Pakaian
+        {kgSource && <span className="normal-case font-normal text-slate-500"> (sudah terisi, cek & ubah bila perlu)</span>}
       </label>
+      <KgSourceNote source={kgSource} />
       <div className="flex flex-col gap-2">
         {bags.map((b, i) => {
           const refBag = referenceBags.find((x) => Number(x.bag_no) === i + 1);
@@ -245,64 +352,8 @@ export function KgBags({ qc }) {
                 </span>
               </summary>
               <div className="border-t border-slate-100 p-2 flex flex-col gap-1.5">
-                {kgMaster.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] font-semibold text-slate-700 min-w-0 truncate">{m.name}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="999"
-                      inputMode="numeric"
-                      placeholder="0"
-                      aria-label={`Plastik ${i + 1} ${m.name}`}
-                      value={b.kg?.[m.id] ?? ''}
-                      onChange={(e) => patchBag((x) => ({ ...x, kg: { ...x.kg, [m.id]: e.target.value } }))}
-                      className="w-[64px] flex-shrink-0 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 outline-none text-center"
-                    />
-                  </div>
-                ))}
-                {(b.others || []).map((o, oi) => {
-                  const patchOther = (p) => patchBag((x) => ({ ...x, others: x.others.map((y, yi) => (yi === oi ? { ...y, ...p } : y)) }));
-                  return (
-                    <div key={`o${oi}`} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        maxLength={100}
-                        placeholder="Lainnya, contoh : Selimut"
-                        value={o.name}
-                        onChange={(e) => patchOther({ name: e.target.value })}
-                        className="flex-1 min-w-0 text-[12px] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 outline-none"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="999"
-                        inputMode="numeric"
-                        placeholder="0"
-                        aria-label={`Plastik ${i + 1} lainnya ${oi + 1}`}
-                        value={o.qty}
-                        onChange={(e) => patchOther({ qty: e.target.value })}
-                        className="w-[64px] flex-shrink-0 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 outline-none text-center"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => patchBag((x) => ({ ...x, others: x.others.filter((_, yi) => yi !== oi) }))}
-                        className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center flex-shrink-0"
-                        aria-label={`Hapus lainnya ${oi + 1}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => patchBag((x) => ({ ...x, others: [...(x.others || []), { name: '', qty: '' }] }))}
-                    className="text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Lainnya
-                  </button>
+                <KgFields bag={b} bagIndex={i} patchBag={patchBag} kgMaster={kgMaster} />
+                <div className="flex items-center justify-end pt-1">
                   {bags.length > 1 && (
                     <button
                       type="button"
@@ -334,8 +385,9 @@ export function KgHistory({ qc }) {
   return (
     <div className="flex flex-col gap-2">
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block">
-        Rincian Jenis Pakaian (Tim Cuci)
+        Rincian Jenis Pakaian
       </label>
+      <KgSourceNote source={qc.kgSource} />
       {[...new Set(qc.kgHistory.map((k) => Number(k.bag_no)))].map((no) => {
         const rows = qc.kgHistory.filter((k) => Number(k.bag_no) === no);
         return (

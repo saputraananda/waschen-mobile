@@ -9,6 +9,8 @@ import { emitDataChange } from '../../socket/io.js';
 
 const STAGES = ['frontliner', 'washing', 'ironing', 'packing'];
 const ALL_QC_STAGES = [...STAGES, 'delivery', 'handover'];
+// Tahap yang boleh mengisi rincian jenis pakaian kiloan (frontliner = juga pickup Delivery)
+const KG_ENTRY_STAGES = ['frontliner', 'washing'];
 
 // Mapping tahap → item_work_status yang sedang menunggu di tahap tsb
 const STAGE_STATUS = {
@@ -85,7 +87,22 @@ const assertSameOutlet = (req, res, rowOutletId) => {
  * tidak muncul di antrean cabang mana pun. Tahap frontliner tetap di outlet Event (via POS).
  */
 const EFF_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND d.item_work_status <> 'Antrean' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+/**
+ * Item event yang sudah dibagi tapi belum QC awal (Antrean) tampil di DUA outlet: stand Event
+ * (t.outlet_id) dan cabang tujuan (production_outlet_id), karena barang bisa tiba di cabang
+ * lebih dulu dan QC awal dikerjakan di sana. Siapa pun yang QC duluan menang (cek status di submitQC).
+ * Dipakai sebagai `WHERE ${..._MATCH_SQL}` dengan SATU placeholder `?` = outlet yang melihat.
+ */
+const EFF_OUTLET_MATCH_SQL = `(? IN (
+  ${EFF_OUTLET_SQL},
+  CASE WHEN d.is_event = 1 AND d.item_work_status = 'Antrean' THEN d.production_outlet_id END
+))`;
 const HOLD_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+// Hold tahap frontliner pada item event yang sudah dibagi: terlihat di stand Event dan cabang tujuan.
+const HOLD_OUTLET_MATCH_SQL = `(? IN (
+  ${HOLD_OUTLET_SQL},
+  CASE WHEN d.is_event = 1 THEN d.production_outlet_id END
+))`;
 
 /** Outlet tempat tahap tertentu dikerjakan untuk satu item (baris dengan kolom is_event, production_outlet_id, outlet_id). */
 const workOutletOf = (row, stage) =>
@@ -141,7 +158,7 @@ export const getSummary = async (req, res) => {
               COUNT(*) AS item_count
        FROM tr_transaction_detail d
        JOIN tr_transaction t ON t.id = d.transaction_id
-       WHERE ${EFF_OUTLET_SQL} = ?
+       WHERE ${EFF_OUTLET_MATCH_SQL}
          AND d.item_work_status IN ('Antrean','Pencucian','Penyetrikaan','Pengemasan')
        GROUP BY d.item_work_status`,
       [outletId]
@@ -154,7 +171,7 @@ export const getSummary = async (req, res) => {
        JOIN tr_transaction t ON t.id = d.transaction_id
        JOIN tr_item_progress p ON p.transaction_detail_id = d.id
          AND p.status IN ('hold','returned') AND p.hold_resolved_at IS NULL
-       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_SQL} = ?
+       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_MATCH_SQL}
        GROUP BY resolver_stage`,
       [outletId]
     );
@@ -197,7 +214,7 @@ export const getList = async (req, res) => {
 
     if (search) {
       const like = `%${search}%`;
-      whereClause = `${EFF_OUTLET_SQL} = ? AND (
+      whereClause = `${EFF_OUTLET_MATCH_SQL} AND (
         t.order_no = ? OR t.barcode = ? OR CAST(t.id AS CHAR) = ?
         OR t.order_no LIKE ? OR t.barcode LIKE ?
         OR c.name LIKE ? OR c.phone LIKE ?
@@ -216,7 +233,7 @@ export const getList = async (req, res) => {
         return res.status(422).json({ success: false, message: 'Tahap tidak valid' });
       }
       const stageStatus = STAGE_STATUS[stage];
-      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_SQL} = ?`;
+      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_MATCH_SQL}`;
       params = [stageStatus, outletId];
       if (stage === 'frontliner' && date) {
         whereClause += ' AND DATE(t.order_date) = ?';
@@ -491,8 +508,8 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Format rincian plastik/packing tidak valid' });
     }
-    // Rincian jenis pakaian kiloan (opsional, hanya Tim Cuci)
-    if (!Array.isArray(kgItems) || kgItems.length > 500 || (kgItems.length && stage !== 'washing')) {
+    // Rincian jenis pakaian kiloan: wajib di Tim Cuci, opsional di Frontliner/Delivery (pickup)
+    if (!Array.isArray(kgItems) || kgItems.length > 500 || (kgItems.length && !KG_ENTRY_STAGES.includes(stage))) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Rincian jenis pakaian tidak valid' });
     }
@@ -579,6 +596,25 @@ export const submitQC = async (req, res) => {
         return res.status(422).json({ success: false, message: kgError });
       }
     }
+    // Frontliner/Delivery: rinci opsional per plastik, tapi plastik yang dirinci totalnya wajib cocok
+    if (stage === 'frontliner' && kgItems.length) {
+      const bagNos = new Set(bags.map((b) => Number(b.bag_no)));
+      let kgError = !isKiloan
+        ? 'Rincian jenis pakaian hanya untuk item kiloan'
+        : kgItems.some((k) => !bagNos.has(k.bag_no)) ? 'Rincian jenis pakaian tidak cocok dengan nomor plastik' : null;
+      for (const b of bags) {
+        if (kgError) break;
+        const no = Number(b.bag_no);
+        const sum = kgItems.filter((k) => k.bag_no === no).reduce((s, k) => s + k.qty_pcs, 0);
+        if (sum > 0 && sum !== Number(b.qty_pcs)) {
+          kgError = `Plastik ${no}: total rincian (${sum}) tidak sama dengan jumlah plastik (${Number(b.qty_pcs)})`;
+        }
+      }
+      if (kgError) {
+        await cleanupFiles();
+        return res.status(422).json({ success: false, message: kgError });
+      }
+    }
     if (stage === 'packing' && isKiloan && packings.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian packing' });
@@ -648,9 +684,15 @@ export const submitQC = async (req, res) => {
       );
     }
 
-    // Rincian jenis pakaian kiloan (Tim Cuci) — QC cuci ulang menggantikan rincian lama
-    if (isKiloan && stage === 'washing') {
-      await conn.query('DELETE FROM tr_item_kg_detail WHERE transaction_detail_id = ?', [detail.id]);
+    // Rincian jenis pakaian kiloan — satu versi per tahap (Frontliner & Tim Cuci disimpan
+    // berdampingan sebagai riwayat). QC ulang di tahap yang sama menggantikan versi tahap itu saja.
+    if (isKiloan && KG_ENTRY_STAGES.includes(stage)) {
+      await conn.query(
+        `DELETE k FROM tr_item_kg_detail k
+         JOIN tr_item_progress p ON p.id = k.progress_id
+         WHERE k.transaction_detail_id = ? AND p.stage = ?`,
+        [detail.id, stage]
+      );
       if (kgItems.length > 0) {
         await conn.query(
           'INSERT INTO tr_item_kg_detail (progress_id, transaction_detail_id, bag_no, item_kg_id, item_name, qty_pcs) VALUES ?',
@@ -890,7 +932,7 @@ export const getHolds = async (req, res) => {
        LEFT JOIN mst_service_category cat ON cat.id = s.category_id
        JOIN tr_item_progress p ON p.transaction_detail_id = d.id AND p.status IN ('hold','returned')
          AND p.hold_resolved_at IS NULL
-       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_SQL} = ?
+       WHERE d.is_on_hold = 1 AND ${HOLD_OUTLET_MATCH_SQL}
          AND COALESCE(p.returned_to_stage, p.stage) = ?
        ORDER BY p.created_at ASC`,
       [outletId, stage]
@@ -1109,13 +1151,34 @@ export const getItemBagHistory = async (req, res) => {
       total_pcs: grouped[s].bags.reduce((sum, b) => sum + Number(b.qty_pcs || 0), 0)
     }));
 
-    const [kgItems] = await myWaschenPool.query(
-      `SELECT bag_no, item_kg_id, item_name, qty_pcs FROM tr_item_kg_detail
-       WHERE transaction_detail_id = ? ORDER BY bag_no ASC, id ASC`,
+    // Rincian jenis pakaian per versi (Frontliner/Delivery, Tim Cuci). Versi terbaru = progress terakhir.
+    const [kgRows] = await myWaschenPool.query(
+      `SELECT k.bag_no, k.item_kg_id, k.item_name, k.qty_pcs,
+              k.progress_id, p.stage, p.employee_name, p.completed_at
+       FROM tr_item_kg_detail k
+       LEFT JOIN tr_item_progress p ON p.id = k.progress_id
+       WHERE k.transaction_detail_id = ?
+       ORDER BY k.progress_id ASC, k.bag_no ASC, k.id ASC`,
       [detailId]
     );
+    const kgVersions = [];
+    for (const r of kgRows) {
+      let v = kgVersions[kgVersions.length - 1];
+      if (!v || v.progress_id !== r.progress_id) {
+        v = {
+          progress_id: r.progress_id,
+          stage: r.stage,
+          employee_name: r.employee_name,
+          completed_at: r.completed_at,
+          items: []
+        };
+        kgVersions.push(v);
+      }
+      v.items.push({ bag_no: r.bag_no, item_kg_id: r.item_kg_id, item_name: r.item_name, qty_pcs: r.qty_pcs });
+    }
+    const kgItems = kgVersions.length ? kgVersions[kgVersions.length - 1].items : [];
 
-    return res.status(200).json({ success: true, message: 'OK', data, kg_items: kgItems });
+    return res.status(200).json({ success: true, message: 'OK', data, kg_items: kgItems, kg_versions: kgVersions });
   } catch (error) {
     console.error('getItemBagHistory error:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil riwayat rincian plastik', error: error.message });
