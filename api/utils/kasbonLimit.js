@@ -68,9 +68,10 @@ export async function getEmployeeSalary(employeeId) {
  */
 export async function reservedAmount(employeeId, excludeId = null) {
   const exclude = excludeId ? ' AND k.id <> ?' : '';
-  const cutoffEnd = currentCutoff().end;
+  // Termin cutoff lalu dianggap sudah dipotong gaji walau admin belum menandai lunas.
+  const { start: cutoffStart, end: cutoffEnd } = currentCutoff();
   const params = excludeId ? [employeeId, excludeId] : [employeeId];
-  const openParams = excludeId ? [employeeId, cutoffEnd, excludeId] : [employeeId, cutoffEnd];
+  const openParams = excludeId ? [employeeId, cutoffStart, cutoffEnd, excludeId] : [employeeId, cutoffStart, cutoffEnd];
   const [pending] = await myWaschenPool.query(
     `SELECT k.type, COALESCE(SUM(
         CASE WHEN k.type = 'pinjaman'
@@ -87,7 +88,7 @@ export async function reservedAmount(employeeId, excludeId = null) {
      FROM tr_kasbon_payment p
      JOIN tr_kasbon k ON k.id = p.kasbon_id
      WHERE k.employee_id = ? AND k.status = 'disetujui' AND p.status = 'belum'
-       AND (k.type <> 'pinjaman' OR p.due_date <= ?)${exclude}
+       AND p.due_date >= ? AND (k.type <> 'pinjaman' OR p.due_date <= ?)${exclude}
      GROUP BY k.type`,
     openParams
   );
