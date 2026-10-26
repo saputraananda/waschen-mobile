@@ -9,7 +9,10 @@ import {
   evaluateGroomingStatus,
   timeToMinutes,
   formatHm,
-  getWorkDateNow
+  getWorkDateNow,
+  requiresShift,
+  findShift,
+  DEFAULT_SHIFT_CODE
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
@@ -36,31 +39,68 @@ function wibMinutesOf(value) {
   return hours * 60 + minutes;
 }
 
+async function getEmployeeRole(employeeId) {
+  try {
+    const [rows] = await myWaschenPool.query(
+      'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
+      [employeeId]
+    );
+    return rows[0]?.role || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
- * Catatan masuk wajib bila JAM ABSEN TERCATAT >= 08:00 WIB.
- * Sengaja memakai check_in_time, bukan jam sekarang — karyawan mengisi catatan
- * setelah absen, jadi jam pengisian tidak boleh mengubah kewajiban.
+ * Aturan jam untuk satu absensi.
+ * Frontliner: batas telat = open_time shift, pulang cepat = close_time shift
+ * (shift kosong = Pagi). Role lain: batas telat 08:00, tanpa cek pulang cepat.
  */
-const isCheckInNoteRequired = (checkInTime) => {
-  const min = wibMinutesOf(checkInTime);
-  return min != null && min >= NOTE_REQUIRED_AFTER_MIN;
-};
+async function resolveShiftRule(role, shiftCode) {
+  if (!requiresShift(role)) {
+    return { shift: null, lateAfterMin: NOTE_REQUIRED_AFTER_MIN, lateAfterHm: NOTE_REQUIRED_AFTER_HM, earlyBeforeMin: null, earlyBeforeHm: null };
+  }
+  const cfg = await getTimeMasterConfig();
+  const shift = findShift(cfg.shifts, shiftCode || DEFAULT_SHIFT_CODE) || findShift(cfg.shifts, DEFAULT_SHIFT_CODE);
+  const lateAfterMin = timeToMinutes(shift?.open_time) ?? NOTE_REQUIRED_AFTER_MIN;
+  const earlyBeforeMin = timeToMinutes(shift?.close_time);
+  return {
+    shift,
+    lateAfterMin,
+    lateAfterHm: formatHm(shift?.open_time) || NOTE_REQUIRED_AFTER_HM,
+    earlyBeforeMin,
+    earlyBeforeHm: earlyBeforeMin != null ? formatHm(shift.close_time) : null
+  };
+}
+
+/**
+ * Catatan wajib bila JAM ABSEN TERCATAT melewati batas: masuk >= batas telat,
+ * pulang < jam selesai shift (Frontliner). Sengaja memakai jam tercatat, bukan jam
+ * sekarang — catatan diisi setelah absen.
+ */
+function noteRequirement(punchType, punchTime, rule) {
+  const min = wibMinutesOf(punchTime);
+  if (min == null) return null;
+  if (punchType === 'in' && min >= rule.lateAfterMin) {
+    return `Absen masuk setelah pukul ${rule.lateAfterHm} WIB wajib disertai catatan.`;
+  }
+  // Absen pulang lewat tengah malam (sebelum cutoff work_date) bukan pulang cepat.
+  if (punchType === 'out' && rule.earlyBeforeMin != null && min < rule.earlyBeforeMin && min >= rule.lateAfterMin) {
+    return `Absen pulang sebelum pukul ${rule.earlyBeforeHm} WIB wajib disertai catatan.`;
+  }
+  return null;
+}
 
 /**
  * Validasi + normalisasi catatan absen.
- * Masuk: wajib bila absen masuk lewat 08:00 WIB. Pulang: selalu opsional.
  * @returns {{ ok: true, value: string|null } | { ok: false, message: string }}
  */
-function normalizeNote(raw, { punchType, checkInTime }) {
+function normalizeNote(raw, { punchType, punchTime, rule }) {
   const text = String(raw ?? '').trim().replace(/\s+/g, ' ');
 
   if (!text) {
-    if (punchType === 'in' && isCheckInNoteRequired(checkInTime)) {
-      return {
-        ok: false,
-        message: `Absen masuk setelah pukul ${NOTE_REQUIRED_AFTER_HM} WIB wajib disertai catatan.`
-      };
-    }
+    const required = noteRequirement(punchType, punchTime, rule);
+    if (required) return { ok: false, message: required };
     return { ok: true, value: null };
   }
 
@@ -272,7 +312,7 @@ export const getTodayAttendance = async (req, res) => {
     let rows;
     try {
       [rows] = await myWaschenPool.query(
-        `SELECT attendance_id, outlet_id, work_date,
+        `SELECT attendance_id, outlet_id, work_date, shift_code,
                 check_in_time, check_in_lat, check_in_lng, check_in_photo_path, check_in_photo_name, check_in_note,
                 check_out_time, check_out_lat, check_out_lng, check_out_photo_path, check_out_photo_name, check_out_note,
                 grooming_status, grooming_incomplete_reason, grooming_locked_at
@@ -306,6 +346,20 @@ export const getTodayAttendance = async (req, res) => {
       assignedOutlet = await getOutletById(req.user.assignedOutletId);
     }
 
+    const role = await getEmployeeRole(employeeId);
+    const shiftRequired = requiresShift(role);
+    const cfg = shiftRequired ? await getTimeMasterConfig() : null;
+    const rule = await resolveShiftRule(role, record?.shift_code);
+    const shift = {
+      required: shiftRequired,
+      options: shiftRequired
+        ? cfg.shifts.map((s) => ({ code: s.code, name: s.name, open: formatHm(s.open_time), close: formatHm(s.close_time) }))
+        : [],
+      current: shiftRequired ? (record?.shift_code || null) : null,
+      lateAfter: rule.lateAfterHm,
+      earlyBefore: rule.earlyBeforeHm
+    };
+
     return res.status(200).json({
       success: true,
       message: 'Data absensi hari ini',
@@ -315,7 +369,8 @@ export const getTodayAttendance = async (req, res) => {
         timeStatus,
         assignedOutletId: req.user.assignedOutletId,
         assignedOutlet,
-        maxDistanceM: MAX_DIST_M
+        maxDistanceM: MAX_DIST_M,
+        shift
       }
     });
   } catch (error) {
@@ -441,15 +496,18 @@ export const punchSelfie = async (req, res) => {
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
     const photo_name = req.file.filename;
 
-    let employeeRole = null;
-    try {
-      const [roleRows] = await myWaschenPool.query(
-        'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
-        [employeeId]
-      );
-      employeeRole = roleRows[0]?.role || null;
-    } catch (_) { /* optional */ }
+    const employeeRole = await getEmployeeRole(employeeId);
     const groomingStatus = requiresGrooming(employeeRole) ? 'kosong' : 'tidak_wajib';
+
+    let shiftCode = null;
+    if (punch_type === 'in' && requiresShift(employeeRole)) {
+      const cfg = await getTimeMasterConfig();
+      shiftCode = String(req.body.shift_code || '').trim();
+      if (!findShift(cfg.shifts, shiftCode)) {
+        await cleanupUpload();
+        return res.status(400).json({ success: false, message: 'Pilih shift (Pagi / Siang) sebelum absen masuk.' });
+      }
+    }
 
     const [rows] = await myWaschenPool.query(
       'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
@@ -466,10 +524,10 @@ export const punchSelfie = async (req, res) => {
         try {
           await myWaschenPool.query(
             `INSERT INTO tr_attendance
-             (user_id, employee_id, outlet_id, work_date, check_in_time, check_in_lat, check_in_lng,
+             (user_id, employee_id, outlet_id, work_date, shift_code, check_in_time, check_in_lat, check_in_lng,
               check_in_photo_path, check_in_photo_name, grooming_status)
-             VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
-            [userId, employeeId, outletId, workDate, saveLat, saveLng, photo_path, photo_name, groomingStatus]
+             VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+            [userId, employeeId, outletId, workDate, shiftCode, saveLat, saveLng, photo_path, photo_name, groomingStatus]
           );
         } catch (insErr) {
           if (insErr.code !== 'ER_BAD_FIELD_ERROR') throw insErr;
@@ -485,11 +543,11 @@ export const punchSelfie = async (req, res) => {
         try {
           await myWaschenPool.query(
             `UPDATE tr_attendance
-             SET user_id=?, outlet_id=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?,
+             SET user_id=?, outlet_id=?, shift_code=?, check_in_time=NOW(), check_in_lat=?, check_in_lng=?,
                  check_in_photo_path=?, check_in_photo_name=?, check_in_note=NULL,
                  grooming_status=COALESCE(NULLIF(grooming_status,''), ?)
              WHERE employee_id=? AND work_date=?`,
-            [userId, outletId, saveLat, saveLng, photo_path, photo_name, groomingStatus, employeeId, workDate]
+            [userId, outletId, shiftCode, saveLat, saveLng, photo_path, photo_name, groomingStatus, employeeId, workDate]
           );
         } catch (updErr) {
           if (updErr.code !== 'ER_BAD_FIELD_ERROR') throw updErr;
@@ -588,10 +646,19 @@ export const savePunchNote = async (req, res) => {
     }
 
     const workDate = await getWorkDateNow();
-    const [rows] = await myWaschenPool.query(
-      'SELECT check_in_time, check_out_time FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
-      [employeeId, workDate]
-    );
+    let rows;
+    try {
+      [rows] = await myWaschenPool.query(
+        'SELECT check_in_time, check_out_time, shift_code FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+        [employeeId, workDate]
+      );
+    } catch (colErr) {
+      if (colErr.code !== 'ER_BAD_FIELD_ERROR') throw colErr;
+      [rows] = await myWaschenPool.query(
+        'SELECT check_in_time, check_out_time FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+        [employeeId, workDate]
+      );
+    }
     const rec = rows[0];
     const punchTime = punch_type === 'in' ? rec?.check_in_time : rec?.check_out_time;
     if (!punchTime) {
@@ -601,7 +668,8 @@ export const savePunchNote = async (req, res) => {
       });
     }
 
-    const check = normalizeNote(note, { punchType: punch_type, checkInTime: rec.check_in_time });
+    const rule = await resolveShiftRule(await getEmployeeRole(employeeId), rec.shift_code);
+    const check = normalizeNote(note, { punchType: punch_type, punchTime: punchTime, rule });
     if (!check.ok) {
       return res.status(422).json({ success: false, message: check.message });
     }
@@ -623,6 +691,53 @@ export const savePunchNote = async (req, res) => {
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal menyimpan catatan', error: error.message });
+  }
+};
+
+/**
+ * POST /api/attendance/shift
+ * Body: { shift_code }
+ * Frontliner boleh ganti shift setelah absen masuk, selama belum absen pulang.
+ */
+export const updateShift = async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    if (!requiresShift(await getEmployeeRole(employeeId))) {
+      return res.status(403).json({ success: false, message: 'Pilihan shift hanya untuk Frontliner.' });
+    }
+    const cfg = await getTimeMasterConfig();
+    const shiftCode = String(req.body.shift_code || '').trim();
+    if (!findShift(cfg.shifts, shiftCode)) {
+      return res.status(400).json({ success: false, message: 'Shift tidak valid.' });
+    }
+
+    const workDate = await getWorkDateNow();
+    const [rows] = await myWaschenPool.query(
+      'SELECT check_in_time, check_out_time FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+      [employeeId, workDate]
+    );
+    if (!rows[0]?.check_in_time) {
+      return res.status(400).json({ success: false, message: 'Anda belum absen masuk hari ini.' });
+    }
+    if (rows[0].check_out_time) {
+      return res.status(400).json({ success: false, message: 'Shift tidak bisa diganti setelah absen pulang.' });
+    }
+
+    await myWaschenPool.query(
+      'UPDATE tr_attendance SET shift_code=? WHERE employee_id=? AND work_date=?',
+      [shiftCode, employeeId, workDate]
+    );
+    emitDataChange({ domain: 'attendance', employeeId, action: 'shift' });
+    return res.status(200).json({ success: true, message: 'Shift diperbarui.' });
+  } catch (error) {
+    console.error('updateShift error:', error);
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(500).json({
+        success: false,
+        message: 'Kolom shift belum ada. Jalankan DDL di agent/tr_attendance_shift.sql terlebih dahulu.'
+      });
+    }
+    return res.status(500).json({ success: false, message: 'Gagal mengganti shift', error: error.message });
   }
 };
 

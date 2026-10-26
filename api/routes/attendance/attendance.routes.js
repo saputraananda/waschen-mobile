@@ -11,6 +11,7 @@ import {
   checkLocation,
   punchSelfie,
   savePunchNote,
+  updateShift,
   deletePunch
 } from '../../controllers/attendance/attendance.controller.js';
 import {
@@ -46,6 +47,7 @@ router.post('/punch-selfie', (req, res, next) => {
   });
 }, punchSelfie);
 router.post('/note', savePunchNote);
+router.post('/shift', updateShift);
 router.post('/delete-punch', deletePunch);
 
 router.post('/grooming-photo', (req, res, next) => {

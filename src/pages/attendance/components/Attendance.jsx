@@ -162,6 +162,9 @@ export default function Attendance() {
   const [noteText, setNoteText] = useState('');
   const [noteError, setNoteError] = useState(null);
   const [noteSaving, setNoteSaving] = useState(false);
+  // { mode: 'punch' | 'change' } — pilih shift Frontliner sebelum absen masuk / ganti shift
+  const [shiftPicker, setShiftPicker] = useState(null);
+  const [shiftSaving, setShiftSaving] = useState(false);
 
   const [openingCamera, setOpeningCamera] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -197,8 +200,11 @@ export default function Attendance() {
 
   // Catatan diisi setelah absen tersimpan. Masuk wajib bila JAM ABSEN >= ambang
   // (default 08:00 WIB) — dihitung dari waktu tercatat, bukan waktu mengetik.
-  const noteRequiredAfter = timeStatus?.note?.requiredAfter || '08:00';
+  // Frontliner: ambang mengikuti shift (Pagi 08:00 / Siang 10:30) + cek pulang cepat.
+  const shiftInfo = todayData?.shift;
+  const noteRequiredAfter = shiftInfo?.lateAfter || timeStatus?.note?.requiredAfter || '08:00';
   const noteMaxLength = timeStatus?.note?.maxLength || NOTE_MAX_LEN;
+  const currentShift = shiftInfo?.options?.find((s) => s.code === shiftInfo?.current) || null;
 
   // Grooming wajib (Frontliner / Delivery) yang belum lengkap setelah jam kunci
   // harus diberi alasan sebelum absen pulang.
@@ -432,7 +438,7 @@ export default function Attendance() {
   useEffect(() => () => stopCamera(), [stopCamera]);
 
   useLockBodyScroll(
-    cameraOpen || showOutletModal || !!confirmDelete || !!photoPreview || !!noteModal
+    cameraOpen || showOutletModal || !!confirmDelete || !!photoPreview || !!noteModal || !!shiftPicker
   );
 
   useEffect(() => {
@@ -503,9 +509,14 @@ export default function Attendance() {
       );
     });
 
-  const handlePunch = async (punchType) => {
+  const handlePunch = async (punchType, shiftCode = null) => {
     const setMsg = punchType === 'in' ? setMsgIn : setMsgOut;
     setMsg(null);
+
+    if (punchType === 'in' && shiftInfo?.required && !shiftCode) {
+      setShiftPicker({ mode: 'punch' });
+      return;
+    }
 
     // Frontliner / Delivery: grooming belum lengkap setelah jam kunci wajib beralasan
     // dulu. Backend juga menolak, ini sekadar cegah buka kamera sia-sia.
@@ -551,7 +562,7 @@ export default function Attendance() {
     setNoteText('');
     setNoteError(null);
     setOpeningCamera(true);
-    setPendingCapture({ kind: 'punch', punchType, coord });
+    setPendingCapture({ kind: 'punch', punchType, coord, shiftCode });
     const ok = await openCamera('user');
     setOpeningCamera(false);
     if (!ok) {
@@ -603,19 +614,49 @@ export default function Attendance() {
     await fetchGc();
   };
 
-  /** Buka modal catatan setelah absen tersimpan. Wajib bila jam absen tercatat >= ambang. */
-  const openNoteModal = useCallback((punchType, rec) => {
+  /**
+   * Buka modal catatan setelah absen tersimpan. Wajib bila jam tercatat melewati batas:
+   * masuk >= batas telat, pulang < jam selesai shift (Frontliner). Sama dengan backend.
+   */
+  const openNoteModal = useCallback((punchType, rec, shift = shiftInfo) => {
     const stamp = punchType === 'in' ? rec?.check_in_time : rec?.check_out_time;
     const stampMin = stamp ? wibMinutesOfDay(new Date(stamp)) : wibMinutesOfDay(new Date());
+    const lateAfter = shift?.lateAfter || noteRequiredAfter;
+    const lateMin = hhmmToMinutes(lateAfter, 8 * 60);
+    const earlyMin = shift?.earlyBefore ? hhmmToMinutes(shift.earlyBefore, null) : null;
+    let reason = null;
+    if (punchType === 'in' && stampMin >= lateMin) {
+      reason = `Absen masuk lewat pukul ${lateAfter} WIB — catatan wajib diisi.`;
+    } else if (punchType === 'out' && earlyMin != null && stampMin < earlyMin && stampMin >= lateMin) {
+      reason = `Absen pulang sebelum pukul ${shift.earlyBefore} WIB — catatan wajib diisi.`;
+    }
     setNoteText(
       (punchType === 'in' ? rec?.check_in_note : rec?.check_out_note) || ''
     );
     setNoteError(null);
-    setNoteModal({
-      punchType,
-      required: punchType === 'in' && stampMin >= hhmmToMinutes(noteRequiredAfter, 8 * 60)
-    });
-  }, [noteRequiredAfter]);
+    setNoteModal({ punchType, required: Boolean(reason), reason });
+  }, [noteRequiredAfter, shiftInfo]);
+
+  const chooseShift = async (code) => {
+    if (!shiftPicker || shiftSaving) return;
+    if (shiftPicker.mode === 'punch') {
+      setShiftPicker(null);
+      handlePunch('in', code);
+      return;
+    }
+    setShiftSaving(true);
+    try {
+      await api.post('/attendance/shift', { shift_code: code });
+      await fetchToday();
+      setShiftPicker(null);
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      setShiftPicker(null);
+      setMsgIn({ text: e.response?.data?.message || 'Gagal mengganti shift.', type: 'error' });
+    } finally {
+      setShiftSaving(false);
+    }
+  };
 
   const closeNoteModal = () => {
     if (noteSaving) return;
@@ -629,7 +670,7 @@ export default function Attendance() {
     const trimmed = noteText.trim().replace(/\s+/g, ' ');
 
     if (noteModal.required && !trimmed) {
-      setNoteError(`Absen masuk setelah pukul ${noteRequiredAfter} WIB wajib mengisi catatan.`);
+      setNoteError(noteModal.reason);
       return;
     }
     if (trimmed.length > noteMaxLength) {
@@ -690,13 +731,14 @@ export default function Attendance() {
           form.append('lng', String(coord.lng));
         }
         form.append('outlet_id', String(activeOutletId));
+        if (pendingCapture.shiftCode) form.append('shift_code', pendingCapture.shiftCode);
         form.append('selfie', blob, 'selfie.jpg');
         await api.post('/attendance/punch-selfie', form);
         // Jangan stack AlertModal sukses di atas modal catatan — bikin nested scroll-lock.
         setMsg?.(null);
         const [fresh] = await Promise.all([fetchToday(), fetchGc()]);
         // Absen dulu, baru catatan: modal muncul setelah data tersimpan.
-        openNoteModal(pendingCapture.punchType, fresh?.record);
+        openNoteModal(pendingCapture.punchType, fresh?.record, fresh?.shift);
       } else if (kind === 'grooming') {
         const form = new FormData();
         form.append('step_code', pendingCapture.stepCode);
@@ -1068,6 +1110,23 @@ export default function Attendance() {
                           <div className="text-[10px] text-slate-400 font-medium mt-0.5 text-left">
                             {formatDateFull(record.check_in_time)}
                           </div>
+                        )}
+                        {hasIn && shiftInfo?.required && (
+                          <button
+                            type="button"
+                            onClick={() => !hasOut && setShiftPicker({ mode: 'change' })}
+                            disabled={hasOut}
+                            className="mt-1.5 w-full rounded-lg bg-[#5f1340]/5 border border-[#5f1340]/15 px-2 py-1 text-left transition active:scale-[.98] disabled:active:scale-100"
+                          >
+                            <span className="text-[8.5px] font-extrabold uppercase tracking-wider text-[#5f1340]/60 block">
+                              Shift {!hasOut ? '· ketuk untuk ganti' : ''}
+                            </span>
+                            <span className="text-[10px] font-bold text-[#5f1340] leading-snug">
+                              {currentShift
+                                ? `${currentShift.name} (${currentShift.open}–${currentShift.close})`
+                                : 'Belum dipilih — dianggap Shift Pagi'}
+                            </span>
+                          </button>
                         )}
                         {hasIn && (
                           <button
@@ -1551,6 +1610,51 @@ export default function Attendance() {
           </div>
         </div>
       )}
+      {/* Pilih shift Frontliner — sebelum absen masuk / ganti shift */}
+      {shiftPicker && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-safe-modal">
+          <div className="w-full max-w-[400px] bg-white rounded-[28px] shadow-2xl p-5">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-[15px] font-black text-slate-800">
+                  {shiftPicker.mode === 'punch' ? 'Shift Hari Ini' : 'Ganti Shift'}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  Batas telat mengikuti jam mulai shift.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShiftPicker(null)}
+                disabled={shiftSaving}
+                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                aria-label="Tutup"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="grid gap-2">
+              {(shiftInfo?.options || []).map((s) => (
+                <button
+                  key={s.code}
+                  type="button"
+                  onClick={() => chooseShift(s.code)}
+                  disabled={shiftSaving}
+                  className={`h-[56px] rounded-[14px] border px-4 flex items-center justify-between text-left transition active:scale-[.98] disabled:opacity-50 ${
+                    shiftInfo?.current === s.code
+                      ? 'border-[#5f1340] bg-[#5f1340] text-white'
+                      : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="text-[13px] font-extrabold">{s.name}</span>
+                  <span className="text-[11px] font-bold tabular-nums opacity-80">{s.open}–{s.close}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Catatan absen — muncul SETELAH absen tersimpan */}
       {noteModal && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-safe-modal">
@@ -1561,9 +1665,7 @@ export default function Attendance() {
                   Catatan Absen {noteModal.punchType === 'in' ? 'Masuk' : 'Pulang'}
                 </h3>
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                  {noteModal.required
-                    ? `Absen masuk lewat pukul ${noteRequiredAfter} WIB — catatan wajib diisi.`
-                    : 'Opsional. Boleh dilewati bila tidak ada catatan.'}
+                  {noteModal.reason || 'Opsional. Boleh dilewati bila tidak ada catatan.'}
                 </p>
               </div>
               {!noteModal.required && (

@@ -197,6 +197,18 @@ export function evaluateGroomingStatus(groomingCfg, totalMin) {
   };
 }
 
+/** Hanya Frontliner yang memilih shift saat absen; shift kosong dianggap Pagi. */
+export const SHIFT_ROLE = 'Frontliner';
+export const DEFAULT_SHIFT_CODE = 'pagi';
+
+export function requiresShift(role) {
+  return String(role || '').trim() === SHIFT_ROLE;
+}
+
+export function findShift(shifts, code) {
+  return (shifts || []).find((s) => s.code === code) || null;
+}
+
 export async function getWorkDateNow() {
   const cfg = await getTimeMasterConfig();
   const cutoff = timeToMinutes(cfg.attendance.work_date_cutoff_time) ?? 240;
