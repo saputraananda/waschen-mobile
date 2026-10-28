@@ -78,7 +78,7 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "e959d903617f2ae81062dc598b0373c4"
+    "revision": "d27eb8340130d3bef6dd8f3da42d23f6"
   }, {
     "url": "assets/wib-CeU2UH6I.js",
     "revision": null
@@ -92,58 +92,67 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/scanner-DkfLi4Yi.js",
     "revision": null
   }, {
+    "url": "assets/Sales-C35HY76I.js",
+    "revision": null
+  }, {
     "url": "assets/react-vendor-BfEhFXMG.js",
     "revision": null
   }, {
-    "url": "assets/index-Df6hG8BW.js",
+    "url": "assets/PeriodPicker-Bk3TCu1d.js",
     "revision": null
   }, {
-    "url": "assets/index-Df4d8IRb.js",
+    "url": "assets/index-zdZkdBDr.js",
     "revision": null
   }, {
-    "url": "assets/index-DB0XCZMP.js",
+    "url": "assets/index-YFG5z8_0.js",
     "revision": null
   }, {
-    "url": "assets/index-DAV5lFIg.js",
+    "url": "assets/index-W5F3Gr4L.js",
     "revision": null
   }, {
-    "url": "assets/index-D8NTHQ3b.js",
+    "url": "assets/index-OxlMwZ-g.js",
     "revision": null
   }, {
-    "url": "assets/index-D6r-_stW.js",
+    "url": "assets/index-DPidp7Pn.js",
     "revision": null
   }, {
-    "url": "assets/index-C8QDOBnV.js",
+    "url": "assets/index-DM8-DLnr.js",
     "revision": null
   }, {
-    "url": "assets/index-BuYN7OKP.css",
+    "url": "assets/index-CJNKGQHo.js",
     "revision": null
   }, {
-    "url": "assets/index-BTs76LHn.js",
+    "url": "assets/index-Ce3MgH0D.js",
     "revision": null
   }, {
-    "url": "assets/index-BhLEP_Jp.js",
+    "url": "assets/index-BVVr_y92.css",
     "revision": null
   }, {
-    "url": "assets/index-B73Lb1js.js",
+    "url": "assets/index-B70bTVoW.js",
     "revision": null
   }, {
-    "url": "assets/index-B41jzKQj.js",
+    "url": "assets/index-B0vGiYif.js",
     "revision": null
   }, {
-    "url": "assets/index-3fvYjNVw.js",
+    "url": "assets/index-a6Phy5XT.js",
     "revision": null
   }, {
-    "url": "assets/icons-CPv0T8yY.js",
+    "url": "assets/index-A1o6233v.js",
     "revision": null
   }, {
-    "url": "assets/EditProfile-CNHOCgph.js",
+    "url": "assets/icons-Dpvjgw4u.js",
     "revision": null
   }, {
-    "url": "assets/CameraCaptureModal-DROLX78W.js",
+    "url": "assets/Employee-G4c1sv7R.js",
     "revision": null
   }, {
-    "url": "assets/BarcodeScannerModal-CQCJxc1b.js",
+    "url": "assets/EditProfile-Bu8VoJOa.js",
+    "revision": null
+  }, {
+    "url": "assets/CameraCaptureModal-DUoYLdm6.js",
+    "revision": null
+  }, {
+    "url": "assets/BarcodeScannerModal-DsyHSK3B.js",
     "revision": null
   }, {
     "url": "apple-touch-icon.png",

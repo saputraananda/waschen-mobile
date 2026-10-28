@@ -31,6 +31,20 @@ export const myWaschenPool = mysql.createPool({
   connectTimeout: 10000
 });
 
+// Data penjualan (rekap_transaksi_*, target_sales). Dipakai menu Sales Leader — hanya baca.
+export const smartlinkPool = mysql.createPool({
+  host: process.env.DB_HOST_SMARTLINK || process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT_SMARTLINK) || parseInt(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER_SMARTLINK || process.env.DB_USER || 'root',
+  password: process.env.DB_PASS_SMARTLINK || process.env.DB_PASS || '',
+  database: process.env.DB_NAME_SMARTLINK || 'waschen_smartlink',
+  // Sama dengan ALSA: tanggal dikembalikan sebagai teks "YYYY-MM-DD". Controller Sales memetakan tren per teks tanggal.
+  dateStrings: true,
+  waitForConnections: true,
+  connectionLimit: 3,
+  queueLimit: 0,
+  connectTimeout: 10000
+});
 function holdPool(pool) {
   const raw = pool.pool || pool;
   raw.on('error', (err) => {
@@ -39,3 +53,4 @@ function holdPool(pool) {
 }
 holdPool(mainPool);
 holdPool(myWaschenPool);
+holdPool(smartlinkPool);

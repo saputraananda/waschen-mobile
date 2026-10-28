@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock, Receipt, Package } from 'lucide-react';
+import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock, Receipt, Package, Users, TrendingUp } from 'lucide-react';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 
 function MotorbikeIcon({ className = 'w-5 h-5' }) {
@@ -33,6 +33,7 @@ export default function MenuSection({
 }) {
   const role = getDisplayRole(currentUser);
   const isDeliveryStaff = role === 'Delivery Staff';
+  const isLeader = [1, '1', true].includes(currentUser?.is_leader) || [1, '1', true].includes(currentUser?.isLeader);
   const lockBadge = menusLocked ? (
     <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-black text-rose-700">
       <Lock className="w-2.5 h-2.5" /> Lock
@@ -243,6 +244,64 @@ export default function MenuSection({
             </span>
           </div>
         </button>
+      )}
+
+      {isLeader && (
+        <>
+          <div className="flex justify-between items-center mt-7 mb-3.5 px-1">
+            <h3 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
+              Menu Leader
+            </h3>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              Outlet Anda
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3.5">
+            <button
+              id="menu-leader-employee-btn"
+              type="button"
+              disabled={menusLocked}
+              onClick={() => !menusLocked && onMenuClick('/leader/employee', 'Pantau Karyawan')}
+              className={`bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group ${
+                menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.12)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+              }`}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-sky-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />
+              {lockBadge}
+              <div className="w-10 h-10 rounded-2xl bg-sky-500/10 text-sky-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-[13.5px] font-black text-slate-800 leading-tight">Pantau Karyawan</h4>
+                <span className="text-[10.5px] text-slate-400 font-medium block mt-0.5">
+                  {menusLocked ? 'Tutup lembur dulu' : 'Absensi, telat, izin & libur'}
+                </span>
+              </div>
+            </button>
+
+            <button
+              id="menu-leader-sales-btn"
+              type="button"
+              disabled={menusLocked}
+              onClick={() => !menusLocked && onMenuClick('/leader/sales', 'Sales & Piutang')}
+              className={`bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex flex-col justify-between min-h-[120px] group ${
+                menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(95,19,64,0.12)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+              }`}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-100/70 to-transparent rounded-bl-[40px] pointer-events-none" />
+              {lockBadge}
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-[13.5px] font-black text-slate-800 leading-tight">Sales & Piutang</h4>
+                <span className="text-[10.5px] text-slate-400 font-medium block mt-0.5">
+                  {menusLocked ? 'Tutup lembur dulu' : 'Capaian & piutang outlet'}
+                </span>
+              </div>
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

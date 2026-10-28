@@ -16,6 +16,8 @@ const Payslip = lazy(() => import('./pages/payslip/index.jsx'));
 const Produksi = lazy(() => import('./pages/produksi/index.jsx'));
 const Delivery = lazy(() => import('./pages/delivery/index.jsx'));
 const Informations = lazy(() => import('./pages/informations/index.jsx'));
+const LeaderEmployee = lazy(() => import('./pages/leader/pages/Employee.jsx'));
+const LeaderSales = lazy(() => import('./pages/leader/pages/Sales.jsx'));
 const Profile = lazy(() => import('./pages/profile/index.jsx'));
 const EditProfile = lazy(() => import('./pages/profile/components/EditProfile.jsx'));
 
@@ -152,7 +154,10 @@ export default function App() {
         <Route path="/informations" element={<Informations />} />
         <Route path="/info" element={<Navigate to="/informations" replace />} />
         <Route path="/guideline" element={<Navigate to="/informations" replace />} />
-        <Route path="/profile" element={<Profile />} />
+        <Route path="/leader" element={<Navigate to="/leader/employee" replace />} />
+              <Route path="/leader/employee" element={<LeaderEmployee />} />
+              <Route path="/leader/sales" element={<LeaderSales />} />
+              <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
 
         {/* Backward-compatibility aliases for legacy URLs */}

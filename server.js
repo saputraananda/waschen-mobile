@@ -17,6 +17,9 @@ import inventoryRoutes from './api/routes/inventory/inventory.routes.js';
 import payslipRoutes from './api/routes/payslip/payslip.routes.js';
 import historyRoutes from './api/routes/history/history.routes.js';
 import realtimeRoutes from './api/routes/realtime/realtime.routes.js';
+import leaderEmployeeRoutes from './api/routes/leader/employee.routes.js';
+import leaderSalesRoutes from './api/routes/leader/sales.routes.js';
+import leaderReceivableRoutes from './api/routes/leader/receivable.routes.js';
 import { getBaseUploadDir } from './api/middleware/upload.js';
 import { initSocket } from './api/socket/io.js';
 
@@ -62,6 +65,9 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/payslips', payslipRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/realtime', realtimeRoutes);
+app.use('/api/leader/employees', leaderEmployeeRoutes);
+app.use('/api/leader/sales', leaderSalesRoutes);
+app.use('/api/leader/receivable', leaderReceivableRoutes);
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
