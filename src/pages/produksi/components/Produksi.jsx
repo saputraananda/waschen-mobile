@@ -17,6 +17,9 @@ import { setPageTitle } from '../../../utils/pageTitle.js';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 import DataUpdatedModal from '../../../components/DataUpdatedModal.jsx';
 
+const PAGE_SIZE = 10;
+const MAX_SOFT_REFRESH = 100; // batas jumlah nota yang dimuat ulang diam-diam (limit maks API)
+
 export default function Produksi() {
   const navigate = useNavigate();
 
@@ -26,6 +29,11 @@ export default function Produksi() {
 
   const [summary, setSummary] = useState({});
   const [txns, setTxns] = useState([]);
+  const [listTotal, setListTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const txnsLenRef = useRef(0);
+  const listSeqRef = useRef(0); // hanya respons request terbaru yang boleh mengisi daftar
+  txnsLenRef.current = txns.length;
   const [holds, setHolds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -90,30 +98,63 @@ export default function Produksi() {
   }, [navigate]);
 
   const loadData = useCallback(async (stage, { silent = false } = {}) => {
+    const seq = ++listSeqRef.current;
     if (!silent) setLoading(true);
     setError(null);
+    // Refresh diam-diam (realtime/refresh manual) memuat ulang sebanyak yang sudah tampil,
+    // supaya daftar yang sedang dibaca tidak menyusut kembali ke 10 nota.
+    const size = silent
+      ? Math.min(Math.max(txnsLenRef.current, PAGE_SIZE), MAX_SOFT_REFRESH)
+      : PAGE_SIZE;
     try {
       const [summaryRes, listRes, holdsRes] = await Promise.allSettled([
         api.get('/progress/summary'),
-        api.get('/progress/list', { params: { stage } }),
+        api.get('/progress/list', { params: { stage, limit: size, offset: 0 } }),
         api.get('/progress/holds', { params: { stage } }),
       ]);
+      if (seq !== listSeqRef.current) return;
 
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value.data?.data || {});
       if (holdsRes.status === 'fulfilled') setHolds(holdsRes.value.data?.data || []);
 
       if (listRes.status === 'fulfilled') {
-        setTxns(listRes.value.data?.data || []);
+        const list = listRes.value.data?.data || [];
+        setTxns(list);
+        setListTotal(listRes.value.data?.pagination?.total ?? list.length);
       } else {
         if (handleAuthError(listRes.reason)) return;
         setError(listRes.reason?.response?.data?.message || 'Gagal memuat daftar nota');
       }
     } catch (e) {
+      if (seq !== listSeqRef.current) return;
       if (!handleAuthError(e)) setError('Gagal memuat data');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && seq === listSeqRef.current) setLoading(false);
     }
   }, [handleAuthError]);
+
+  const loadMore = useCallback(async () => {
+    const seq = listSeqRef.current;
+    setLoadingMore(true);
+    try {
+      const res = await api.get('/progress/list', {
+        params: { stage: activeStage, limit: PAGE_SIZE, offset: txnsLenRef.current },
+      });
+      if (seq !== listSeqRef.current) return; // tahap/refresh berganti saat menunggu
+      const next = res.data?.data || [];
+      setTxns((prev) => {
+        const seen = new Set(prev.map((t) => t.id));
+        return [...prev, ...next.filter((t) => !seen.has(t.id))];
+      });
+      setListTotal(res.data?.pagination?.total ?? 0);
+    } catch (e) {
+      if (!handleAuthError(e)) setToast('Gagal memuat nota berikutnya');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeStage, handleAuthError]);
+
+  const openDetail = useCallback((t) => setDetailTxnId(t.id), []);
 
   useEffect(() => {
     setShowHolds(false);
@@ -253,7 +294,7 @@ export default function Produksi() {
     setQcTarget(null);
     showToast(msg);
     if (searchResults !== null) runSearch(searchQuery.trim());
-    else loadData(activeStage);
+    else loadData(activeStage, { silent: true });
   };
 
   const stageStatusLabel = STAGES.find((s) => s.key === activeStage)?.label || '';
@@ -424,7 +465,7 @@ export default function Produksi() {
                     key={txn.id}
                     txn={txn}
                     activeStage={activeStage}
-                    onOpen={(t) => setDetailTxnId(t.id)}
+                    onOpen={openDetail}
                     onItemClick={setQcTarget}
                   />
                 ))
@@ -448,15 +489,31 @@ export default function Produksi() {
               </p>
             </div>
           ) : (
-            txns.map((txn) => (
-              <TransactionCard
-                key={txn.id}
-                txn={txn}
-                activeStage={activeStage}
-                onOpen={(t) => setDetailTxnId(t.id)}
-                onItemClick={setQcTarget}
-              />
-            ))
+            <>
+              <div className="text-[10.5px] font-bold text-slate-400 px-0.5">
+                Menampilkan {txns.length} dari {listTotal} nota
+              </div>
+              {txns.map((txn) => (
+                <TransactionCard
+                  key={txn.id}
+                  txn={txn}
+                  activeStage={activeStage}
+                  onOpen={openDetail}
+                  onItemClick={setQcTarget}
+                />
+              ))}
+              {txns.length < listTotal && (
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full py-3 rounded-[14px] bg-white border border-slate-200 text-[12px] font-extrabold text-[#5f1340] flex items-center justify-center gap-2 disabled:opacity-60 active:bg-slate-50"
+                >
+                  {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {loadingMore ? 'Memuat…' : `Muat lebih banyak (${Math.min(PAGE_SIZE, listTotal - txns.length)} dari ${listTotal - txns.length} nota lagi)`}
+                </button>
+              )}
+            </>
           )}
         </div>
 

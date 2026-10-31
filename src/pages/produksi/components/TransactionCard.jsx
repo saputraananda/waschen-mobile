@@ -10,7 +10,7 @@ import { customerPickLabel } from '../../../utils/customerPickLabel.js';
  * Kartu nota di list progres — header info nota + nested section item yang bisa di-QC
  * di tahap aktif. Header putih, section item dalam box abu supaya kontras & tidak nyaru.
  */
-export default function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
+function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
   const hasFinding = !!txn.has_finding;
   const hasHold = !!txn.has_hold;
   const place = customerPickLabel({ street: txn.address, block: txn.block, houseNumber: txn.house_number });
@@ -123,3 +123,6 @@ export default function TransactionCard({ txn, activeStage, onOpen, onItemClick 
     </div>
   );
 }
+
+// Dirender ulang hanya saat data nota / tahap berubah (daftar bisa puluhan kartu)
+export default React.memo(TransactionCard);

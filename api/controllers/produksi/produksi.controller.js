@@ -211,6 +211,9 @@ export const getList = async (req, res) => {
     let whereClause;
     let params;
     let orderClause;
+    let pageLimit = 0; // > 0 = respons berpaginasi
+    let offset = 0;
+    let total = 0;
 
     if (search) {
       const like = `%${search}%`;
@@ -240,6 +243,24 @@ export const getList = async (req, res) => {
         params.push(date);
       }
       orderClause = 'ORDER BY t.order_date ASC';
+
+      // Paginasi (offset-based, terbaru dulu). Tanpa `limit` = perilaku lama (semua nota) agar
+      // aplikasi versi lama yang masih ter-cache tetap jalan.
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 0), 100);
+      if (limit > 0) {
+        offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+        pageLimit = limit;
+        // t.id sebagai tie-breaker supaya urutan antar halaman stabil
+        orderClause = `ORDER BY t.order_date DESC, t.id DESC LIMIT ${limit} OFFSET ${offset}`;
+        const [[{ total: cnt }]] = await myWaschenPool.query(
+          `SELECT COUNT(DISTINCT t.id) AS total
+           FROM tr_transaction t
+           JOIN tr_transaction_detail d ON d.transaction_id = t.id
+           WHERE ${whereClause}`,
+          params
+        );
+        total = Number(cnt) || 0;
+      }
     }
 
     const [txns] = await myWaschenPool.query(
@@ -266,8 +287,12 @@ export const getList = async (req, res) => {
       params
     );
 
+    const pagination = pageLimit > 0
+      ? { total, offset, limit: pageLimit, hasMore: offset + txns.length < total }
+      : undefined;
+
     if (txns.length === 0) {
-      return res.status(200).json({ success: true, message: 'OK', data: [] });
+      return res.status(200).json({ success: true, message: 'OK', data: [], pagination });
     }
 
     const txnIds = txns.map((t) => t.id);
@@ -317,7 +342,7 @@ export const getList = async (req, res) => {
       };
     });
 
-    return res.status(200).json({ success: true, message: 'OK', data });
+    return res.status(200).json({ success: true, message: 'OK', data, pagination });
   } catch (error) {
     console.error('getList error:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil daftar nota', error: error.message });
