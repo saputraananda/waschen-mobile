@@ -123,10 +123,22 @@ export const STAGE_LABEL = {
   handover: 'Serah Terima'
 };
 
-/** Tahap yang mengisi rincian plastik kiloan */
+/** Tahap yang punya hitungan kiloan: Frontliner per plastik, Tim Cuci & Tim Setrika satu angka total */
 export const BAG_ENTRY_STAGES = ['frontliner', 'washing', 'ironing'];
 
-/** Tahap sebelumnya yang punya rincian plastik (untuk tampilan riwayat) */
+/** Gabungkan rincian jenis pakaian lintas plastik jadi satu daftar */
+export const mergeKgRows = (kgItems = []) => {
+  const merged = new Map();
+  kgItems.forEach((k) => {
+    const key = k.item_kg_id ? `id:${k.item_kg_id}` : `name:${String(k.item_name || '').trim().toLowerCase()}`;
+    const row = merged.get(key);
+    if (row) row.qty_pcs += Number(k.qty_pcs) || 0;
+    else merged.set(key, { ...k, qty_pcs: Number(k.qty_pcs) || 0 });
+  });
+  return [...merged.values()];
+};
+
+/** Tahap sebelumnya yang punya hitungan kiloan (untuk tampilan riwayat) */
 export const prevBagStagesFor = (stage) => {
   const order = ['frontliner', 'washing', 'ironing', 'packing'];
   const idx = order.indexOf(stage);

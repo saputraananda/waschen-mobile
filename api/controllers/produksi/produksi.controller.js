@@ -482,8 +482,9 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Keputusan QC tidak valid' });
     }
-    // Semua QC wajib foto (aman, temuan, serah terima)
-    if (incomingPhotos.length === 0) {
+    // Semua QC wajib foto, kecuali Tim Cuci & Tim Setrika saat aman
+    const photoOptional = ['washing', 'ironing'].includes(stage) && qc_status === 'aman';
+    if (incomingPhotos.length === 0 && !photoOptional) {
       await cleanupFiles();
       return res.status(422).json({
         success: false,
@@ -605,17 +606,16 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian plastik' });
     }
-    // Tim Cuci wajib merinci jenis pakaian per plastik; total rincian = qty plastik
+    // Plastik hanya dihitung Frontliner. Tim Cuci merinci jenis pakaian satu daftar, dikirim
+    // sebagai satu baris total (bag_no 1). Selisih dari Frontliner hanya peringatan di form.
     if (isKiloan && stage === 'washing') {
       const bagNos = new Set(bags.map((b) => Number(b.bag_no)));
-      let kgError = kgItems.some((k) => !bagNos.has(k.bag_no)) ? 'Rincian jenis pakaian tidak cocok dengan nomor plastik' : null;
-      for (const b of bags) {
-        if (kgError) break;
-        const no = Number(b.bag_no);
-        const sum = kgItems.filter((k) => k.bag_no === no).reduce((s, k) => s + k.qty_pcs, 0);
-        if (sum < 1) kgError = `Plastik ${no}: rincian jenis pakaian wajib diisi`;
-        else if (sum !== Number(b.qty_pcs)) kgError = `Plastik ${no}: total rincian (${sum}) tidak sama dengan jumlah plastik (${Number(b.qty_pcs)})`;
-      }
+      const sum = kgItems.reduce((s, k) => s + k.qty_pcs, 0);
+      const total = bags.reduce((s, b) => s + (Number(b.qty_pcs) || 0), 0);
+      let kgError = null;
+      if (kgItems.some((k) => !bagNos.has(k.bag_no))) kgError = 'Rincian jenis pakaian tidak cocok dengan nomor plastik';
+      else if (sum < 1) kgError = 'Rincian jenis pakaian wajib diisi';
+      else if (sum !== total) kgError = `Total rincian (${sum}) tidak sama dengan total quantity (${total})`;
       if (kgError) {
         await cleanupFiles();
         return res.status(422).json({ success: false, message: kgError });
@@ -1150,14 +1150,16 @@ export const getItemBagHistory = async (req, res) => {
        FROM tr_item_bag_detail b
        JOIN tr_item_progress p ON p.id = b.progress_id
        WHERE b.transaction_detail_id = ?
-       ORDER BY FIELD(p.stage, 'frontliner', 'washing', 'ironing', 'packing'), b.bag_no ASC`,
+       ORDER BY FIELD(p.stage, 'frontliner', 'washing', 'ironing', 'packing'), p.id ASC, b.bag_no ASC`,
       [detailId]
     );
 
+    // QC ulang di tahap yang sama (mis. setelah hold) menggantikan versi lama, bukan menambah total
     const grouped = {};
     for (const row of rows) {
-      if (!grouped[row.stage]) {
+      if (grouped[row.stage]?.progress_id !== row.progress_id) {
         grouped[row.stage] = {
+          progress_id: row.progress_id,
           stage: row.stage,
           employee_name: row.employee_name,
           completed_at: row.completed_at,

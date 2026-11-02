@@ -234,6 +234,12 @@ async function getOutletById(outletId) {
   return getAbsenLocationById(outletId);
 }
 
+/** Karyawan sengaja memilih outlet pengganti (penugasan di luar cabang mst_role). */
+function isAlternateOutletRequest(body) {
+  const flag = String(body?.alternate_outlet ?? '').toLowerCase();
+  return (flag === '1' || flag === 'true') && Number(body?.outlet_id) > 0;
+}
+
 async function validateLocation(lat, lng, outletId) {
   if (lat == null || lng == null) {
     return { ok: false, message: 'Lokasi tidak tersedia. Aktifkan GPS dan izinkan akses lokasi.' };
@@ -418,7 +424,7 @@ export const getOutlets = async (req, res) => {
 export const checkLocation = async (req, res) => {
   try {
     const { lat, lng, outlet_id } = req.body;
-    const outletId = outlet_id || req.user.assignedOutletId;
+    const outletId = isAlternateOutletRequest(req.body) ? Number(outlet_id) : req.user.assignedOutletId;
 
     if (!outletId) {
       return res.status(400).json({ success: false, message: 'Outlet belum ditetapkan untuk akun Anda.' });
@@ -475,7 +481,20 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: timeStatus.lockReason });
     }
 
-    const outletId = outlet_id || req.user.assignedOutletId;
+    const workDate = await getWorkDateNow();
+    const [rows] = await myWaschenPool.query(
+      'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+      [employeeId, workDate]
+    );
+
+    // Cabang absen = penugasan di mst_role (req.user.assignedOutletId dibaca terkini).
+    // Cabang lain hanya diterima bila karyawan memilih "outlet pengganti" secara eksplisit
+    // (alternate_outlet=1). Absen pulang tanpa penanda mengikuti cabang saat absen masuk,
+    // dan nilai outlet_id dari aplikasi tanpa penanda diabaikan (bisa basi / salah).
+    const wantsAlternate = isAlternateOutletRequest(req.body);
+    const outletId = wantsAlternate
+      ? Number(outlet_id)
+      : (punch_type === 'out' && rows[0]?.outlet_id) || req.user.assignedOutletId;
     if (!outletId) {
       await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Outlet absensi belum dipilih.' });
@@ -492,7 +511,6 @@ export const punchSelfie = async (req, res) => {
     const saveLat = lat === '' || lat == null ? null : lat;
     const saveLng = lng === '' || lng == null ? null : lng;
 
-    const workDate = await getWorkDateNow();
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
     const photo_name = req.file.filename;
 
@@ -508,11 +526,6 @@ export const punchSelfie = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Pilih shift (Pagi / Siang) sebelum absen masuk.' });
       }
     }
-
-    const [rows] = await myWaschenPool.query(
-      'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
-      [employeeId, workDate]
-    );
 
     if (punch_type === 'in') {
       if (rows.length > 0 && rows[0].check_in_time) {

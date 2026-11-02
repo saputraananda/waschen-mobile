@@ -221,7 +221,6 @@ export default function Attendance() {
     const data = res.data?.data;
     setTodayData(data);
     setPageError(null);
-    setSelectedOutletId((prev) => prev || data?.assignedOutletId || null);
     return data;
   }, []);
 
@@ -264,9 +263,8 @@ export default function Attendance() {
           fullName: parsed.fullName || parsed.full_name || prev.fullName,
           position: parsed.position || parsed.position_name || prev.position
         }));
-        if (parsed.assignedOutletId) {
-          setSelectedOutletId((prev) => prev || parsed.assignedOutletId);
-        }
+        // assignedOutletId di data login bisa basi (token 365 hari); cabang penugasan
+        // selalu diambil dari /attendance/today. selectedOutletId hanya untuk outlet pengganti.
         if (!parsed.assignedRole) {
           fetchAssignedRole(token).then((role) => {
             if (role) setCurrentUser((prev) => ({ ...prev, assignedRole: role }));
@@ -731,6 +729,9 @@ export default function Attendance() {
           form.append('lng', String(coord.lng));
         }
         form.append('outlet_id', String(activeOutletId));
+        // Server hanya memakai outlet_id ini bila karyawan memang memilih outlet pengganti;
+        // selain itu cabang ditentukan dari penugasan (mst_role).
+        if (alternateOutlet && selectedOutletId) form.append('alternate_outlet', '1');
         if (pendingCapture.shiftCode) form.append('shift_code', pendingCapture.shiftCode);
         form.append('selfie', blob, 'selfie.jpg');
         await api.post('/attendance/punch-selfie', form);
@@ -814,7 +815,7 @@ export default function Attendance() {
   };
 
   const resetToAssignedOutlet = () => {
-    setSelectedOutletId(todayData?.assignedOutletId || null);
+    setSelectedOutletId(null);
     setAlternateOutlet(false);
     setGpsRefreshKey((k) => k + 1);
   };

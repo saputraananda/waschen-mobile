@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
-import { STAGE_LABEL, bagTotal, formatDateTime } from '../../../utils/produksiShared.js';
+import { STAGE_LABEL, bagTotal, formatDateTime, mergeKgRows } from '../../../utils/produksiShared.js';
 import formatName from '../../../utils/FormatName.js';
 
 export function QcModal({ qc, title, subtitle, children }) {
@@ -109,13 +109,15 @@ function StageBagHistory({ loading, history = [] }) {
 
   if (!history.length) return null;
 
-  const maxBags = Math.max(...history.map((h) => h.bags?.length || 0), 0);
-  const cols = `minmax(88px,1.1fr) repeat(${maxBags}, minmax(44px,1fr)) minmax(52px,0.8fr)`;
+  // Kolom plastik hanya milik Frontliner; tahap lain cukup kolom Total
+  const maxBags = history.find((h) => h.stage === 'frontliner')?.bags?.length || 0;
+  const bagCols = maxBags ? `repeat(${maxBags}, minmax(44px,1fr)) ` : '';
+  const cols = `minmax(88px,1.1fr) ${bagCols}minmax(52px,0.8fr)`;
 
   return (
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
-        Riwayat Rincian Plastik
+        Riwayat Quantity
       </label>
       <div className="rounded-[14px] border border-slate-200 overflow-hidden">
         <div className="grid gap-px bg-slate-200 text-[9.5px] font-extrabold text-slate-500 uppercase" style={{ gridTemplateColumns: cols }}>
@@ -137,7 +139,7 @@ function StageBagHistory({ loading, history = [] }) {
               </div>
             </div>
             {Array.from({ length: maxBags }, (_, i) => {
-              const bag = row.bags?.find((b) => Number(b.bag_no) === i + 1);
+              const bag = row.stage === 'frontliner' ? row.bags?.find((b) => Number(b.bag_no) === i + 1) : null;
               return (
                 <div key={i} className="bg-white px-1 py-2.5 text-center font-black text-slate-700">
                   {bag ? Number(bag.qty_pcs) : '—'}
@@ -161,24 +163,19 @@ export function BagHistoryBlock({ qc }) {
 
 export function SimpleBags({ qc }) {
   if (!qc.needBags || qc.needKgItems) return null;
-  const { bags, setBags, referenceBags, bagGap, stage, optionalKg, bagSum, kgMaster } = qc;
+  const { bags, setBags, stage, optionalKg, bagSum, kgMaster } = qc;
   return (
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
         Rincian Plastik — {STAGE_LABEL[stage] || stage}
-        {qc.bagHistory.length > 0 && (
-          <span className="normal-case font-normal text-slate-500"> (isi ulang & bandingkan)</span>
-        )}
       </label>
       {optionalKg && (
         <p className="mb-2 text-[10.5px] font-semibold text-slate-500 leading-snug">
-          Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci). Jika diisi, total rincian per plastik harus sama dengan jumlah plastik.
+          Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci).
         </p>
       )}
       <div className="flex flex-col gap-2">
         {bags.map((b, i) => {
-          const refBag = referenceBags.find((x) => Number(x.bag_no) === i + 1);
-          const gap = refBag ? bagGap(b.qty_pcs, refBag.qty_pcs) : null;
           const patchBag = (fn) => setBags((prev) => prev.map((x, xi) => (xi === i ? fn(x) : x)));
           const kgSum = optionalKg ? bagSum(b) : 0;
           const kgMatch = kgSum > 0 && kgSum === Number(b.qty_pcs);
@@ -194,13 +191,6 @@ export function SimpleBags({ qc }) {
                 onChange={(e) => setBags((prev) => prev.map((x, xi) => (xi === i ? { ...x, qty_pcs: e.target.value } : x)))}
                 className="flex-1 text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
               />
-              {refBag && (
-                <span className={`text-[10px] font-extrabold w-[52px] text-right flex-shrink-0 ${
-                  !gap ? 'text-slate-300' : gap.diff === 0 ? 'text-emerald-600' : 'text-amber-600'
-                }`}>
-                  {gap ? gap.label : '—'}
-                </span>
-              )}
               {bags.length > 1 && (
                 <button
                   type="button"
@@ -321,95 +311,93 @@ function KgSourceNote({ source }) {
   );
 }
 
+/** Bandingkan total tahap ini dengan total Frontliner. Selisih hanya peringatan, tetap bisa disimpan. */
+function FrontlinerGap({ qc, value }) {
+  const reference = qc.frontlinerTotal;
+  if (!reference) return null;
+  const gap = qc.bagGap(value, reference);
+  if (!gap) {
+    return <p className="mt-2 text-[11px] font-semibold text-slate-500">Total Frontliner: {reference} pcs</p>;
+  }
+  if (gap.diff === 0) {
+    return <p className="mt-2 text-[11px] font-extrabold text-emerald-600">Sama dengan total Frontliner ({reference} pcs)</p>;
+  }
+  return (
+    <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-extrabold text-amber-700">
+      Selisih {gap.label} pcs dari total Frontliner ({reference} pcs). Pastikan hitungan sudah benar.
+    </p>
+  );
+}
+
 export function KgBags({ qc }) {
   if (!qc.needKgItems) return null;
-  const { bags, setBags, referenceBags, bagGap, bagSum, kgMaster, kgSource } = qc;
+  const { bags, setBags, bagSum, kgMaster, kgSource } = qc;
+  const bag = bags[0];
+  const sum = bagSum(bag);
+  const patchBag = (fn) => setBags((prev) => prev.map((x, xi) => (xi === 0 ? fn(x) : x)));
   return (
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
-        Rincian Plastik & Jenis Pakaian
+        Rincian Jenis Pakaian
         {kgSource && <span className="normal-case font-normal text-slate-500"> (sudah terisi, cek & ubah bila perlu)</span>}
       </label>
       <KgSourceNote source={kgSource} />
-      <div className="flex flex-col gap-2">
-        {bags.map((b, i) => {
-          const refBag = referenceBags.find((x) => Number(x.bag_no) === i + 1);
-          const sum = bagSum(b);
-          const gap = refBag ? bagGap(sum, refBag.qty_pcs) : null;
-          const patchBag = (fn) => setBags((prev) => prev.map((x, xi) => (xi === i ? fn(x) : x)));
-          return (
-            <details key={i} className="group rounded-[14px] border border-slate-200 bg-white overflow-hidden">
-              <summary className="list-none cursor-pointer px-3 py-2.5 flex items-center justify-between gap-2 bg-[#5f1340]/5">
-                <span className="text-[12px] font-extrabold text-[#5f1340]">Plastik {i + 1}</span>
-                <span className="flex items-center gap-2 text-[11.5px] font-extrabold">
-                  <span className="text-slate-800">{sum} pcs</span>
-                  {refBag && (
-                    <span className={!gap ? 'text-slate-400' : gap.diff === 0 ? 'text-emerald-600' : 'text-amber-600'}>
-                      / FL {Number(refBag.qty_pcs)}{gap && gap.diff !== 0 ? ` (${gap.label})` : ''}
-                    </span>
-                  )}
-                  <ChevronDown className="w-4 h-4 text-[#5f1340] transition-transform group-open:rotate-180" />
-                </span>
-              </summary>
-              <div className="border-t border-slate-100 p-2 flex flex-col gap-1.5">
-                <KgFields bag={b} bagIndex={i} patchBag={patchBag} kgMaster={kgMaster} />
-                <div className="flex items-center justify-end pt-1">
-                  {bags.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setBags((prev) => prev.filter((_, xi) => xi !== i))}
-                      className="text-[11px] font-extrabold text-red-500 flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Hapus Plastik
-                    </button>
-                  )}
-                </div>
-              </div>
-            </details>
-          );
-        })}
+      <div className="rounded-[14px] border border-slate-200 bg-white p-2 flex flex-col gap-1.5">
+        <KgFields bag={bag} bagIndex={0} patchBag={patchBag} kgMaster={kgMaster} />
       </div>
-      <button
-        type="button"
-        onClick={() => setBags((prev) => [...prev, { bag_no: prev.length + 1, qty_pcs: '', kg: {}, others: [] }])}
-        className="mt-2 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
-      >
-        <Plus className="w-3.5 h-3.5" /> Tambah Plastik
-      </button>
+      <p className="mt-2 text-[12px] font-extrabold text-slate-800">Total {sum} pcs</p>
+      <FrontlinerGap qc={qc} value={sum} />
+    </div>
+  );
+}
+
+export function TotalQty({ qc }) {
+  if (!qc.needTotal) return null;
+  return (
+    <div>
+      <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
+        Total Quantity — {STAGE_LABEL[qc.stage] || qc.stage}
+      </label>
+      <input
+        type="number"
+        min="1"
+        inputMode="numeric"
+        placeholder="Contoh : 30"
+        value={qc.totalQty}
+        onChange={(e) => qc.setTotalQty(e.target.value)}
+        className="w-full text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
+      />
+      <FrontlinerGap qc={qc} value={qc.totalQty} />
     </div>
   );
 }
 
 export function KgHistory({ qc }) {
   if (!qc.kiloan || qc.needKgItems || !qc.kgHistory.length) return null;
+  const rows = mergeKgRows(qc.kgHistory);
   return (
     <div className="flex flex-col gap-2">
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block">
         Rincian Jenis Pakaian
       </label>
       <KgSourceNote source={qc.kgSource} />
-      {[...new Set(qc.kgHistory.map((k) => Number(k.bag_no)))].map((no) => {
-        const rows = qc.kgHistory.filter((k) => Number(k.bag_no) === no);
-        return (
-          <details key={no} className="group rounded-[14px] border border-[#5f1340]/20 bg-[#5f1340]/5 overflow-hidden">
-            <summary className="list-none cursor-pointer px-3 py-2.5 flex items-center justify-between gap-2 text-[12px] font-extrabold text-[#5f1340]">
-              <span>Plastik {no}</span>
-              <span className="flex items-center gap-1.5">
-                {rows.reduce((s, k) => s + Number(k.qty_pcs || 0), 0)} pcs
-                <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
-              </span>
-            </summary>
-            <div className="bg-white border-t border-[#5f1340]/10 divide-y divide-slate-100">
-              {rows.map((k, i) => (
-                <div key={i} className="px-3 py-2 flex justify-between text-[12px]">
-                  <span className="font-semibold text-slate-700">{k.item_name}</span>
-                  <span className="font-black text-slate-800">{Number(k.qty_pcs)} pcs</span>
-                </div>
-              ))}
+      <details className="group rounded-[14px] border border-[#5f1340]/20 bg-[#5f1340]/5 overflow-hidden">
+        <summary className="list-none cursor-pointer px-3 py-2.5 flex items-center justify-between gap-2 text-[12px] font-extrabold text-[#5f1340]">
+          <span>Total</span>
+          <span className="flex items-center gap-1.5">
+            {rows.reduce((s, k) => s + k.qty_pcs, 0)} pcs
+            <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+          </span>
+        </summary>
+        <div className="bg-white border-t border-[#5f1340]/10 divide-y divide-slate-100">
+          {rows.map((k, i) => (
+            <div key={i} className="px-3 py-2 flex justify-between text-[12px]">
+              <span className="font-semibold text-slate-700">{k.item_name}</span>
+              <span className="font-black text-slate-800">{k.qty_pcs} pcs</span>
             </div>
-          </details>
-        );
-      })}
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
@@ -492,7 +480,7 @@ export function QcPhotos({ qc }) {
           ? 'Foto Bukti Diantar (wajib, maks 5)'
           : qc.qcStatus === 'temuan'
             ? 'Foto Bukti Temuan (wajib, maks 5)'
-            : 'Foto Hasil (wajib, maks 5)'}
+            : `Foto Hasil (${qc.photoRequired ? 'wajib' : 'opsional'}, maks 5)`}
       </label>
       <input
         ref={qc.fileInputRef}

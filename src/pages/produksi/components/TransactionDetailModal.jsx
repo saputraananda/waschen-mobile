@@ -85,7 +85,12 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
 
           <AlertModal message={error} onClose={() => setError(null)} />
 
-          {data && (data.items || []).map((item) => (
+          {data && (data.items || []).map((item) => {
+            // Rincian per plastik milik Frontliner; baris Cuci/Setrika berisi total
+            const stageByProgress = new Map((item.progress || []).map((p) => [p.id, p.stage]));
+            const frontlinerBags = (item.bags || []).filter((b) => stageByProgress.get(b.progress_id) === 'frontliner');
+            const shownBags = frontlinerBags.length ? frontlinerBags : (item.bags || []);
+            return (
             <div key={item.id} className={`rounded-[16px] border p-3.5 ${
               Number(item.has_finding) === 1 ? 'border-red-200 bg-red-50/30' : 'border-slate-100 bg-white'
             }`}>
@@ -155,11 +160,11 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
               )}
 
               {/* Rincian plastik */}
-              {item.bags?.length > 0 && (
+              {shownBags.length > 0 && (
                 <div className="mt-3">
                   <span className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider">Rincian Plastik</span>
                   <div className="flex flex-wrap gap-1.5 mt-1">
-                    {item.bags.map((b) => (
+                    {shownBags.map((b) => (
                       <span key={b.id} className="text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
                         Plastik {b.bag_no}: {b.qty_pcs} pcs
                       </span>
@@ -184,7 +189,8 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
