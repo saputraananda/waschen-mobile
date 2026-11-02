@@ -640,7 +640,9 @@ export const submitQC = async (req, res) => {
         return res.status(422).json({ success: false, message: kgError });
       }
     }
-    if (stage === 'packing' && isKiloan && packings.length === 0) {
+    // Rincian packing wajib saat item keluar dari packing. Kembali/hold belum dikemas, item tetap di
+    // tahap ini dan QC ulang setelah konfirmasi.
+    if (stage === 'packing' && isKiloan && qc_decision === 'lanjut' && packings.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian packing' });
     }

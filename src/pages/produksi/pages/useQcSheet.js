@@ -103,7 +103,8 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   // Hitung per plastik hanya di Frontliner; tahap berikutnya memakai total
   const needBags = kiloan && stage === 'frontliner';
   const askIroning = stage === 'frontliner' && !kiloan;
-  const needPackings = kiloan && stage === 'packing';
+  // Rincian packing diisi saat item lanjut, termasuk Temuan + Lanjutkan (samakan dengan submitQC)
+  const needPackings = kiloan && stage === 'packing' && decision === 'lanjut';
   const needKgItems = kiloan && stage === 'washing';
   const needTotal = kiloan && stage === 'ironing';
   // Foto opsional hanya untuk Tim Cuci & Tim Setrika saat aman (samakan dengan submitQC)
@@ -282,7 +283,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
         }
       }
     }
-    if (needPackings && qcStatus === 'aman') {
+    if (needPackings) {
       const valid = packings.every((p) => Number(p.qty_pcs) > 0);
       if (!valid) {
         setError('Isi jumlah pcs per packing (semua packing).');
@@ -314,7 +315,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
         const kgItems = bagsToKgItems(bags);
         if (needKgItems || kgItems.length) fd.append('kg_items', JSON.stringify(kgItems));
       }
-      if (needPackings && qcStatus === 'aman') {
+      if (needPackings) {
         fd.append('packings', JSON.stringify(packings.map((p, i) => ({ packing_no: i + 1, qty_pcs: Number(p.qty_pcs) }))));
       }
       photos.forEach((p) => fd.append('photos', p.file, p.file.name));

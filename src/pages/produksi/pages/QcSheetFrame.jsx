@@ -589,7 +589,7 @@ export function DecisionPair({ qc, holdLabel, holdDecision }) {
 }
 
 export function PackingLines({ qc }) {
-  if (!qc.needPackings || qc.qcStatus !== 'aman') return null;
+  if (!qc.needPackings) return null;
   const { packings, setPackings } = qc;
   return (
     <div>
