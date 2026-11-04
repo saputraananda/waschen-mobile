@@ -691,6 +691,21 @@ export default function Attendance() {
     }
   };
 
+  // Catatan wajib yang belum diisi (server: todayData.notePending) dibuka lagi otomatis — termasuk
+  // setelah refresh / buka ulang aplikasi. Modal wajib tidak punya tombol tutup, jadi baru hilang
+  // setelah catatan tersimpan. Masuk lebih dulu, lalu pulang.
+  useEffect(() => {
+    const pending = todayData?.notePending;
+    if (!pending || pageLoading || noteModal || cameraOpen || pendingCapture || isSubmitting) return;
+    const punchType = pending.in ? 'in' : pending.out ? 'out' : null;
+    if (!punchType) return;
+    setNoteText(
+      (punchType === 'in' ? todayData.record?.check_in_note : todayData.record?.check_out_note) || ''
+    );
+    setNoteError(null);
+    setNoteModal({ punchType, required: true, reason: pending[punchType] });
+  }, [todayData, pageLoading, noteModal, cameraOpen, pendingCapture, isSubmitting]);
+
   const confirmSelfie = async () => {
     if (!pendingCapture || isSubmitting) return;
     const kind = pendingCapture.kind;
@@ -1324,7 +1339,7 @@ export default function Attendance() {
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
-                    <span>Absen dulu — modal catatan muncul setelah absen tersimpan.</span>
+                    <span>Absen dulu — modal catatan muncul setelah absen tersimpan. Catatan wajib yang belum diisi akan muncul lagi saat halaman dibuka ulang.</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
@@ -1335,7 +1350,11 @@ export default function Attendance() {
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
-                    <span>Catatan absen pulang opsional.</span>
+                    <span>
+                      {shiftInfo?.earlyBefore
+                        ? <>Absen pulang sebelum <strong className="text-slate-600">{shiftInfo.earlyBefore} WIB</strong> wajib isi catatan.</>
+                        : 'Catatan absen pulang opsional.'}
+                    </span>
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
@@ -1665,7 +1684,7 @@ export default function Attendance() {
                 <h3 className={`text-[15px] font-black flex items-center gap-1.5 ${noteModal.required ? 'text-rose-600' : 'text-slate-800'}`}>
                   {noteModal.required && <AlertCircle className="w-4 h-4 flex-shrink-0" />}
                   {noteModal.required
-                    ? (noteModal.punchType === 'in' ? 'Alasan Terlambat' : 'Alasan Pulang Awal')
+                    ? (noteModal.punchType === 'in' ? 'Alasan Terlambat' : 'Alasan Pulang Lebih Awal')
                     : `Catatan Absen ${noteModal.punchType === 'in' ? 'Masuk' : 'Pulang'}`}
                 </h3>
                 <p className={`text-[11px] font-medium mt-0.5 ${noteModal.required ? 'text-rose-500' : 'text-slate-400'}`}>
