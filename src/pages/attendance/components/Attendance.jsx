@@ -221,7 +221,6 @@ export default function Attendance() {
     const data = res.data?.data;
     setTodayData(data);
     setPageError(null);
-    setSelectedOutletId((prev) => prev || data?.assignedOutletId || null);
     return data;
   }, []);
 
@@ -264,9 +263,8 @@ export default function Attendance() {
           fullName: parsed.fullName || parsed.full_name || prev.fullName,
           position: parsed.position || parsed.position_name || prev.position
         }));
-        if (parsed.assignedOutletId) {
-          setSelectedOutletId((prev) => prev || parsed.assignedOutletId);
-        }
+        // assignedOutletId di data login bisa basi (token 365 hari); cabang penugasan
+        // selalu diambil dari /attendance/today. selectedOutletId hanya untuk outlet pengganti.
         if (!parsed.assignedRole) {
           fetchAssignedRole(token).then((role) => {
             if (role) setCurrentUser((prev) => ({ ...prev, assignedRole: role }));
@@ -693,6 +691,21 @@ export default function Attendance() {
     }
   };
 
+  // Catatan wajib yang belum diisi (server: todayData.notePending) dibuka lagi otomatis — termasuk
+  // setelah refresh / buka ulang aplikasi. Modal wajib tidak punya tombol tutup, jadi baru hilang
+  // setelah catatan tersimpan. Masuk lebih dulu, lalu pulang.
+  useEffect(() => {
+    const pending = todayData?.notePending;
+    if (!pending || pageLoading || noteModal || cameraOpen || pendingCapture || isSubmitting) return;
+    const punchType = pending.in ? 'in' : pending.out ? 'out' : null;
+    if (!punchType) return;
+    setNoteText(
+      (punchType === 'in' ? todayData.record?.check_in_note : todayData.record?.check_out_note) || ''
+    );
+    setNoteError(null);
+    setNoteModal({ punchType, required: true, reason: pending[punchType] });
+  }, [todayData, pageLoading, noteModal, cameraOpen, pendingCapture, isSubmitting]);
+
   const confirmSelfie = async () => {
     if (!pendingCapture || isSubmitting) return;
     const kind = pendingCapture.kind;
@@ -731,6 +744,9 @@ export default function Attendance() {
           form.append('lng', String(coord.lng));
         }
         form.append('outlet_id', String(activeOutletId));
+        // Server hanya memakai outlet_id ini bila karyawan memang memilih outlet pengganti;
+        // selain itu cabang ditentukan dari penugasan (mst_role).
+        if (alternateOutlet && selectedOutletId) form.append('alternate_outlet', '1');
         if (pendingCapture.shiftCode) form.append('shift_code', pendingCapture.shiftCode);
         form.append('selfie', blob, 'selfie.jpg');
         await api.post('/attendance/punch-selfie', form);
@@ -814,7 +830,7 @@ export default function Attendance() {
   };
 
   const resetToAssignedOutlet = () => {
-    setSelectedOutletId(todayData?.assignedOutletId || null);
+    setSelectedOutletId(null);
     setAlternateOutlet(false);
     setGpsRefreshKey((k) => k + 1);
   };
@@ -1323,7 +1339,7 @@ export default function Attendance() {
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
-                    <span>Absen dulu — modal catatan muncul setelah absen tersimpan.</span>
+                    <span>Absen dulu — modal catatan muncul setelah absen tersimpan. Catatan wajib yang belum diisi akan muncul lagi saat halaman dibuka ulang.</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
@@ -1334,7 +1350,11 @@ export default function Attendance() {
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
-                    <span>Catatan absen pulang opsional.</span>
+                    <span>
+                      {shiftInfo?.earlyBefore
+                        ? <>Absen pulang sebelum <strong className="text-slate-600">{shiftInfo.earlyBefore} WIB</strong> wajib isi catatan.</>
+                        : 'Catatan absen pulang opsional.'}
+                    </span>
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-[6px] w-1 h-1 rounded-full bg-slate-300 flex-shrink-0" />
@@ -1664,7 +1684,7 @@ export default function Attendance() {
                 <h3 className={`text-[15px] font-black flex items-center gap-1.5 ${noteModal.required ? 'text-rose-600' : 'text-slate-800'}`}>
                   {noteModal.required && <AlertCircle className="w-4 h-4 flex-shrink-0" />}
                   {noteModal.required
-                    ? (noteModal.punchType === 'in' ? 'Alasan Terlambat' : 'Alasan Pulang Awal')
+                    ? (noteModal.punchType === 'in' ? 'Alasan Terlambat' : 'Alasan Pulang Lebih Awal')
                     : `Catatan Absen ${noteModal.punchType === 'in' ? 'Masuk' : 'Pulang'}`}
                 </h3>
                 <p className={`text-[11px] font-medium mt-0.5 ${noteModal.required ? 'text-rose-500' : 'text-slate-400'}`}>

@@ -12,7 +12,8 @@ import {
   getWorkDateNow,
   requiresShift,
   findShift,
-  DEFAULT_SHIFT_CODE
+  DEFAULT_SHIFT_CODE,
+  TIME_MASTER_DEFAULTS
 } from '../../utils/timeMaster.js';
 
 const MAX_DIST_M = 1000;
@@ -54,13 +55,22 @@ async function getEmployeeRole(employeeId) {
 /**
  * Aturan jam untuk satu absensi.
  * Frontliner: batas telat = open_time shift, pulang cepat = close_time shift
- * (shift kosong = Pagi). Role lain: batas telat 08:00, tanpa cek pulang cepat.
+ * (shift kosong = Pagi). Role lain: batas telat 08:00, pulang cepat = close_time Shift Pagi
+ * (default 17:00, dari mst_time_shift) — catatan pulang wajib bila absen pulang sebelum jam itu.
  */
 async function resolveShiftRule(role, shiftCode) {
-  if (!requiresShift(role)) {
-    return { shift: null, lateAfterMin: NOTE_REQUIRED_AFTER_MIN, lateAfterHm: NOTE_REQUIRED_AFTER_HM, earlyBeforeMin: null, earlyBeforeHm: null };
-  }
   const cfg = await getTimeMasterConfig();
+  if (!requiresShift(role)) {
+    const pagi = findShift(cfg.shifts, DEFAULT_SHIFT_CODE) || findShift(TIME_MASTER_DEFAULTS.shifts, DEFAULT_SHIFT_CODE);
+    const earlyBeforeMin = timeToMinutes(pagi?.close_time);
+    return {
+      shift: null,
+      lateAfterMin: NOTE_REQUIRED_AFTER_MIN,
+      lateAfterHm: NOTE_REQUIRED_AFTER_HM,
+      earlyBeforeMin,
+      earlyBeforeHm: earlyBeforeMin != null ? formatHm(pagi.close_time) : null
+    };
+  }
   const shift = findShift(cfg.shifts, shiftCode || DEFAULT_SHIFT_CODE) || findShift(cfg.shifts, DEFAULT_SHIFT_CODE);
   const lateAfterMin = timeToMinutes(shift?.open_time) ?? NOTE_REQUIRED_AFTER_MIN;
   const earlyBeforeMin = timeToMinutes(shift?.close_time);
@@ -234,6 +244,12 @@ async function getOutletById(outletId) {
   return getAbsenLocationById(outletId);
 }
 
+/** Karyawan sengaja memilih outlet pengganti (penugasan di luar cabang mst_role). */
+function isAlternateOutletRequest(body) {
+  const flag = String(body?.alternate_outlet ?? '').toLowerCase();
+  return (flag === '1' || flag === 'true') && Number(body?.outlet_id) > 0;
+}
+
 async function validateLocation(lat, lng, outletId) {
   if (lat == null || lng == null) {
     return { ok: false, message: 'Lokasi tidak tersedia. Aktifkan GPS dan izinkan akses lokasi.' };
@@ -360,6 +376,19 @@ export const getTodayAttendance = async (req, res) => {
       earlyBefore: rule.earlyBeforeHm
     };
 
+    // Catatan wajib yang BELUM diisi (absen sudah tersimpan, catatan menyusul). Frontend memakai ini
+    // untuk membuka lagi modal catatan setelah refresh / buka ulang aplikasi. Hanya dihitung bila
+    // kolom catatan ada (skema lama tanpa kolom catatan tidak bisa menyimpannya).
+    const notePending = { in: null, out: null };
+    if (record && 'check_in_note' in record) {
+      if (record.check_in_time && !String(record.check_in_note || '').trim()) {
+        notePending.in = noteRequirement('in', record.check_in_time, rule);
+      }
+      if (record.check_out_time && !String(record.check_out_note || '').trim()) {
+        notePending.out = noteRequirement('out', record.check_out_time, rule);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Data absensi hari ini',
@@ -370,7 +399,8 @@ export const getTodayAttendance = async (req, res) => {
         assignedOutletId: req.user.assignedOutletId,
         assignedOutlet,
         maxDistanceM: MAX_DIST_M,
-        shift
+        shift,
+        notePending
       }
     });
   } catch (error) {
@@ -418,7 +448,7 @@ export const getOutlets = async (req, res) => {
 export const checkLocation = async (req, res) => {
   try {
     const { lat, lng, outlet_id } = req.body;
-    const outletId = outlet_id || req.user.assignedOutletId;
+    const outletId = isAlternateOutletRequest(req.body) ? Number(outlet_id) : req.user.assignedOutletId;
 
     if (!outletId) {
       return res.status(400).json({ success: false, message: 'Outlet belum ditetapkan untuk akun Anda.' });
@@ -475,7 +505,20 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: timeStatus.lockReason });
     }
 
-    const outletId = outlet_id || req.user.assignedOutletId;
+    const workDate = await getWorkDateNow();
+    const [rows] = await myWaschenPool.query(
+      'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
+      [employeeId, workDate]
+    );
+
+    // Cabang absen = penugasan di mst_role (req.user.assignedOutletId dibaca terkini).
+    // Cabang lain hanya diterima bila karyawan memilih "outlet pengganti" secara eksplisit
+    // (alternate_outlet=1). Absen pulang tanpa penanda mengikuti cabang saat absen masuk,
+    // dan nilai outlet_id dari aplikasi tanpa penanda diabaikan (bisa basi / salah).
+    const wantsAlternate = isAlternateOutletRequest(req.body);
+    const outletId = wantsAlternate
+      ? Number(outlet_id)
+      : (punch_type === 'out' && rows[0]?.outlet_id) || req.user.assignedOutletId;
     if (!outletId) {
       await cleanupUpload();
       return res.status(400).json({ success: false, message: 'Outlet absensi belum dipilih.' });
@@ -492,7 +535,6 @@ export const punchSelfie = async (req, res) => {
     const saveLat = lat === '' || lat == null ? null : lat;
     const saveLng = lng === '' || lng == null ? null : lng;
 
-    const workDate = await getWorkDateNow();
     const photo_path = ATTENDANCE_UPLOAD_PUBLIC_PATH;
     const photo_name = req.file.filename;
 
@@ -508,11 +550,6 @@ export const punchSelfie = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Pilih shift (Pagi / Siang) sebelum absen masuk.' });
       }
     }
-
-    const [rows] = await myWaschenPool.query(
-      'SELECT * FROM tr_attendance WHERE employee_id = ? AND work_date = ? LIMIT 1',
-      [employeeId, workDate]
-    );
 
     if (punch_type === 'in') {
       if (rows.length > 0 && rows[0].check_in_time) {

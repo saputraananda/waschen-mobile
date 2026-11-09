@@ -1,6 +1,32 @@
 import jwt from 'jsonwebtoken';
 import { mainPool, myWaschenPool } from '../db/pool.js';
 
+// Penugasan cabang (mst_role.outlet_id) dibaca terkini, bukan dari token. Token berlaku 365 hari,
+// jadi kalau penugasan berubah setelah login, nilai di token basi sampai karyawan login ulang.
+// Cache singkat per karyawan agar tidak query mst_role di setiap request.
+const OUTLET_CACHE_TTL_MS = 60 * 1000;
+const outletCache = new Map(); // employeeId -> { outletId, at }
+
+async function lookupAssignedOutletId(employeeId) {
+  const hit = outletCache.get(employeeId);
+  if (hit && Date.now() - hit.at < OUTLET_CACHE_TTL_MS) return hit.outletId;
+  try {
+    const roleQuery = myWaschenPool.query(
+      'SELECT outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+      [employeeId]
+    );
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('role_lookup_timeout')), 3000)
+    );
+    const [roleRows] = await Promise.race([roleQuery, timeout]);
+    const outletId = roleRows[0]?.outlet_id || null;
+    outletCache.set(employeeId, { outletId, at: Date.now() });
+    return outletId;
+  } catch (_) {
+    return hit?.outletId ?? null; // mst_role opsional / timeout: pakai nilai terakhir bila ada
+  }
+}
+
 /**
  * JWT auth middleware — resolves user_id & employee_id from token + DB.
  */
@@ -39,25 +65,10 @@ export const requireAuth = async (req, res, next) => {
       });
     }
 
-    // Prefer assignedOutletId embedded in the token (set at login) to avoid
-    // hitting mst_role on every single authenticated request. Fallback to a
-    // DB lookup only for older tokens issued before this field existed.
-    let assignedOutletId = decoded.assignedOutletId ?? null;
-    if (assignedOutletId == null) {
-      try {
-        const roleQuery = myWaschenPool.query(
-          'SELECT outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
-          [employeeId]
-        );
-        const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('role_lookup_timeout')), 3000)
-        );
-        const [roleRows] = await Promise.race([roleQuery, timeout]);
-        if (roleRows[0]?.outlet_id) {
-          assignedOutletId = roleRows[0].outlet_id;
-        }
-      } catch (_) { /* mst_role optional / timeout */ }
-    }
+    // Sumber kebenaran = mst_role terkini. Nilai di token (saat login) hanya cadangan
+    // bila karyawan tidak punya baris mst_role atau lookup gagal.
+    const freshOutletId = await lookupAssignedOutletId(employeeId);
+    const assignedOutletId = freshOutletId ?? decoded.assignedOutletId ?? null;
 
     req.user = {
       user_id: userId,

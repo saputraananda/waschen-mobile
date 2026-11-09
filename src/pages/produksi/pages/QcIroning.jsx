@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQcSheet } from './useQcSheet.js';
 import {
-  QcModal, CarriedFinding, BagHistoryBlock, SimpleBags, KgHistory, QcVerdict, QcNotes, QcPhotos,
+  QcModal, CarriedFinding, BagHistoryBlock, TotalQty, KgHistory, QcVerdict, QcNotes, QcPhotos,
   DecisionPair, ReturnPicker, QcActions, sheetSubtitle
 } from './QcSheetFrame.jsx';
 
@@ -11,7 +11,7 @@ export default function QcIroning(props) {
     <QcModal qc={qc} title={`QC — ${qc.item?.service_name || ''}`} subtitle={sheetSubtitle(qc)}>
       <CarriedFinding qc={qc} />
       <BagHistoryBlock qc={qc} />
-      <SimpleBags qc={qc} />
+      <TotalQty qc={qc} />
       <KgHistory qc={qc} />
       <QcVerdict qc={qc} temuanDecision="kembali" />
       <QcNotes qc={qc} />

@@ -97,7 +97,13 @@ const EFF_OUTLET_MATCH_SQL = `(? IN (
   ${EFF_OUTLET_SQL},
   CASE WHEN d.is_event = 1 AND d.item_work_status = 'Antrean' THEN d.production_outlet_id END
 ))`;
-const HOLD_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+/**
+ * Cleanox By Waschen (Phase 17): item is_cleanox hanya melewati QC frontliner (Antrean) di Waschen;
+ * Pencucian dst. dikerjakan tim Cleanox (tr_cleanox_by_waschen), jadi tidak masuk antrean Washing/Ironing/Packing.
+ */
+const NOT_CLEANOX_PRODUCTION_SQL = `(d.is_cleanox = 0 OR d.item_work_status = 'Antrean')`;
+const CLEANOX_SKIP_STAGES = ['washing', 'ironing', 'packing'];
+const HOLD_OUTLET_SQL =`(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
 // Hold tahap frontliner pada item event yang sudah dibagi: terlihat di stand Event dan cabang tujuan.
 const HOLD_OUTLET_MATCH_SQL = `(? IN (
   ${HOLD_OUTLET_SQL},
@@ -160,6 +166,7 @@ export const getSummary = async (req, res) => {
        JOIN tr_transaction t ON t.id = d.transaction_id
        WHERE ${EFF_OUTLET_MATCH_SQL}
          AND d.item_work_status IN ('Antrean','Pencucian','Penyetrikaan','Pengemasan')
+         AND ${NOT_CLEANOX_PRODUCTION_SQL}
        GROUP BY d.item_work_status`,
       [outletId]
     );
@@ -236,7 +243,7 @@ export const getList = async (req, res) => {
         return res.status(422).json({ success: false, message: 'Tahap tidak valid' });
       }
       const stageStatus = STAGE_STATUS[stage];
-      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_MATCH_SQL}`;
+      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_MATCH_SQL} AND ${NOT_CLEANOX_PRODUCTION_SQL}`;
       params = [stageStatus, outletId];
       if (stage === 'frontliner' && date) {
         whereClause += ' AND DATE(t.order_date) = ?';
@@ -300,7 +307,7 @@ export const getList = async (req, res) => {
       `SELECT d.id, d.transaction_id, d.service_id, d.service_name, d.qty, d.unit,
               d.item_work_status, d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage,
               d.requires_ironing, d.fulfillment_type, d.brand, d.color, d.material, d.size,
-              d.condition_notes,
+              d.condition_notes, d.is_cleanox,
               s.category_id,
               cat.code AS category_code
        FROM tr_transaction_detail d
@@ -325,7 +332,9 @@ export const getList = async (req, res) => {
     const stageStatus = STAGE_STATUS[stage] || null;
     const data = txns.map((t) => {
       const items = details.filter((d) => d.transaction_id === t.id);
-      const stageItems = stageStatus ? items.filter((d) => d.item_work_status === stageStatus) : [];
+      const stageItems = stageStatus
+        ? items.filter((d) => d.item_work_status === stageStatus && !(Number(d.is_cleanox) === 1 && CLEANOX_SKIP_STAGES.includes(stage)))
+        : [];
       const clearedItems = items.length - stageItems.length;
       const isDeliveryItem = items.some((d) => d.fulfillment_type === 'Delivery_Kurir');
       return {
@@ -482,8 +491,9 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Keputusan QC tidak valid' });
     }
-    // Semua QC wajib foto (aman, temuan, serah terima)
-    if (incomingPhotos.length === 0) {
+    // Semua QC wajib foto, kecuali Tim Cuci & Tim Setrika saat aman
+    const photoOptional = ['washing', 'ironing'].includes(stage) && qc_status === 'aman';
+    if (incomingPhotos.length === 0 && !photoOptional) {
       await cleanupFiles();
       return res.status(422).json({
         success: false,
@@ -599,23 +609,26 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(409).json({ success: false, message: 'Item sedang di-hold, selesaikan konfirmasi terlebih dahulu' });
     }
+    if (Number(detail.is_cleanox) === 1 && CLEANOX_SKIP_STAGES.includes(stage)) {
+      await cleanupFiles();
+      return res.status(409).json({ success: false, message: 'Item Cleanox By Waschen dikerjakan tim Cleanox, bukan produksi Waschen' });
+    }
 
     const isKiloan = detail.category_code === 'KILOAN' || String(detail.unit).toLowerCase() === 'kg';
     if (isKiloan && ['frontliner', 'washing', 'ironing'].includes(stage) && bags.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian plastik' });
     }
-    // Tim Cuci wajib merinci jenis pakaian per plastik; total rincian = qty plastik
+    // Plastik hanya dihitung Frontliner. Tim Cuci merinci jenis pakaian satu daftar, dikirim
+    // sebagai satu baris total (bag_no 1). Selisih dari Frontliner hanya peringatan di form.
     if (isKiloan && stage === 'washing') {
       const bagNos = new Set(bags.map((b) => Number(b.bag_no)));
-      let kgError = kgItems.some((k) => !bagNos.has(k.bag_no)) ? 'Rincian jenis pakaian tidak cocok dengan nomor plastik' : null;
-      for (const b of bags) {
-        if (kgError) break;
-        const no = Number(b.bag_no);
-        const sum = kgItems.filter((k) => k.bag_no === no).reduce((s, k) => s + k.qty_pcs, 0);
-        if (sum < 1) kgError = `Plastik ${no}: rincian jenis pakaian wajib diisi`;
-        else if (sum !== Number(b.qty_pcs)) kgError = `Plastik ${no}: total rincian (${sum}) tidak sama dengan jumlah plastik (${Number(b.qty_pcs)})`;
-      }
+      const sum = kgItems.reduce((s, k) => s + k.qty_pcs, 0);
+      const total = bags.reduce((s, b) => s + (Number(b.qty_pcs) || 0), 0);
+      let kgError = null;
+      if (kgItems.some((k) => !bagNos.has(k.bag_no))) kgError = 'Rincian jenis pakaian tidak cocok dengan nomor plastik';
+      else if (sum < 1) kgError = 'Rincian jenis pakaian wajib diisi';
+      else if (sum !== total) kgError = `Total rincian (${sum}) tidak sama dengan total quantity (${total})`;
       if (kgError) {
         await cleanupFiles();
         return res.status(422).json({ success: false, message: kgError });
@@ -640,7 +653,9 @@ export const submitQC = async (req, res) => {
         return res.status(422).json({ success: false, message: kgError });
       }
     }
-    if (stage === 'packing' && isKiloan && packings.length === 0) {
+    // Rincian packing wajib saat item keluar dari packing. Kembali/hold belum dikemas, item tetap di
+    // tahap ini dan QC ulang setelah konfirmasi.
+    if (stage === 'packing' && isKiloan && qc_decision === 'lanjut' && packings.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian packing' });
     }
@@ -794,6 +809,20 @@ export const submitQC = async (req, res) => {
       `UPDATE tr_transaction_detail SET ${detailUpdates.join(', ')} WHERE id = ?`,
       detailParams
     );
+
+    // Cleanox By Waschen: QC frontliner tercatat di antrean Cleanox (tidak mengunci Pickup Cleanox)
+    if (Number(detail.is_cleanox) === 1 && stage === 'frontliner' && qc_decision === 'lanjut') {
+      try {
+        await conn.query(
+          `UPDATE tr_cleanox_by_waschen
+           SET qc_frontliner_at = NOW(), qc_frontliner_by = ?
+           WHERE transaction_detail_id = ? AND qc_frontliner_at IS NULL`,
+          [employeeId, detail.id]
+        );
+      } catch (err) {
+        if (err?.code !== 'ER_NO_SUCH_TABLE') throw err; // tabel Phase 17 belum dimigrasi
+      }
+    }
 
     // Log: tahap dikerjakan. Delivery lanjut → Sedang Diantar; handover lanjut → Selesai.
     let logStatus = STAGE_STATUS[stage] || detail.item_work_status;
@@ -1150,14 +1179,16 @@ export const getItemBagHistory = async (req, res) => {
        FROM tr_item_bag_detail b
        JOIN tr_item_progress p ON p.id = b.progress_id
        WHERE b.transaction_detail_id = ?
-       ORDER BY FIELD(p.stage, 'frontliner', 'washing', 'ironing', 'packing'), b.bag_no ASC`,
+       ORDER BY FIELD(p.stage, 'frontliner', 'washing', 'ironing', 'packing'), p.id ASC, b.bag_no ASC`,
       [detailId]
     );
 
+    // QC ulang di tahap yang sama (mis. setelah hold) menggantikan versi lama, bukan menambah total
     const grouped = {};
     for (const row of rows) {
-      if (!grouped[row.stage]) {
+      if (grouped[row.stage]?.progress_id !== row.progress_id) {
         grouped[row.stage] = {
+          progress_id: row.progress_id,
           stage: row.stage,
           employee_name: row.employee_name,
           completed_at: row.completed_at,
