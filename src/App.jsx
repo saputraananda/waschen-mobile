@@ -20,6 +20,11 @@ const LeaderEmployee = lazy(() => import('./pages/leader/pages/Employee.jsx'));
 const LeaderSales = lazy(() => import('./pages/leader/pages/Sales.jsx'));
 const Profile = lazy(() => import('./pages/profile/index.jsx'));
 const EditProfile = lazy(() => import('./pages/profile/components/EditProfile.jsx'));
+const Academy = lazy(() => import('./pages/academy/index.jsx'));
+const AcademyTraining = lazy(() => import('./pages/academy/components/TrainingDetail.jsx'));
+const AcademyAnswers = lazy(() => import('./pages/academy/components/AnswerReview.jsx'));
+const AcademyTest = lazy(() => import('./pages/academy/components/TestPage.jsx'));
+const AcademyFeedback = lazy(() => import('./pages/academy/components/FeedbackPage.jsx'));
 
 // ==========================================
 // ELEGANT STARTUP SPLASH SCREEN COMPONENT (morphs transition to login)
@@ -159,6 +164,11 @@ export default function App() {
               <Route path="/leader/sales" element={<LeaderSales />} />
               <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
+        <Route path="/academy" element={<Academy />} />
+        <Route path="/academy/:id" element={<AcademyTraining />} />
+        <Route path="/academy/:id/answers" element={<AcademyAnswers />} />
+        <Route path="/academy/:id/test/:phase" element={<AcademyTest />} />
+        <Route path="/academy/:id/feedback" element={<AcademyFeedback />} />
 
         {/* Backward-compatibility aliases for legacy URLs */}
         <Route path="/riwayat" element={<Navigate to="/history" replace />} />

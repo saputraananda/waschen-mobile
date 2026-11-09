@@ -45,6 +45,23 @@ export const smartlinkPool = mysql.createPool({
   queueLimit: 0,
   connectTimeout: 10000
 });
+
+// Alora Academy database pool (training dan skill matrix)
+export const academyPool = mysql.createPool({
+  host: process.env.DB_ALORA_ACADEMY_HOST || process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_ALORA_ACADEMY_PORT) || parseInt(process.env.DB_PORT) || 3306,
+  user: process.env.DB_ALORA_ACADEMY_USER || process.env.DB_USER || 'root',
+  password: process.env.DB_ALORA_ACADEMY_PASS || process.env.DB_PASS || '',
+  database: process.env.DB_ALORA_ACADEMY_NAME,
+  timezone: '+07:00', // WIB — tanpa ini DATETIME dianggap UTC lalu tampil +7 jam di UI
+  // Tanggal dikembalikan sebagai teks "YYYY-MM-DD HH:MM:SS" (WIB) apa adanya; objek Date menjadi UTC saat di-JSON dan jam di UI bergeser -7.
+  dateStrings: true,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  connectTimeout: 10000
+});
+
 function holdPool(pool) {
   const raw = pool.pool || pool;
   raw.on('error', (err) => {
@@ -54,3 +71,4 @@ function holdPool(pool) {
 holdPool(mainPool);
 holdPool(myWaschenPool);
 holdPool(smartlinkPool);
+holdPool(academyPool);

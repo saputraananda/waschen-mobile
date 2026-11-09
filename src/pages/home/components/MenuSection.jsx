@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock, Receipt, Package, Users, TrendingUp } from 'lucide-react';
+import { Calendar, Sun, CreditCard, RefreshCw, Timer, Lock, Receipt, Package, Users, TrendingUp, GraduationCap } from 'lucide-react';
 import getDisplayRole from '../../../utils/getDisplayRole.js';
 
 function MotorbikeIcon({ className = 'w-5 h-5' }) {
@@ -210,6 +210,30 @@ export default function MenuSection({
               : progressLocked
                 ? (progressLockMessage || 'Upload foto kebersihan dulu di Absensi')
                 : 'Status Pipeline Pakaian — cuci, setrika, packing'}
+          </span>
+        </div>
+      </button>
+
+      <button
+        id="menu-academy-btn"
+        type="button"
+        disabled={menusLocked}
+        onClick={() => !menusLocked && onMenuClick('/academy', 'Alora Academy')}
+        className={`mt-3.5 w-full bg-white border border-slate-100 rounded-[22px] p-4 text-left shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all relative overflow-hidden flex items-center gap-4 min-h-[88px] group ${
+          menusLocked ? 'opacity-55 cursor-not-allowed' : 'hover:shadow-[0_8px_24px_rgba(79,70,229,0.14)] hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer'
+        }`}
+      >
+        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-indigo-100/90 to-transparent rounded-bl-[48px] pointer-events-none" />
+        {lockBadge}
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-100/80 text-indigo-600 border border-indigo-100 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+          <GraduationCap className="w-5 h-5" />
+        </div>
+        <div className="min-w-0 flex-1 relative z-10">
+          <h4 className="text-[14px] font-black text-slate-800 group-hover:text-indigo-600 transition-colors leading-tight">
+            Alora Academy
+          </h4>
+          <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+            {menusLocked ? 'Tutup lembur dulu' : 'Training, test, rapor, dan skill matrix'}
           </span>
         </div>
       </button>

@@ -20,6 +20,7 @@ import realtimeRoutes from './api/routes/realtime/realtime.routes.js';
 import leaderEmployeeRoutes from './api/routes/leader/employee.routes.js';
 import leaderSalesRoutes from './api/routes/leader/sales.routes.js';
 import leaderReceivableRoutes from './api/routes/leader/receivable.routes.js';
+import academyRoutes from './api/routes/academy/academy.routes.js';
 import { getBaseUploadDir } from './api/middleware/upload.js';
 import { initSocket } from './api/socket/io.js';
 
@@ -68,6 +69,7 @@ app.use('/api/realtime', realtimeRoutes);
 app.use('/api/leader/employees', leaderEmployeeRoutes);
 app.use('/api/leader/sales', leaderSalesRoutes);
 app.use('/api/leader/receivable', leaderReceivableRoutes);
+app.use('/api/academy', academyRoutes);
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
