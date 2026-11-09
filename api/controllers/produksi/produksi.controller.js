@@ -97,7 +97,13 @@ const EFF_OUTLET_MATCH_SQL = `(? IN (
   ${EFF_OUTLET_SQL},
   CASE WHEN d.is_event = 1 AND d.item_work_status = 'Antrean' THEN d.production_outlet_id END
 ))`;
-const HOLD_OUTLET_SQL = `(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
+/**
+ * Cleanox By Waschen (Phase 17): item is_cleanox hanya melewati QC frontliner (Antrean) di Waschen;
+ * Pencucian dst. dikerjakan tim Cleanox (tr_cleanox_by_waschen), jadi tidak masuk antrean Washing/Ironing/Packing.
+ */
+const NOT_CLEANOX_PRODUCTION_SQL = `(d.is_cleanox = 0 OR d.item_work_status = 'Antrean')`;
+const CLEANOX_SKIP_STAGES = ['washing', 'ironing', 'packing'];
+const HOLD_OUTLET_SQL =`(CASE WHEN d.is_event = 1 AND COALESCE(p.returned_to_stage, p.stage) <> 'frontliner' THEN d.production_outlet_id ELSE t.outlet_id END)`;
 // Hold tahap frontliner pada item event yang sudah dibagi: terlihat di stand Event dan cabang tujuan.
 const HOLD_OUTLET_MATCH_SQL = `(? IN (
   ${HOLD_OUTLET_SQL},
@@ -160,6 +166,7 @@ export const getSummary = async (req, res) => {
        JOIN tr_transaction t ON t.id = d.transaction_id
        WHERE ${EFF_OUTLET_MATCH_SQL}
          AND d.item_work_status IN ('Antrean','Pencucian','Penyetrikaan','Pengemasan')
+         AND ${NOT_CLEANOX_PRODUCTION_SQL}
        GROUP BY d.item_work_status`,
       [outletId]
     );
@@ -236,7 +243,7 @@ export const getList = async (req, res) => {
         return res.status(422).json({ success: false, message: 'Tahap tidak valid' });
       }
       const stageStatus = STAGE_STATUS[stage];
-      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_MATCH_SQL}`;
+      whereClause = `d.item_work_status = ? AND ${EFF_OUTLET_MATCH_SQL} AND ${NOT_CLEANOX_PRODUCTION_SQL}`;
       params = [stageStatus, outletId];
       if (stage === 'frontliner' && date) {
         whereClause += ' AND DATE(t.order_date) = ?';
@@ -300,7 +307,7 @@ export const getList = async (req, res) => {
       `SELECT d.id, d.transaction_id, d.service_id, d.service_name, d.qty, d.unit,
               d.item_work_status, d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage,
               d.requires_ironing, d.fulfillment_type, d.brand, d.color, d.material, d.size,
-              d.condition_notes,
+              d.condition_notes, d.is_cleanox,
               s.category_id,
               cat.code AS category_code
        FROM tr_transaction_detail d
@@ -325,7 +332,9 @@ export const getList = async (req, res) => {
     const stageStatus = STAGE_STATUS[stage] || null;
     const data = txns.map((t) => {
       const items = details.filter((d) => d.transaction_id === t.id);
-      const stageItems = stageStatus ? items.filter((d) => d.item_work_status === stageStatus) : [];
+      const stageItems = stageStatus
+        ? items.filter((d) => d.item_work_status === stageStatus && !(Number(d.is_cleanox) === 1 && CLEANOX_SKIP_STAGES.includes(stage)))
+        : [];
       const clearedItems = items.length - stageItems.length;
       const isDeliveryItem = items.some((d) => d.fulfillment_type === 'Delivery_Kurir');
       return {
@@ -600,6 +609,10 @@ export const submitQC = async (req, res) => {
       await cleanupFiles();
       return res.status(409).json({ success: false, message: 'Item sedang di-hold, selesaikan konfirmasi terlebih dahulu' });
     }
+    if (Number(detail.is_cleanox) === 1 && CLEANOX_SKIP_STAGES.includes(stage)) {
+      await cleanupFiles();
+      return res.status(409).json({ success: false, message: 'Item Cleanox By Waschen dikerjakan tim Cleanox, bukan produksi Waschen' });
+    }
 
     const isKiloan = detail.category_code === 'KILOAN' || String(detail.unit).toLowerCase() === 'kg';
     if (isKiloan && ['frontliner', 'washing', 'ironing'].includes(stage) && bags.length === 0) {
@@ -796,6 +809,20 @@ export const submitQC = async (req, res) => {
       `UPDATE tr_transaction_detail SET ${detailUpdates.join(', ')} WHERE id = ?`,
       detailParams
     );
+
+    // Cleanox By Waschen: QC frontliner tercatat di antrean Cleanox (tidak mengunci Pickup Cleanox)
+    if (Number(detail.is_cleanox) === 1 && stage === 'frontliner' && qc_decision === 'lanjut') {
+      try {
+        await conn.query(
+          `UPDATE tr_cleanox_by_waschen
+           SET qc_frontliner_at = NOW(), qc_frontliner_by = ?
+           WHERE transaction_detail_id = ? AND qc_frontliner_at IS NULL`,
+          [employeeId, detail.id]
+        );
+      } catch (err) {
+        if (err?.code !== 'ER_NO_SUCH_TABLE') throw err; // tabel Phase 17 belum dimigrasi
+      }
+    }
 
     // Log: tahap dikerjakan. Delivery lanjut → Sedang Diantar; handover lanjut → Selesai.
     let logStatus = STAGE_STATUS[stage] || detail.item_work_status;
