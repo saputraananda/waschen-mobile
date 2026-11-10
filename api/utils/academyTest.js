@@ -1,13 +1,11 @@
-import { testScoreFromAnswers } from './academyScoring.js';
+import { questionMaxPoints, testScoreFromAnswers } from './academyScoring.js';
 
 const MAX_ESSAY_LENGTH = 2000;
-
-const sameSet = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
 
 /**
  * Menilai jawaban di server. questions = [{ id, type, correct_option_ids, option_ids }] dari database,
  * jadi kunci jawaban tidak pernah dikirim ke HP peserta.
- * Pilihan ganda dan checkbox dinilai langsung (checkbox: himpunan pilihan harus persis sama dengan kunci).
+ * Pilihan ganda dan checkbox dinilai langsung: poin = jumlah pilihan peserta yang ada di kunci. Pilihan salah tidak mengurangi.
  * Essay yang diisi menunggu penilaian HR (is_correct null), essay yang dikosongkan otomatis salah.
  */
 export function gradeAnswers(questions, answers) {
@@ -32,11 +30,18 @@ export function gradeAnswers(questions, answers) {
 
   const rows = questions.map((q) => {
     const given = sent.get(q.id) ?? { option_ids: [], answer_text: q.type === 'ESSAY' ? '' : null };
-    const isCorrect =
+    const points =
       q.type === 'ESSAY'
         ? given.answer_text ? null : 0
-        : sameSet(given.option_ids, q.correct_option_ids) && given.option_ids.length > 0 ? 1 : 0;
-    return { question_id: q.id, type: q.type, option_ids: given.option_ids, answer_text: given.answer_text, is_correct: isCorrect };
+        : given.option_ids.filter((id) => q.correct_option_ids.includes(id)).length;
+    return {
+      question_id: q.id,
+      type: q.type,
+      option_ids: given.option_ids,
+      answer_text: given.answer_text,
+      is_correct: points,
+      max_points: questionMaxPoints(q.type, q.correct_option_ids.length),
+    };
   });
   return { rows, score: testScoreFromAnswers(rows) };
 }
@@ -61,20 +66,21 @@ export function buildAnswerReview(questions, answerRows) {
           q.type === 'ESSAY' ? [] : q.options.map((o) => ({ id: o.id, option_text: o.option_text, selected: picked.has(o.id) })),
         answer_text: q.type === 'ESSAY' ? rows[0].answer_text ?? '' : null,
         is_correct: rows[0].is_correct,
+        max_points: questionMaxPoints(q.type, q.correct_option_ids.length),
       };
     })
     .filter(Boolean);
 }
 
 /**
- * Perlu perbaikan di rapor: nomor soal post-test yang salah per topik, dan indikator mentor di bawah 2,5.
+ * Perlu perbaikan di rapor: nomor soal post-test yang poinnya belum penuh per topik, dan indikator mentor di bawah 2,5.
  * Hasil: { questions: [{ topic_name, numbers }], mentor: [{ topic_name, indicator_text, score }] }.
  */
 export function buildImprovements(postAnswers, mentorScores) {
   const byTopic = new Map();
   for (const a of postAnswers) {
-    // is_correct null = essay belum dinilai, bukan salah.
-    if (a.is_correct !== 0) continue;
+    // is_correct null = essay belum dinilai, bukan salah. Poin penuh = tidak perlu perbaikan.
+    if (a.is_correct === null || a.is_correct >= a.max_points) continue;
     if (!byTopic.has(a.topic_name)) byTopic.set(a.topic_name, []);
     byTopic.get(a.topic_name).push(a.number);
   }

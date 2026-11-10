@@ -25,6 +25,9 @@ const AcademyTraining = lazy(() => import('./pages/academy/components/TrainingDe
 const AcademyAnswers = lazy(() => import('./pages/academy/components/AnswerReview.jsx'));
 const AcademyTest = lazy(() => import('./pages/academy/components/TestPage.jsx'));
 const AcademyFeedback = lazy(() => import('./pages/academy/components/FeedbackPage.jsx'));
+const AcademyPenilaian = lazy(() => import('./pages/academy/penilaian/index.jsx'));
+const AcademyMentorScore = lazy(() => import('./pages/academy/penilaian/MentorScore.jsx'));
+const AcademyOjtObserve = lazy(() => import('./pages/academy/penilaian/OjtObserve.jsx'));
 
 // ==========================================
 // ELEGANT STARTUP SPLASH SCREEN COMPONENT (morphs transition to login)
@@ -165,6 +168,9 @@ export default function App() {
               <Route path="/profile" element={<Profile />} />
         <Route path="/edit-profile" element={<EditProfile />} />
         <Route path="/academy" element={<Academy />} />
+        <Route path="/academy/penilaian" element={<AcademyPenilaian />} />
+        <Route path="/academy/penilaian/mentor/:id" element={<AcademyMentorScore />} />
+        <Route path="/academy/penilaian/ojt/:id" element={<AcademyOjtObserve />} />
         <Route path="/academy/:id" element={<AcademyTraining />} />
         <Route path="/academy/:id/answers" element={<AcademyAnswers />} />
         <Route path="/academy/:id/test/:phase" element={<AcademyTest />} />

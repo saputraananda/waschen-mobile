@@ -15,11 +15,11 @@ const VERDICT = {
   pending: { label: 'Menunggu penilaian', Icon: Clock, cls: 'bg-slate-50 text-slate-500 border-slate-200' },
 };
 
-// Essay dinilai 0, 1, 2 oleh HR; pilihan ganda dan checkbox 0 atau 1.
-function verdictKey({ type, is_correct }) {
+// is_correct adalah poin yang didapat: poin penuh benar, nol salah, di antaranya benar sebagian.
+function verdictKey({ is_correct, max_points }) {
   if (is_correct === null) return 'pending';
-  if (type === 'ESSAY') return is_correct === 2 ? 1 : is_correct === 1 ? 'partial' : 0;
-  return is_correct;
+  if (is_correct >= max_points) return 1;
+  return is_correct === 0 ? 0 : 'partial';
 }
 
 function Question({ question }) {

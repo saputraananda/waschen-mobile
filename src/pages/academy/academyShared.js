@@ -36,6 +36,13 @@ export const fmtDatetime = (value) => {
   return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}, ${time.slice(0, 5).replace(':', '.')}`;
 };
 
+/** "2026-11-10" menjadi "10 Nov 2026". */
+export const fmtDate = (value) => {
+  if (!value) return '-';
+  const [y, m, d] = String(value).split('-');
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
 /** Keterangan langkah berikutnya untuk peserta. */
 export function nextStep(training) {
   if (training.status === 'ABSENT') return 'Tidak hadir';

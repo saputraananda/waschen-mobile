@@ -1,5 +1,5 @@
 import { academyPool } from '../../db/pool.js';
-import { averageScore, computeParticipantScores } from '../../utils/academyScoring.js';
+import { averageScore, computeParticipantScores, questionMaxPoints } from '../../utils/academyScoring.js';
 import { buildAnswerReview, buildImprovements, gradeAnswers } from '../../utils/academyTest.js';
 import { toAssetUrl } from '../../utils/assetUrl.js';
 
@@ -54,7 +54,7 @@ async function getQuestions(runQuery, participant, phase) {
 }
 
 /** Sama dengan recalcParticipant di backend-superapp batchController. */
-async function recalcParticipant(conn, participantId) {
+export async function recalcParticipant(conn, participantId) {
   const [[row]] = await conn.query(
     `SELECT p.status, p.post_score, v.pass_score, v.pass_with_fix_score, v.practice_weight, v.attitude_weight
      FROM tr_participant p
@@ -191,7 +191,13 @@ export const getMyTraining = async (req, res) => {
         // Peserta yang ditutup HR tidak punya jawaban, jadi tidak ada nomor soal yang bisa ditunjuk.
         improvements: buildImprovements(
           postQuestions
-            .map((q, index) => ({ id: q.id, number: index + 1, topic_name: q.topic_name, is_correct: correctById.get(q.id) }))
+            .map((q, index) => ({
+              id: q.id,
+              number: index + 1,
+              topic_name: q.topic_name,
+              is_correct: correctById.get(q.id),
+              max_points: questionMaxPoints(q.type, q.correct_option_ids.length),
+            }))
             .filter((q) => correctById.has(q.id)),
           mentorScores
         ),
