@@ -4,10 +4,11 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from '../components/AcademyShell.jsx';
 import { RESULT_META, api, errorMessage, fmt, fmtDate } from '../academyShared.js';
+import { ProgressBadge, SubskillProgress } from './Progress.jsx';
 
 const TABS = [
   ['mentor', 'Mentor'],
-  ['body', 'Body'],
+  ['pembimbing', 'Pembimbing'],
   ['mine', 'Nilai OJT'],
 ];
 
@@ -78,7 +79,7 @@ function MentorPanel() {
   );
 }
 
-function BodyPanel() {
+function PembimbingPanel() {
   const navigate = useNavigate();
   const { rows, error } = useList('/academy/penilaian/ojt', 'Gagal memuat daftar OJT');
   return (
@@ -94,7 +95,7 @@ function BodyPanel() {
                   {r.training_name} · {fmtDate(r.start_date)} sampai {fmtDate(r.end_date)}
                 </p>
                 <p className="text-[11.5px] font-bold text-[#5f1340] mt-1">
-                  {r.scored_days} dari {r.days} hari dinilai
+                  {r.scored_days} dari 2 penilaian
                 </p>
                 <div className="mt-2">
                   <PhaseBadge phase={r.phase} />
@@ -125,9 +126,11 @@ function MyOjtCard({ ojt }) {
       <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-center">
         <p className="text-[11px] font-bold text-slate-500">Nilai OJT</p>
         <p className="text-2xl font-black text-slate-800">{ojt.average === null ? '-' : `${fmt(ojt.average)} dari 4`}</p>
-        <p className="text-[11px] font-medium text-slate-400">
-          {ojt.scored_days} dari {ojt.days} hari dinilai
-        </p>
+        <p className="text-[11px] font-medium text-slate-400">{ojt.scored_days} dari 2 penilaian</p>
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <span className="text-[11px] font-bold text-slate-500">Kemajuan</span>
+          <ProgressBadge progress={ojt.progress} />
+        </div>
       </div>
       {ojt.days_detail.length > 0 && (
         <>
@@ -137,21 +140,34 @@ function MyOjtCard({ ojt }) {
             aria-expanded={open}
             className="mt-3 flex w-full items-center justify-between text-[12.5px] font-black text-[#5f1340]"
           >
-            Rincian per hari
+            Rincian penilaian
             <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
+          {open && ojt.progress && (
+            <div className="mt-2 rounded-2xl border border-slate-100 p-3">
+              <p className="text-[12.5px] font-black text-slate-800">Kemajuan per sub-skill</p>
+              <SubskillProgress criteria={ojt.criteria} />
+            </div>
+          )}
           {open &&
             ojt.days_detail.map((day) => (
               <div key={day.date} className="mt-2 rounded-2xl border border-slate-100 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12.5px] font-black text-slate-800">{fmtDate(day.date)}</span>
+                  <span className="text-[12.5px] font-black text-slate-800">
+                    {day.kind === 'FIRST' ? 'Hari pertama' : 'Hari terakhir'} · {fmtDate(day.date)}
+                  </span>
                   <span className="text-[12.5px] font-black text-slate-800">{fmt(day.average)} dari 4</span>
                 </div>
-                {day.scores.map((s) => (
-                  <div key={s.criterion_id} className="flex items-center justify-between gap-3 pt-1.5 text-[12px] text-slate-600">
-                    <span className="min-w-0">{s.name}</span>
-                    <span className="font-black shrink-0">{s.score}</span>
-                  </div>
+                {day.scores.map((s, index) => (
+                  <React.Fragment key={s.subskill_id}>
+                    {s.criterion_name !== day.scores[index - 1]?.criterion_name && (
+                      <p className="pt-2 text-[11px] font-black uppercase tracking-wider text-[#5f1340]">{s.criterion_name}</p>
+                    )}
+                    <div className="flex items-center justify-between gap-3 pt-1.5 text-[12px] text-slate-600">
+                      <span className="min-w-0">{s.name}</span>
+                      <span className="font-black shrink-0">{s.score}</span>
+                    </div>
+                  </React.Fragment>
                 ))}
               </div>
             ))}
@@ -200,7 +216,7 @@ export default function Penilaian() {
       </div>
 
       {tab === 'mentor' && <MentorPanel />}
-      {tab === 'body' && <BodyPanel />}
+      {tab === 'pembimbing' && <PembimbingPanel />}
       {tab === 'mine' && <MyOjtPanel />}
     </AcademyShell>
   );

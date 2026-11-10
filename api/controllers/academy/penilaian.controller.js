@@ -1,5 +1,15 @@
 import { academyPool, mainPool } from '../../db/pool.js';
-import { dateRange, dayAverage, isValidDate, addDays, ojtAverage, ojtPhase, validateDayScores } from '../../utils/academyOjt.js';
+import {
+  addDays,
+  buildSubskillProgress,
+  dayAverage,
+  isValidDate,
+  ojtAverage,
+  ojtPhase,
+  scorableDates,
+  scoreProgress,
+  validateDayScores,
+} from '../../utils/academyOjt.js';
 import { validateMentorScores } from '../../utils/academyMentor.js';
 import { recalcParticipant } from './academy.controller.js';
 
@@ -158,7 +168,7 @@ export const saveMentoring = async (req, res) => {
 
 const endDateOf = (ojt) => addDays(ojt.start_date, ojt.days - 1);
 
-/** Nilai per tanggal: { tanggal: [{ criterion_id, score }] }. */
+/** Nilai per tanggal: { tanggal: [{ ojt_subskill_id, score }] }. */
 function groupByDate(scoreRows) {
   const byDate = new Map();
   for (const row of scoreRows) {
@@ -168,23 +178,37 @@ function groupByDate(scoreRows) {
   return byDate;
 }
 
-/** Nilai akhir dan jumlah hari terisi. */
-function summarize(scoreRows) {
-  const averages = [...groupByDate(scoreRows).values()].map((day) => dayAverage(day.map((r) => r.score)));
-  return { scored_days: averages.length, average: ojtAverage(averages) };
+/** Nilai OJT, jumlah penilaian (maksimal 2: hari pertama dan hari terakhir), dan kemajuan rata-rata. Sama dengan summarize di backend-superapp. */
+function summarize(scoreRows, ojt) {
+  const byDate = groupByDate(scoreRows);
+  const averages = scorableDates(ojt.start_date, ojt.days).map((date) =>
+    byDate.has(date) ? dayAverage(byDate.get(date).map((r) => r.score)) : null
+  );
+  return {
+    scored_days: averages.filter((a) => a !== null).length,
+    average: ojtAverage(averages),
+    progress: scoreProgress(averages[0], averages[1]),
+  };
 }
 
-/** Satu entri untuk setiap tanggal periode OJT, terisi atau belum. */
-function buildDays(ojt, scoreRows, criteriaNameById, today) {
+/** Dua entri: hari pertama dan hari terakhir OJT, terisi atau belum. `subskills` = baris tr_ojt_subskill OJT itu (urut kriteria lalu nama). */
+function buildDays(ojt, scoreRows, subskills, today) {
   const byDate = groupByDate(scoreRows);
-  return dateRange(ojt.start_date, ojt.days).map((date) => {
+  const order = new Map(subskills.map((s, index) => [s.id, { ...s, order: index }]));
+  return scorableDates(ojt.start_date, ojt.days).map((date, index) => {
     const rows = byDate.get(date);
     return {
       date,
+      kind: index === 0 ? 'FIRST' : 'LAST',
       can_score: date <= today,
       scored: Boolean(rows),
       average: rows ? dayAverage(rows.map((r) => r.score)) : null,
-      scores: rows ? rows.map((r) => ({ criterion_id: r.criterion_id, name: criteriaNameById.get(r.criterion_id), score: r.score })) : [],
+      scores: rows
+        ? rows
+            .map((r) => ({ ...order.get(r.ojt_subskill_id), score: r.score }))
+            .sort((a, b) => a.order - b.order)
+            .map((s) => ({ subskill_id: s.id, name: s.name, criterion_name: s.criterion_name, score: s.score }))
+        : [],
     };
   });
 }
@@ -203,13 +227,13 @@ async function findObservedOjt(runQuery, ojtId, employeeId) {
   return ojt ?? null;
 }
 
-const getCriteria = async (runQuery, ojtId) => {
-  const [criteria] = await runQuery(
-    `SELECT c.id, c.name FROM tr_ojt_criterion oc JOIN mst_ojt_criterion c ON c.id = oc.criterion_id
-     WHERE oc.ojt_id = ? ORDER BY c.name`,
+/** Sub-skill salinan OJT ini, urut kriteria lalu nama. */
+const getSubskills = async (runQuery, ojtId) => {
+  const [rows] = await runQuery(
+    `SELECT id, criterion_id, criterion_name, name FROM tr_ojt_subskill WHERE ojt_id = ? ORDER BY criterion_name, name`,
     [ojtId]
   );
-  return criteria;
+  return rows;
 };
 
 export const listObserving = async (req, res) => {
@@ -241,7 +265,7 @@ export const listObserving = async (req, res) => {
           end_date: end,
           days: o.days,
           phase: ojtPhase(o.start_date, end, today),
-          scored_days: summarize(scores.filter((s) => s.ojt_id === o.id)).scored_days,
+          scored_days: summarize(scores.filter((s) => s.ojt_id === o.id), o).scored_days,
         };
       }),
     });
@@ -256,8 +280,8 @@ export const getObservingDetail = async (req, res) => {
     const ojt = await findObservedOjt(pool, req.params.id, req.user.employee_id);
     if (!ojt) return fail(res, 404, 'OJT tidak ditemukan');
 
-    const criteria = await getCriteria(pool, ojt.id);
-    const [scores] = await pool('SELECT score_date, criterion_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
+    const subskills = await getSubskills(pool, ojt.id);
+    const [scores] = await pool('SELECT score_date, ojt_subskill_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
     const names = await getNames([ojt.employee_id]);
     const today = await getToday();
     res.json({
@@ -268,8 +292,9 @@ export const getObservingDetail = async (req, res) => {
         training_name: ojt.training_name,
         start_date: ojt.start_date,
         end_date: endDateOf(ojt),
-        criteria,
-        days: buildDays(ojt, scores, new Map(criteria.map((c) => [c.id, c.name])), today),
+        criteria: buildSubskillProgress(subskills, scores, ...scorableDates(ojt.start_date, ojt.days)),
+        days: buildDays(ojt, scores, subskills, today),
+        ...summarize(scores, ojt),
       },
     });
   } catch (err) {
@@ -278,7 +303,7 @@ export const getObservingDetail = async (req, res) => {
   }
 };
 
-/** Satu penilai cukup mewakili satu hari: isian baru menimpa isian sebelumnya di tanggal yang sama. */
+/** Hanya hari pertama dan hari terakhir yang dinilai. Satu penilai cukup mewakili satu hari: isian baru menimpa isian sebelumnya. */
 export const saveObservingDay = async (req, res) => {
   const date = req.params.date;
   if (!isValidDate(date)) return fail(res, 400, 'Tanggal tidak valid');
@@ -294,19 +319,21 @@ export const saveObservingDay = async (req, res) => {
     const run = (sql, params) => conn.query(sql, params);
     const ojt = await findObservedOjt(run, req.params.id, req.user.employee_id);
     if (!ojt) return await abort(404, 'OJT tidak ditemukan');
-    if (!dateRange(ojt.start_date, ojt.days).includes(date)) return await abort(400, 'Tanggal di luar periode OJT');
+    if (!scorableDates(ojt.start_date, ojt.days).includes(date)) {
+      return await abort(400, 'Hanya hari pertama dan hari terakhir yang dinilai');
+    }
     const [[{ today }]] = await conn.query('SELECT CURDATE() AS today');
     if (date > today) return await abort(400, 'Tanggal itu belum bisa dinilai');
 
-    const criteria = await getCriteria(run, ojt.id);
-    const invalid = validateDayScores(criteria.map((c) => c.id), req.body.scores);
+    const subskills = await getSubskills(run, ojt.id);
+    const invalid = validateDayScores(subskills.map((s) => s.id), req.body.scores);
     if (invalid) return await abort(400, invalid);
 
-    for (const { criterion_id, score } of req.body.scores) {
+    for (const { subskill_id, score } of req.body.scores) {
       await conn.query(
-        `INSERT INTO tr_ojt_score (ojt_id, score_date, criterion_id, score, assessor_id, created_by) VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO tr_ojt_score (ojt_id, score_date, ojt_subskill_id, score, assessor_id, created_by) VALUES (?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE score = VALUES(score), assessor_id = VALUES(assessor_id)`,
-        [ojt.id, date, Number(criterion_id), Number(score), req.user.employee_id, req.user.employee_id]
+        [ojt.id, date, Number(subskill_id), Number(score), req.user.employee_id, req.user.employee_id]
       );
     }
     await conn.commit();
@@ -336,8 +363,8 @@ export const getMyOjt = async (req, res) => {
     const today = await getToday();
     const data = [];
     for (const ojt of ojts) {
-      const criteria = await getCriteria(pool, ojt.id);
-      const [scores] = await pool('SELECT score_date, criterion_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
+      const subskills = await getSubskills(pool, ojt.id);
+      const [scores] = await pool('SELECT score_date, ojt_subskill_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
       const end = endDateOf(ojt);
       data.push({
         id: ojt.id,
@@ -346,8 +373,9 @@ export const getMyOjt = async (req, res) => {
         end_date: end,
         days: ojt.days,
         phase: ojtPhase(ojt.start_date, end, today),
-        ...summarize(scores),
-        days_detail: buildDays(ojt, scores, new Map(criteria.map((c) => [c.id, c.name])), today).filter((d) => d.scored),
+        ...summarize(scores, ojt),
+        criteria: buildSubskillProgress(subskills, scores, ...scorableDates(ojt.start_date, ojt.days)),
+        days_detail: buildDays(ojt, scores, subskills, today).filter((d) => d.scored),
       });
     }
     res.json({ success: true, data });

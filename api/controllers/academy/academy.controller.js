@@ -211,7 +211,7 @@ export const getMyTraining = async (req, res) => {
   }
 };
 
-/** Jawaban pre-test dan post-test milik peserta sendiri. Terbuka setelah rapor siap, tanpa kunci jawaban. */
+/** Jawaban pre-test dan post-test milik peserta sendiri. Terbuka setelah rapor siap, dengan kunci pilihan ganda dan checkbox (tanpa kunci essay). */
 export const getMyAnswers = async (req, res) => {
   try {
     const participant = await findOwnParticipant(pool, req.params.id, req.user.employee_id);

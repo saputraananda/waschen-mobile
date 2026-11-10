@@ -47,7 +47,8 @@ export function gradeAnswers(questions, answers) {
 }
 
 /**
- * Jawaban peserta untuk halaman riwayat. Kunci jawaban tidak ikut dikirim.
+ * Jawaban peserta untuk halaman riwayat. Kunci pilihan ganda dan checkbox ikut dikirim (`correct`), karena halaman ini
+ * hanya terbuka setelah rapor siap. Essay tidak membawa kunci maupun panduan penilai.
  * Soal tanpa jawaban (peserta ditutup HR) dilewati, tetapi nomornya tetap dihitung agar sama dengan "soal post-test no. N".
  */
 export function buildAnswerReview(questions, answerRows) {
@@ -63,7 +64,14 @@ export function buildAnswerReview(questions, answerRows) {
         type: q.type,
         question_text: q.question_text,
         options:
-          q.type === 'ESSAY' ? [] : q.options.map((o) => ({ id: o.id, option_text: o.option_text, selected: picked.has(o.id) })),
+          q.type === 'ESSAY'
+            ? []
+            : q.options.map((o) => ({
+                id: o.id,
+                option_text: o.option_text,
+                selected: picked.has(o.id),
+                correct: q.correct_option_ids.includes(o.id),
+              })),
         answer_text: q.type === 'ESSAY' ? rows[0].answer_text ?? '' : null,
         is_correct: rows[0].is_correct,
         max_points: questionMaxPoints(q.type, q.correct_option_ids.length),

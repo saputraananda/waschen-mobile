@@ -5,6 +5,7 @@ import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from '../components/AcademyShell.jsx';
 import { api, errorMessage, fmt, fmtDate } from '../academyShared.js';
 import ScoreButtons from './ScoreButtons.jsx';
+import { ProgressBadge, SubskillProgress } from './Progress.jsx';
 
 export default function OjtObserve() {
   const { id } = useParams();
@@ -35,7 +36,7 @@ export default function OjtObserve() {
   const open = (day) => {
     setError('');
     setOpenDate(day.date);
-    setScores(Object.fromEntries(day.scores.map((s) => [s.criterion_id, s.score])));
+    setScores(Object.fromEntries(day.scores.map((s) => [s.subskill_id, s.score])));
   };
 
   const save = async () => {
@@ -43,7 +44,7 @@ export default function OjtObserve() {
     setError('');
     try {
       await api.put(`/academy/penilaian/ojt/${id}/days/${openDate}`, {
-        scores: ojt.criteria.map((c) => ({ criterion_id: c.id, score: scores[c.id] })),
+        scores: allSubskills.map((s) => ({ subskill_id: s.id, score: scores[s.id] })),
       });
       setOpenDate(null);
       await load();
@@ -54,7 +55,8 @@ export default function OjtObserve() {
     }
   };
 
-  const complete = ojt && ojt.criteria.every((c) => scores[c.id]);
+  const allSubskills = ojt ? ojt.criteria.flatMap((c) => c.subskills) : [];
+  const complete = ojt && allSubskills.length > 0 && allSubskills.every((s) => scores[s.id]);
 
   return (
     <AcademyShell
@@ -65,7 +67,7 @@ export default function OjtObserve() {
       {!ojt && !error && <Message>Memuat OJT...</Message>}
       {error && <Message tone="error">{error}</Message>}
 
-      {ojt?.days.map((day, index) => (
+      {ojt?.days.map((day) => (
         <Card key={day.date}>
           <button
             type="button"
@@ -77,7 +79,9 @@ export default function OjtObserve() {
             <span className="flex items-center gap-3 min-w-0">
               <CalendarDays className="w-5 h-5 shrink-0 text-slate-400" aria-hidden="true" />
               <span className="min-w-0">
-                <span className="block text-[13px] font-black text-slate-800">Hari ke-{index + 1}</span>
+                <span className="block text-[13px] font-black text-slate-800">
+                  {day.kind === 'FIRST' ? 'Hari pertama' : 'Hari terakhir'}
+                </span>
                 <span className="block text-[11.5px] font-medium text-slate-500">{fmtDate(day.date)}</span>
               </span>
             </span>
@@ -98,13 +102,18 @@ export default function OjtObserve() {
           {openDate === day.date && (
             <div className="mt-3 border-t border-slate-100 pt-1">
               {ojt.criteria.map((c) => (
-                <div key={c.id} className="py-3 border-b border-slate-100 last:border-0">
-                  <p className="text-[12.5px] font-semibold text-slate-700 mb-2">{c.name}</p>
-                  <ScoreButtons
-                    value={scores[c.id] ?? null}
-                    label={c.name}
-                    onChange={(n) => setScores((prev) => ({ ...prev, [c.id]: n }))}
-                  />
+                <div key={c.id} className="pt-3">
+                  <p className="text-[11.5px] font-black uppercase tracking-wider text-[#5f1340]">{c.name}</p>
+                  {c.subskills.map((s) => (
+                    <div key={s.id} className="py-3 border-b border-slate-100 last:border-0">
+                      <p className="text-[12.5px] font-semibold text-slate-700 mb-2">{s.name}</p>
+                      <ScoreButtons
+                        value={scores[s.id] ?? null}
+                        label={`${c.name}: ${s.name}`}
+                        onChange={(n) => setScores((prev) => ({ ...prev, [s.id]: n }))}
+                      />
+                    </div>
+                  ))}
                 </div>
               ))}
               <button
@@ -119,6 +128,16 @@ export default function OjtObserve() {
           )}
         </Card>
       ))}
+
+      {ojt && (
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[13px] font-black text-slate-800">Kemajuan</span>
+            <ProgressBadge progress={ojt.progress} />
+          </div>
+          {ojt.progress && <SubskillProgress criteria={ojt.criteria} />}
+        </Card>
+      )}
     </AcademyShell>
   );
 }

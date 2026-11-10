@@ -39,10 +39,20 @@ function Question({ question }) {
             <li
               key={o.id}
               className={`rounded-xl border px-3 py-2 text-[12.5px] font-semibold ${
-                o.selected ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]' : 'border-slate-200 text-slate-500'
+                o.correct
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : o.selected
+                    ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]'
+                    : 'border-slate-200 text-slate-500'
               }`}
             >
               {o.option_text}
+              {o.correct && (
+                <span className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] font-black">
+                  <Check className="w-3 h-3" aria-hidden="true" />
+                  Kunci
+                </span>
+              )}
               {o.selected && <span className="ml-1.5 text-[11px] font-black">(jawabanmu)</span>}
             </li>
           ))}
@@ -112,6 +122,9 @@ export default function AnswerReview() {
               Nilai {fmt(test.score)}
             </span>
           </div>
+          {test.questions.some((q) => q.options.length > 0) && (
+            <p className="mb-1 text-[11.5px] font-medium text-slate-500">Opsi bertanda Kunci adalah jawaban yang benar.</p>
+          )}
           {test.questions.length ? (
             test.questions.map((q) => <Question key={q.id} question={q} />)
           ) : (
