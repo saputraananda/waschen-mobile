@@ -235,7 +235,7 @@ function summarize(scoreRows, ojt) {
   };
 }
 
-/** Dua entri: hari pertama dan hari terakhir OJT, terisi atau belum. `subskills` = baris tr_ojt_subskill OJT itu (urut kriteria lalu nama). */
+/** Dua entri: hari pertama dan hari terakhir OJT, terisi atau belum. `subskills` = baris tr_ojt_subskill OJT itu (urut kriteria lalu urutan sub-skill). */
 function buildDays(ojt, scoreRows, subskills, today) {
   const byDate = groupByDate(scoreRows);
   const order = new Map(subskills.map((s, index) => [s.id, { ...s, order: index }]));
@@ -271,10 +271,10 @@ async function findObservedOjt(runQuery, ojtId, employeeId) {
   return ojt ?? null;
 }
 
-/** Sub-skill salinan OJT ini, urut kriteria lalu nama. */
+/** Sub-skill salinan OJT ini, urut kriteria lalu urutan sub-skill. */
 const getSubskills = async (runQuery, ojtId) => {
   const [rows] = await runQuery(
-    `SELECT id, criterion_id, criterion_name, name FROM tr_ojt_subskill WHERE ojt_id = ? ORDER BY criterion_name, name`,
+    `SELECT id, criterion_id, criterion_name, name FROM tr_ojt_subskill WHERE ojt_id = ? ORDER BY criterion_name, sort_order, id`,
     [ojtId]
   );
   return rows;
