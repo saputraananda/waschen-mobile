@@ -12,6 +12,7 @@ import {
 } from '../../controllers/academy/academy.controller.js';
 import {
   listMentoring,
+  listMentoringParticipants,
   getMentoringForm,
   saveMentoring,
   listObserving,
@@ -31,6 +32,7 @@ router.get('/trainings/:id/feedback', getFeedbackForm);
 router.post('/trainings/:id/feedback', submitFeedback);
 router.get('/skills', listMySkills);
 router.get('/penilaian/mentor', listMentoring);
+router.get('/penilaian/mentor/batch/:batchId', listMentoringParticipants);
 router.get('/penilaian/mentor/:participantId', getMentoringForm);
 router.put('/penilaian/mentor/:participantId', saveMentoring);
 router.get('/penilaian/ojt', listObserving);

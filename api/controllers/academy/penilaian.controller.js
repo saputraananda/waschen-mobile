@@ -35,7 +35,7 @@ const fail = (res, status, message) => res.status(status).json({ success: false,
 /** Peserta di batch yang mentornya karyawan ini (kolom employee_id, bukan vendor). Kosong kalau bukan mentornya. */
 async function findMentoredParticipant(runQuery, participantId, employeeId, lock = false) {
   const [[participant]] = await runQuery(
-    `SELECT p.id, p.employee_id, p.status, t.name AS training_name, b.start_at <= NOW() AS started
+    `SELECT p.id, p.batch_id, p.employee_id, p.status, t.name AS training_name, b.start_at <= NOW() AS started
      FROM tr_participant p
      JOIN tr_training_batch b ON b.id = p.batch_id
      JOIN mst_training t ON t.id = b.training_id
@@ -63,10 +63,50 @@ async function getParticipantIndicators(runQuery, participantId) {
   return indicators;
 }
 
+/** Training (batch) yang dimentori karyawan ini, sebelum maupun sesudah jam mulai. */
 export const listMentoring = async (req, res) => {
   try {
     const [rows] = await pool(
-      `SELECT p.id, p.employee_id, p.status, t.name AS training_name, b.start_at,
+      `SELECT b.id, t.name AS training_name, b.start_at, b.start_at <= NOW() AS started,
+              (SELECT COUNT(*) FROM tr_participant p WHERE p.batch_id = b.id) AS participant_count
+       FROM tr_training_batch b
+       JOIN mst_training t ON t.id = b.training_id
+       WHERE b.status = 'SCHEDULED'
+         AND EXISTS (SELECT 1 FROM tr_batch_mentor m WHERE m.batch_id = b.id AND m.employee_id = ?)
+       ORDER BY b.start_at DESC, b.id DESC`,
+      [req.user.employee_id]
+    );
+    res.json({
+      success: true,
+      data: rows.map((r) => ({
+        id: r.id,
+        training_name: r.training_name,
+        start_at: r.start_at,
+        started: Boolean(r.started),
+        participant_count: r.participant_count,
+      })),
+    });
+  } catch (err) {
+    console.error('listMentoring error:', err);
+    fail(res, 500, 'Gagal memuat daftar penilaian mentor');
+  }
+};
+
+/** Peserta satu batch milik mentor ini. Peserta yang tidak hadir ikut tampil, tetapi tidak bisa dinilai. */
+export const listMentoringParticipants = async (req, res) => {
+  try {
+    const [[batch]] = await pool(
+      `SELECT b.id, b.start_at, b.start_at <= NOW() AS started, t.name AS training_name
+       FROM tr_training_batch b
+       JOIN mst_training t ON t.id = b.training_id
+       WHERE b.id = ? AND b.status = 'SCHEDULED'
+         AND EXISTS (SELECT 1 FROM tr_batch_mentor m WHERE m.batch_id = b.id AND m.employee_id = ?)`,
+      [req.params.batchId, req.user.employee_id]
+    );
+    if (!batch) return fail(res, 404, 'Training tidak ditemukan');
+
+    const [rows] = await pool(
+      `SELECT p.id, p.employee_id, p.status,
               (SELECT COUNT(*) FROM mst_mentor_indicator i
                  WHERE i.version_id = b.version_id
                    AND (i.category = 'SIKAP' OR i.topic_id IN (SELECT topic_id FROM tr_participant_topic pt WHERE pt.participant_id = p.id))
@@ -78,26 +118,28 @@ export const listMentoring = async (req, res) => {
               ) AS scored_count
        FROM tr_participant p
        JOIN tr_training_batch b ON b.id = p.batch_id
-       JOIN mst_training t ON t.id = b.training_id
-       WHERE b.status = 'SCHEDULED' AND b.start_at <= NOW() AND p.status <> 'ABSENT'
-         AND EXISTS (SELECT 1 FROM tr_batch_mentor m WHERE m.batch_id = b.id AND m.employee_id = ?)
-       ORDER BY b.start_at DESC, p.id`,
-      [req.user.employee_id]
+       WHERE p.batch_id = ?
+       ORDER BY p.id`,
+      [batch.id]
     );
     const names = await getNames(rows.map((r) => r.employee_id));
     res.json({
       success: true,
-      data: rows.map((r) => ({
-        id: r.id,
-        full_name: names.get(r.employee_id) ?? 'Karyawan tidak ditemukan',
-        training_name: r.training_name,
-        start_at: r.start_at,
-        scored: r.indicator_count > 0 && r.scored_count >= r.indicator_count,
-      })),
+      data: {
+        training_name: batch.training_name,
+        start_at: batch.start_at,
+        started: Boolean(batch.started),
+        participants: rows.map((r) => ({
+          id: r.id,
+          full_name: names.get(r.employee_id) ?? 'Karyawan tidak ditemukan',
+          absent: r.status === 'ABSENT',
+          scored: r.indicator_count > 0 && r.scored_count >= r.indicator_count,
+        })),
+      },
     });
   } catch (err) {
-    console.error('listMentoring error:', err);
-    fail(res, 500, 'Gagal memuat daftar penilaian mentor');
+    console.error('listMentoringParticipants error:', err);
+    fail(res, 500, 'Gagal memuat daftar peserta');
   }
 };
 
@@ -114,6 +156,7 @@ export const getMentoringForm = async (req, res) => {
       success: true,
       data: {
         id: participant.id,
+        batch_id: participant.batch_id,
         full_name: names.get(participant.employee_id) ?? 'Karyawan tidak ditemukan',
         training_name: participant.training_name,
         absent: participant.status === 'ABSENT',
@@ -138,7 +181,8 @@ export const saveMentoring = async (req, res) => {
     await conn.beginTransaction();
     const run = (sql, params) => conn.query(sql, params);
     const participant = await findMentoredParticipant(run, req.params.participantId, req.user.employee_id, true);
-    if (!participant || !participant.started) return await abort(404, 'Peserta tidak ditemukan');
+    if (!participant) return await abort(404, 'Peserta tidak ditemukan');
+    if (!participant.started) return await abort(400, 'Penilaian dibuka saat training dimulai');
     if (participant.status === 'ABSENT') return await abort(400, 'Peserta ditandai tidak hadir');
 
     const indicators = await getParticipantIndicators(run, participant.id);

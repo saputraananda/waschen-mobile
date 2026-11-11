@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from '../components/AcademyShell.jsx';
-import { RESULT_META, api, errorMessage, fmt, fmtDate } from '../academyShared.js';
+import { RESULT_META, api, errorMessage, fmt, fmtDate, fmtDatetime } from '../academyShared.js';
 import { ProgressBadge, SubskillProgress } from './Progress.jsx';
 
 const TABS = [
@@ -54,20 +54,22 @@ function MentorPanel() {
   const { rows, error } = useList('/academy/penilaian/mentor', 'Gagal memuat penilaian mentor');
   return (
     <>
-      <ListState rows={rows} error={error} empty="Kamu belum ditugaskan sebagai mentor" />
+      <ListState rows={rows} error={error} empty="Belum ada training yang kamu mentori" />
       {rows?.map((r) => (
-        <button key={r.id} type="button" onClick={() => navigate(`/academy/penilaian/mentor/${r.id}`)} className="w-full text-left">
+        <button key={r.id} type="button" onClick={() => navigate(`/academy/penilaian/mentor/batch/${r.id}`)} className="w-full text-left">
           <Card className="active:scale-[0.98] transition-transform">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-[14px] font-black text-slate-800 leading-tight">{r.full_name}</h2>
-                <p className="text-[11.5px] text-slate-500 mt-1">{r.training_name}</p>
+                <h2 className="text-[14px] font-black text-slate-800 leading-tight">{r.training_name}</h2>
+                <p className="text-[11.5px] text-slate-500 mt-1">
+                  Mulai {fmtDatetime(r.start_at)} · {r.participant_count} peserta
+                </p>
                 <span
                   className={`inline-flex mt-2 rounded-full border px-2.5 py-1 text-[11px] font-black ${
-                    r.scored ? RESULT_META.LULUS.cls : RESULT_META.LULUS_PERBAIKAN.cls
+                    r.started ? RESULT_META.LULUS.cls : RESULT_META.LULUS_PERBAIKAN.cls
                   }`}
                 >
-                  {r.scored ? 'Sudah dinilai' : 'Belum dinilai'}
+                  {r.started ? 'Sudah dibuka' : 'Belum dibuka'}
                 </span>
               </div>
               <ChevronRight className="w-5 h-5 text-slate-300 shrink-0" aria-hidden="true" />

@@ -37,7 +37,7 @@ export default function MentorScore() {
       await api.put(`/academy/penilaian/mentor/${id}`, {
         scores: form.indicators.map((i) => ({ indicator_id: i.id, score: scores[i.id] })),
       });
-      navigate('/academy/penilaian');
+      navigate(`/academy/penilaian/mentor/batch/${form.batch_id}`);
     } catch (err) {
       setError(errorMessage(err, 'Gagal menyimpan penilaian'));
       setSaving(false);
@@ -50,7 +50,7 @@ export default function MentorScore() {
     <AcademyShell
       title="Penilaian Mentor"
       subtitle={form ? `${form.full_name} · ${form.training_name}` : ''}
-      backTo="/academy/penilaian"
+      backTo={form ? `/academy/penilaian/mentor/batch/${form.batch_id}` : '/academy/penilaian'}
     >
       {!form && !error && <Message>Memuat penilaian...</Message>}
       {error && <Message tone="error">{error}</Message>}

@@ -26,6 +26,7 @@ const AcademyAnswers = lazy(() => import('./pages/academy/components/AnswerRevie
 const AcademyTest = lazy(() => import('./pages/academy/components/TestPage.jsx'));
 const AcademyFeedback = lazy(() => import('./pages/academy/components/FeedbackPage.jsx'));
 const AcademyPenilaian = lazy(() => import('./pages/academy/penilaian/index.jsx'));
+const AcademyMentorBatch = lazy(() => import('./pages/academy/penilaian/MentorBatch.jsx'));
 const AcademyMentorScore = lazy(() => import('./pages/academy/penilaian/MentorScore.jsx'));
 const AcademyOjtObserve = lazy(() => import('./pages/academy/penilaian/OjtObserve.jsx'));
 
@@ -169,6 +170,7 @@ export default function App() {
         <Route path="/edit-profile" element={<EditProfile />} />
         <Route path="/academy" element={<Academy />} />
         <Route path="/academy/penilaian" element={<AcademyPenilaian />} />
+        <Route path="/academy/penilaian/mentor/batch/:batchId" element={<AcademyMentorBatch />} />
         <Route path="/academy/penilaian/mentor/:id" element={<AcademyMentorScore />} />
         <Route path="/academy/penilaian/ojt/:id" element={<AcademyOjtObserve />} />
         <Route path="/academy/:id" element={<AcademyTraining />} />
