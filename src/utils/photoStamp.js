@@ -48,6 +48,15 @@ export function buildProduksiPhotoLines({ orderNo, stage, photographerName, date
   ];
 }
 
+/** 3 baris watermark foto peserta pada penilaian OJT */
+export function buildOjtPhotoLines({ participantName, kindLabel, photographerName, date = new Date() }) {
+  return [
+    formatPhotoTimestampWib(date),
+    `OJT ${kindLabel || '-'} - ${participantName || '-'}`,
+    photographerName || getCurrentUserName()
+  ];
+}
+
 function truncateLine(ctx, text, maxWidth) {
   const raw = String(text || '');
   if (ctx.measureText(raw).width <= maxWidth) return raw;

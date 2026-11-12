@@ -2,9 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from './AcademyShell.jsx';
+import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { api, errorMessage } from '../academyShared.js';
 
-const TYPE_HINT = { MULTI: 'Pilih semua jawaban yang benar', ESSAY: 'Jawab dengan kalimatmu sendiri' };
+const INCOMPLETE_MESSAGE = 'Jawaban Anda masih ada yang belum lengkap';
+
+const hintFor = (q) => {
+  if (q.type === 'MULTI') return `Pilih minimal ${q.min_answers} jawaban`;
+  return q.type === 'ESSAY' ? 'Jawab dengan kalimatmu sendiri' : null;
+};
 const optionCls = (selected) =>
   `flex items-center gap-3 rounded-xl border px-3 py-2.5 text-[12.5px] font-semibold cursor-pointer ${
     selected ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]' : 'border-slate-200 text-slate-700'
@@ -19,6 +25,8 @@ export default function TestPage() {
   const [test, setTest] = useState(null);
   const [answers, setAnswers] = useState({});
   const [error, setError] = useState('');
+  // Popup untuk kegagalan kirim, karena tombol Kirim ada di bawah halaman dan teks error di atas tidak terlihat.
+  const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const label = phase === 'pre' ? 'Pre-test' : 'Post-test';
@@ -42,7 +50,9 @@ export default function TestPage() {
   const unanswered = test ? test.questions.filter((q) => !isAnswered(q, answers[q.id])).length : 0;
 
   const submit = async () => {
-    if (unanswered && !window.confirm(`${unanswered} soal belum dijawab dan akan dihitung salah. Kirim sekarang?`)) return;
+    const incomplete = test.questions.some((q) => q.type === 'MULTI' && (answers[q.id]?.option_ids?.length ?? 0) < q.min_answers);
+    if (incomplete) return setNotice(INCOMPLETE_MESSAGE);
+    if (unanswered &&!window.confirm(`${unanswered} soal belum dijawab dan akan dihitung salah. Kirim sekarang?`)) return;
     setSubmitting(true);
     try {
       const res = await api.post(`/academy/trainings/${id}/test/${phase}`, {
@@ -54,7 +64,7 @@ export default function TestPage() {
       });
       setResult(res.data.data);
     } catch (err) {
-      setError(errorMessage(err, 'Gagal mengirim jawaban'));
+      setNotice(errorMessage(err, 'Gagal mengirim jawaban'));
       setSubmitting(false);
     }
   };
@@ -97,7 +107,7 @@ export default function TestPage() {
             <legend className="text-[13px] font-bold text-slate-800 mb-1">
               {index + 1}. {q.question_text}
             </legend>
-            {TYPE_HINT[q.type] && <p className="text-[11px] text-slate-400 font-semibold mb-3">{TYPE_HINT[q.type]}</p>}
+            {hintFor(q) && <p className="text-[11px] text-slate-400 font-semibold mb-3">{hintFor(q)}</p>}
             {q.type === 'ESSAY' ? (
               <textarea
                 rows={5}
@@ -108,7 +118,7 @@ export default function TestPage() {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] text-slate-800 outline-none focus:border-[#5f1340]"
               />
             ) : (
-              <div className={`space-y-2 ${TYPE_HINT[q.type] ? '' : 'mt-3'}`}>
+              <div className={`space-y-2 ${hintFor(q) ? '' : 'mt-3'}`}>
                 {q.options.map((o) => {
                   const selected = answers[q.id]?.option_ids?.includes(o.id) ?? false;
                   return (
@@ -140,6 +150,12 @@ export default function TestPage() {
           {submitting ? 'Mengirim...' : `Kirim Jawaban${unanswered ? ` (${unanswered} belum dijawab)` : ''}`}
         </button>
       )}
+      <AlertModal
+        message={notice}
+        onClose={() => setNotice('')}
+        variant={notice === INCOMPLETE_MESSAGE ? 'warning' : 'danger'}
+        title={notice === INCOMPLETE_MESSAGE ? 'Belum lengkap' : 'Gagal'}
+      />
     </AcademyShell>
   );
 }

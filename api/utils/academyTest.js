@@ -2,10 +2,13 @@ import { questionMaxPoints, testScoreFromAnswers } from './academyScoring.js';
 
 const MAX_ESSAY_LENGTH = 2000;
 
+export const INCOMPLETE_MULTI_MESSAGE = 'Jawaban Anda masih ada yang belum lengkap';
+
 /**
  * Menilai jawaban di server. questions = [{ id, type, correct_option_ids, option_ids }] dari database,
  * jadi kunci jawaban tidak pernah dikirim ke HP peserta.
  * Pilihan ganda dan checkbox dinilai langsung: poin = jumlah pilihan peserta yang ada di kunci. Pilihan salah tidak mengurangi.
+ * Checkbox wajib dijawab minimal sebanyak kunci jawabannya (semua pilihan dihitung, benar atau salah), kurang dari itu ditolak.
  * Essay yang diisi menunggu penilaian HR (is_correct null), essay yang dikosongkan otomatis salah.
  */
 export function gradeAnswers(questions, answers) {
@@ -27,6 +30,11 @@ export function gradeAnswers(questions, answers) {
     }
     sent.set(question.id, { option_ids: optionIds, answer_text: null });
   }
+
+  const incomplete = questions.some(
+    (q) => q.type === 'MULTI' && (sent.get(q.id)?.option_ids.length ?? 0) < q.correct_option_ids.length
+  );
+  if (incomplete) return { error: INCOMPLETE_MULTI_MESSAGE };
 
   const rows = questions.map((q) => {
     const given = sent.get(q.id) ?? { option_ids: [], answer_text: q.type === 'ESSAY' ? '' : null };

@@ -499,6 +499,50 @@ export const uploadProduksiPhotos = multer({
 /** @deprecated gunakan uploadProduksiPhotos */
 export const uploadProgressPhotos = uploadProduksiPhotos;
 
+/**
+ * Foto peserta pada penilaian OJT Alora Academy — assets/academy/ojt
+ * Memory storage: file ditulis ke disk oleh controller setelah semua pemeriksaan lolos.
+ */
+export const OJT_UPLOAD_SUBFOLDER = 'assets/academy/ojt';
+export const OJT_UPLOAD_PUBLIC_PATH = '/uploads/assets/academy/ojt';
+
+export const uploadOjtPhotos = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype || '');
+    if (!ok) return cb(new Error('Foto OJT harus berupa gambar (jpeg/png/webp).'));
+    cb(null, true);
+  },
+  limits: { fileSize: 6 * 1024 * 1024, files: 5 }
+});
+
+/** Tulis buffer foto OJT ke disk. Mengembalikan [{ fileName, filePath }]. */
+export const saveOjtPhotoBuffers = async (ojtId, date, files) => {
+  const dir = ensureUploadFolder(OJT_UPLOAD_SUBFOLDER);
+  const saved = [];
+  for (let i = 0; i < files.length; i++) {
+    const ext = path.extname(files[i].originalname || '').toLowerCase() || '.jpg';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `ojt_${ojtId}_${date}_${ts}_${Math.round(Math.random() * 1e4) + i}${ext}`;
+    const filePath = path.join(dir, fileName);
+    await fs.promises.writeFile(filePath, files[i].buffer);
+    saved.push({ fileName, filePath });
+  }
+  return saved;
+};
+
+export const deleteOjtPhotoFile = async (fileName) => {
+  if (!fileName) return;
+  const filePath = path.join(ensureUploadFolder(OJT_UPLOAD_SUBFOLDER), path.basename(fileName));
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`Gagal menghapus foto OJT: ${filePath}`, err);
+    }
+  }
+};
+
 const PAYSLIP_PRIVATE_SUBDIR = 'payslip_private';
 
 export function payslipPrivateDir() {

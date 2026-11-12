@@ -288,6 +288,8 @@ export const getTest = async (req, res) => {
           id: q.id,
           type: q.type,
           question_text: q.question_text,
+          // Hanya jumlah kunci checkbox, bukan opsi mana yang benar.
+          min_answers: q.type === 'MULTI' ? q.correct_option_ids.length : undefined,
           options: q.options.map((o) => ({ id: o.id, option_text: o.option_text })),
         })),
       },

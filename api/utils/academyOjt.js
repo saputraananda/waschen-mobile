@@ -65,6 +65,21 @@ export const dayAverage = (scores) => averageScore(scores);
 /** Nilai akhir OJT: rata-rata nilai harian. Hari yang belum dinilai (null) tidak ikut dihitung. */
 export const ojtAverage = (dayAverages) => averageScore(dayAverages.filter((a) => a !== null && a !== undefined));
 
+export const OJT_MAX_PHOTOS = 5;
+
+/** Foto yang akan ditambahkan: minimal 1, dan total foto hari itu tidak lebih dari OJT_MAX_PHOTOS. */
+export function validatePhotoAdd(existingCount, addingCount) {
+  if (addingCount < 1) return "Foto wajib diambil";
+  if (existingCount + addingCount > OJT_MAX_PHOTOS) return `Maksimal ${OJT_MAX_PHOTOS} foto per penilaian`;
+  return null;
+}
+
+/** Hari yang sudah bernilai harus tetap punya minimal 1 foto, jadi foto terakhirnya tidak boleh dihapus. */
+export function validatePhotoRemoval(dayScored, existingCount) {
+  if (dayScored && existingCount <= 1) return "Penilaian yang sudah tersimpan harus punya minimal 1 foto";
+  return null;
+}
+
 /** Nilai satu hari harus mencakup persis semua sub-skill OJT, masing-masing bilangan bulat 1 sampai 4. */
 export function validateDayScores(subskillIds, scores) {
   const submitted = new Map((Array.isArray(scores) ? scores : []).map((s) => [Number(s.subskill_id), Number(s.score)]));

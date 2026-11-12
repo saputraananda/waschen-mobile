@@ -4,6 +4,7 @@ import { CalendarDays, Check } from 'lucide-react';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from '../components/AcademyShell.jsx';
 import { api, errorMessage, fmt, fmtDate } from '../academyShared.js';
+import OjtPhotos from './OjtPhotos.jsx';
 import ScoreButtons from './ScoreButtons.jsx';
 import { ProgressBadge, SubskillProgress } from './Progress.jsx';
 
@@ -56,7 +57,9 @@ export default function OjtObserve() {
   };
 
   const allSubskills = ojt ? ojt.criteria.flatMap((c) => c.subskills) : [];
-  const complete = ojt && allSubskills.length > 0 && allSubskills.every((s) => scores[s.id]);
+  const openDay = ojt?.days.find((d) => d.date === openDate);
+  const hasPhoto = (openDay?.photos.length ?? 0) > 0;
+  const complete = ojt && allSubskills.length > 0 && allSubskills.every((s) => scores[s.id]) && hasPhoto;
 
   return (
     <AcademyShell
@@ -82,7 +85,10 @@ export default function OjtObserve() {
                 <span className="block text-[13px] font-black text-slate-800">
                   {day.kind === 'FIRST' ? 'Hari pertama' : 'Hari terakhir'}
                 </span>
-                <span className="block text-[11.5px] font-medium text-slate-500">{fmtDate(day.date)}</span>
+                <span className="block text-[11.5px] font-medium text-slate-500">
+                  {fmtDate(day.date)}
+                  {day.photos.length > 0 && ` · ${day.photos.length} foto`}
+                </span>
               </span>
             </span>
             <span className="shrink-0 text-right">
@@ -101,6 +107,7 @@ export default function OjtObserve() {
 
           {openDate === day.date && (
             <div className="mt-3 border-t border-slate-100 pt-1">
+              <OjtPhotos ojtId={id} day={day} participantName={ojt.full_name} onChanged={load} />
               {ojt.criteria.map((c) => (
                 <div key={c.id} className="pt-3">
                   <p className="text-[11.5px] font-black uppercase tracking-wider text-[#5f1340]">{c.name}</p>
@@ -124,6 +131,7 @@ export default function OjtObserve() {
               >
                 {saving ? 'Menyimpan...' : 'Simpan penilaian'}
               </button>
+              {!hasPhoto && <p className="mt-2 text-center text-[11.5px] font-bold text-slate-500">Tambah minimal 1 foto peserta</p>}
             </div>
           )}
         </Card>

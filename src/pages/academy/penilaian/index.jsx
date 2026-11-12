@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { setPageTitle } from '../../../utils/pageTitle.js';
 import AcademyShell, { Card, Message } from '../components/AcademyShell.jsx';
 import { RESULT_META, api, errorMessage, fmt, fmtDate, fmtDatetime } from '../academyShared.js';
+import { PhotoGrid } from './OjtPhotos.jsx';
 import { ProgressBadge, SubskillProgress } from './Progress.jsx';
 
 const TABS = [
@@ -171,6 +172,11 @@ function MyOjtCard({ ojt }) {
                     </div>
                   </React.Fragment>
                 ))}
+                {day.photos.length > 0 && (
+                  <div className="mt-3">
+                    <PhotoGrid photos={day.photos} />
+                  </div>
+                )}
               </div>
             ))}
         </>
