@@ -131,7 +131,7 @@ export default function OjtObserve() {
               >
                 {saving ? 'Menyimpan...' : 'Simpan penilaian'}
               </button>
-              {!hasPhoto && <p className="mt-2 text-center text-[11.5px] font-bold text-slate-500">Tambah minimal 1 foto peserta</p>}
+              {!hasPhoto && <p className="mt-2 text-center text-[11.5px] font-bold text-slate-500">Tambah minimal 1 foto hasil</p>}
             </div>
           )}
         </Card>

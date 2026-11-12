@@ -48,7 +48,7 @@ export function buildProduksiPhotoLines({ orderNo, stage, photographerName, date
   ];
 }
 
-/** 3 baris watermark foto peserta pada penilaian OJT */
+/** 3 baris watermark foto hasil pada penilaian OJT */
 export function buildOjtPhotoLines({ participantName, kindLabel, photographerName, date = new Date() }) {
   return [
     formatPhotoTimestampWib(date),

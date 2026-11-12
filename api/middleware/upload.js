@@ -500,7 +500,7 @@ export const uploadProduksiPhotos = multer({
 export const uploadProgressPhotos = uploadProduksiPhotos;
 
 /**
- * Foto peserta pada penilaian OJT Alora Academy — assets/academy/ojt
+ * Foto hasil pada penilaian OJT Alora Academy — assets/academy/ojt
  * Memory storage: file ditulis ke disk oleh controller setelah semua pemeriksaan lolos.
  */
 export const OJT_UPLOAD_SUBFOLDER = 'assets/academy/ojt';

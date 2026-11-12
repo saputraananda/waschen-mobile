@@ -29,7 +29,7 @@ export function PhotoGrid({ photos }) {
   );
 }
 
-/** Foto peserta untuk satu hari penilaian OJT. Tiap foto diunggah dan dihapus langsung, tidak menunggu simpan nilai. */
+/** Foto hasil untuk satu hari penilaian OJT. Tiap foto diunggah dan dihapus langsung, tidak menunggu simpan nilai. */
 export default function OjtPhotos({ ojtId, day, participantName, onChanged }) {
   const fileInputRef = useRef(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -79,7 +79,7 @@ export default function OjtPhotos({ ojtId, day, participantName, onChanged }) {
 
   return (
     <div className="pt-3">
-      <p className="mb-2 text-[11.5px] font-black uppercase tracking-wider text-[#5f1340]">Foto peserta (wajib, maks {MAX_PHOTOS})</p>
+      <p className="mb-2 text-[11.5px] font-black uppercase tracking-wider text-[#5f1340]">Foto hasil (wajib, maks {MAX_PHOTOS})</p>
       <input
         ref={fileInputRef}
         type="file"
@@ -132,7 +132,7 @@ export default function OjtPhotos({ ojtId, day, participantName, onChanged }) {
 
       <CameraCaptureModal
         open={cameraOpen}
-        title="Ambil Foto Peserta"
+        title="Ambil Foto Hasil"
         buildOverlayLines={overlayLines}
         jpegQuality={PHOTO_QUALITY.quality}
         maxEdge={PHOTO_QUALITY.maxEdge}

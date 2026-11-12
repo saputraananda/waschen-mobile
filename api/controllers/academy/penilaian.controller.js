@@ -395,7 +395,7 @@ export const saveObservingDay = async (req, res) => {
       'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND photo_date = ?',
       [ojt.id, date]
     );
-    if (photoCount < 1) return await abort(400, 'Foto peserta minimal 1 sebelum menyimpan nilai');
+    if (photoCount < 1) return await abort(400, 'Foto hasil minimal 1 sebelum menyimpan nilai');
 
     const subskills = await getSubskills(run, ojt.id);
     const invalid = validateDayScores(subskills.map((s) => s.id), req.body.scores);
@@ -419,7 +419,7 @@ export const saveObservingDay = async (req, res) => {
   }
 };
 
-/** Tambah foto peserta untuk hari pertama atau hari terakhir. Total foto hari itu maksimal 5. Tidak menyentuh nilai. */
+/** Tambah foto hasil untuk hari pertama atau hari terakhir. Total foto hari itu maksimal 5. Tidak menyentuh nilai. */
 export const addObservingPhotos = async (req, res) => {
   const date = req.params.date;
   if (!isValidDate(date)) return fail(res, 400, 'Tanggal tidak valid');
