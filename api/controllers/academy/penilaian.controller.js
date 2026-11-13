@@ -4,10 +4,9 @@ import {
   buildSubskillProgress,
   dayAverage,
   isValidDate,
-  ojtAverage,
   ojtPhase,
   scorableDates,
-  scoreProgress,
+  summarizeCriterion,
   validateDayScores,
   validatePhotoAdd,
   validatePhotoRemoval,
@@ -212,67 +211,81 @@ export const saveMentoring = async (req, res) => {
 };
 
 // ─── OJT ──────────────────────────────────────────────────────────────────
+// Tiap kriteria dinilai terpisah: hari pertama, hari terakhir, foto, rata-rata, dan kemajuan sendiri.
 
 const endDateOf = (ojt) => addDays(ojt.start_date, ojt.days - 1);
 
-/** Nilai per tanggal: { tanggal: [{ ojt_subskill_id, score }] }. */
-function groupByDate(scoreRows) {
-  const byDate = new Map();
-  for (const row of scoreRows) {
-    if (!byDate.has(row.score_date)) byDate.set(row.score_date, []);
-    byDate.get(row.score_date).push(row);
-  }
-  return byDate;
-}
-
-/** Nilai OJT, jumlah penilaian (maksimal 2: hari pertama dan hari terakhir), dan kemajuan rata-rata. Sama dengan summarize di backend-superapp. */
-function summarize(scoreRows, ojt) {
-  const byDate = groupByDate(scoreRows);
-  const averages = scorableDates(ojt.start_date, ojt.days).map((date) =>
-    byDate.has(date) ? dayAverage(byDate.get(date).map((r) => r.score)) : null
-  );
-  return {
-    scored_days: averages.filter((a) => a !== null).length,
-    average: ojtAverage(averages),
-    progress: scoreProgress(averages[0], averages[1]),
-  };
-}
-
 const photoUrl = (req, row) => `${req.protocol}://${req.get('host')}${row.photo_path}/${encodeURIComponent(row.photo_name)}`;
 
-/** Foto OJT per tanggal: Map tanggal ke baris tr_ojt_photo, urut dari yang pertama diunggah. */
-async function getPhotosByDate(runQuery, ojtId) {
+const photoKey = (criterionId, date) => `${criterionId}|${date}`;
+
+/** Foto OJT per kriteria dan tanggal: Map photoKey ke baris tr_ojt_photo, urut dari yang pertama diunggah. */
+async function getPhotosByCriterionDate(runQuery, ojtId) {
   const [rows] = await runQuery(
-    'SELECT id, photo_date, photo_path, photo_name, created_at FROM tr_ojt_photo WHERE ojt_id = ? ORDER BY id',
+    'SELECT id, criterion_id, photo_date, photo_path, photo_name, created_at FROM tr_ojt_photo WHERE ojt_id = ? ORDER BY id',
     [ojtId]
   );
-  const byDate = new Map();
+  const byKey = new Map();
   for (const row of rows) {
-    if (!byDate.has(row.photo_date)) byDate.set(row.photo_date, []);
-    byDate.get(row.photo_date).push(row);
+    const key = photoKey(row.criterion_id, row.photo_date);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(row);
   }
-  return byDate;
+  return byKey;
 }
 
-/** Dua entri: hari pertama dan hari terakhir OJT, terisi atau belum. `subskills` = baris tr_ojt_subskill OJT itu (urut kriteria lalu urutan sub-skill). */
-function buildDays(ojt, scoreRows, subskills, today, photosByDate, toUrl) {
-  const byDate = groupByDate(scoreRows);
-  const order = new Map(subskills.map((s, index) => [s.id, { ...s, order: index }]));
-  return scorableDates(ojt.start_date, ojt.days).map((date, index) => {
-    const rows = byDate.get(date);
+/** Jumlah penilaian yang sudah masuk dan totalnya (2 untuk tiap kriteria: hari pertama dan hari terakhir). */
+function assessmentCounts(ojt, subskills, scoreRows) {
+  const idsByCriterion = new Map();
+  for (const s of subskills) {
+    if (!idsByCriterion.has(s.criterion_id)) idsByCriterion.set(s.criterion_id, []);
+    idsByCriterion.get(s.criterion_id).push(s.id);
+  }
+  const dates = scorableDates(ojt.start_date, ojt.days);
+  let scored = 0;
+  for (const ids of idsByCriterion.values()) scored += summarizeCriterion(ids, scoreRows, ...dates).scored_days;
+  return { scored_count: scored, total_count: idsByCriterion.size * 2 };
+}
+
+/**
+ * Satu entri per kriteria dengan nilai, kemajuan, sub-skill, dan dua hari penilaian (hari pertama dan hari terakhir).
+ * `subskills` = baris tr_ojt_subskill OJT itu (urut kriteria lalu urutan sub-skill).
+ */
+function buildCriteria(ojt, subskills, scoreRows, photosByKey, today, toUrl) {
+  const [firstDate, lastDate] = scorableDates(ojt.start_date, ojt.days);
+  const subskillProgress = new Map(buildSubskillProgress(subskills, scoreRows, firstDate, lastDate).map((c) => [c.id, c.subskills]));
+  const byCriterion = new Map();
+  for (const s of subskills) {
+    if (!byCriterion.has(s.criterion_id)) byCriterion.set(s.criterion_id, { id: s.criterion_id, name: s.criterion_name, items: [] });
+    byCriterion.get(s.criterion_id).items.push(s);
+  }
+  return [...byCriterion.values()].map((c) => {
+    const ids = c.items.map((s) => s.id);
+    const mine = scoreRows.filter((r) => ids.includes(r.ojt_subskill_id));
     return {
-      date,
-      kind: index === 0 ? 'FIRST' : 'LAST',
-      can_score: date <= today,
-      scored: Boolean(rows),
-      average: rows ? dayAverage(rows.map((r) => r.score)) : null,
-      photos: (photosByDate.get(date) ?? []).map((p) => ({ id: p.id, url: toUrl(p), taken_at: p.created_at })),
-      scores: rows
-        ? rows
-            .map((r) => ({ ...order.get(r.ojt_subskill_id), score: r.score }))
-            .sort((a, b) => a.order - b.order)
-            .map((s) => ({ subskill_id: s.id, name: s.name, criterion_name: s.criterion_name, score: s.score }))
-        : [],
+      id: c.id,
+      name: c.name,
+      ...summarizeCriterion(ids, scoreRows, firstDate, lastDate),
+      subskills: subskillProgress.get(c.id),
+      days: [firstDate, lastDate].map((date, index) => {
+        const rows = mine.filter((r) => r.score_date === date);
+        return {
+          date,
+          kind: index === 0 ? 'FIRST' : 'LAST',
+          can_score: date <= today,
+          scored: rows.length > 0,
+          average: rows.length ? dayAverage(rows.map((r) => r.score)) : null,
+          photos: (photosByKey.get(photoKey(c.id, date)) ?? []).map((p) => ({ id: p.id, url: toUrl(p), taken_at: p.created_at })),
+          scores: c.items
+            .filter((s) => rows.some((r) => r.ojt_subskill_id === s.id))
+            .map((s) => ({
+              subskill_id: s.id,
+              name: s.name,
+              criterion_name: s.criterion_name,
+              score: rows.find((r) => r.ojt_subskill_id === s.id).score,
+            })),
+        };
+      }),
     };
   });
 }
@@ -301,6 +314,12 @@ const getSubskills = async (runQuery, ojtId) => {
   return rows;
 };
 
+/** Kriteria harus salah satu kriteria OJT ini. */
+async function hasCriterion(runQuery, ojtId, criterionId) {
+  const [rows] = await runQuery('SELECT 1 FROM tr_ojt_subskill WHERE ojt_id = ? AND criterion_id = ? LIMIT 1', [ojtId, criterionId]);
+  return rows.length > 0;
+}
+
 export const listObserving = async (req, res) => {
   try {
     const [ojts] = await pool(
@@ -315,7 +334,9 @@ export const listObserving = async (req, res) => {
     );
     if (!ojts.length) return res.json({ success: true, data: [] });
 
-    const [scores] = await pool('SELECT ojt_id, score_date, score FROM tr_ojt_score WHERE ojt_id IN (?)', [ojts.map((o) => o.id)]);
+    const ids = ojts.map((o) => o.id);
+    const [subskills] = await pool('SELECT id, ojt_id, criterion_id FROM tr_ojt_subskill WHERE ojt_id IN (?)', [ids]);
+    const [scores] = await pool('SELECT ojt_id, score_date, ojt_subskill_id, score FROM tr_ojt_score WHERE ojt_id IN (?)', [ids]);
     const names = await getNames(ojts.map((o) => o.employee_id));
     const today = await getToday();
     res.json({
@@ -330,7 +351,7 @@ export const listObserving = async (req, res) => {
           end_date: end,
           days: o.days,
           phase: ojtPhase(o.start_date, end, today),
-          scored_days: summarize(scores.filter((s) => s.ojt_id === o.id), o).scored_days,
+          ...assessmentCounts(o, subskills.filter((s) => s.ojt_id === o.id), scores.filter((s) => s.ojt_id === o.id)),
         };
       }),
     });
@@ -349,7 +370,7 @@ export const getObservingDetail = async (req, res) => {
     const [scores] = await pool('SELECT score_date, ojt_subskill_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
     const names = await getNames([ojt.employee_id]);
     const today = await getToday();
-    const photosByDate = await getPhotosByDate(pool, ojt.id);
+    const photosByKey = await getPhotosByCriterionDate(pool, ojt.id);
     res.json({
       success: true,
       data: {
@@ -358,9 +379,7 @@ export const getObservingDetail = async (req, res) => {
         training_name: ojt.training_name,
         start_date: ojt.start_date,
         end_date: endDateOf(ojt),
-        criteria: buildSubskillProgress(subskills, scores, ...scorableDates(ojt.start_date, ojt.days)),
-        days: buildDays(ojt, scores, subskills, today, photosByDate, (p) => photoUrl(req, p)),
-        ...summarize(scores, ojt),
+        criteria: buildCriteria(ojt, subskills, scores, photosByKey, today, (p) => photoUrl(req, p)),
       },
     });
   } catch (err) {
@@ -369,10 +388,11 @@ export const getObservingDetail = async (req, res) => {
   }
 };
 
-/** Hanya hari pertama dan hari terakhir yang dinilai. Satu penilai cukup mewakili satu hari: isian baru menimpa isian sebelumnya. */
+/** Hanya hari pertama dan hari terakhir yang dinilai, per kriteria. Satu penilai cukup mewakili satu hari: isian baru menimpa isian sebelumnya. */
 export const saveObservingDay = async (req, res) => {
   const date = req.params.date;
   if (!isValidDate(date)) return fail(res, 400, 'Tanggal tidak valid');
+  const criterionId = Number(req.params.criterionId);
 
   const conn = await academyPool.getConnection();
   const abort = async (status, message) => {
@@ -385,6 +405,8 @@ export const saveObservingDay = async (req, res) => {
     const run = (sql, params) => conn.query(sql, params);
     const ojt = await findObservedOjt(run, req.params.id, req.user.employee_id, true);
     if (!ojt) return await abort(404, 'OJT tidak ditemukan');
+    const subskills = (await getSubskills(run, ojt.id)).filter((s) => s.criterion_id === criterionId);
+    if (!subskills.length) return await abort(404, 'Kriteria tidak ditemukan di OJT ini');
     if (!scorableDates(ojt.start_date, ojt.days).includes(date)) {
       return await abort(400, 'Hanya hari pertama dan hari terakhir yang dinilai');
     }
@@ -392,12 +414,11 @@ export const saveObservingDay = async (req, res) => {
     if (date > today) return await abort(400, 'Tanggal itu belum bisa dinilai');
 
     const [[{ photoCount }]] = await conn.query(
-      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND photo_date = ?',
-      [ojt.id, date]
+      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND criterion_id = ? AND photo_date = ?',
+      [ojt.id, criterionId, date]
     );
     if (photoCount < 1) return await abort(400, 'Foto hasil minimal 1 sebelum menyimpan nilai');
 
-    const subskills = await getSubskills(run, ojt.id);
     const invalid = validateDayScores(subskills.map((s) => s.id), req.body.scores);
     if (invalid) return await abort(400, invalid);
 
@@ -419,10 +440,11 @@ export const saveObservingDay = async (req, res) => {
   }
 };
 
-/** Tambah foto hasil untuk hari pertama atau hari terakhir. Total foto hari itu maksimal 5. Tidak menyentuh nilai. */
+/** Tambah foto hasil untuk hari pertama atau hari terakhir satu kriteria. Total foto per kriteria dan hari maksimal 5. Tidak menyentuh nilai. */
 export const addObservingPhotos = async (req, res) => {
   const date = req.params.date;
   if (!isValidDate(date)) return fail(res, 400, 'Tanggal tidak valid');
+  const criterionId = Number(req.params.criterionId);
   const files = req.files ?? [];
 
   const conn = await academyPool.getConnection();
@@ -437,6 +459,7 @@ export const addObservingPhotos = async (req, res) => {
     const run = (sql, params) => conn.query(sql, params);
     const ojt = await findObservedOjt(run, req.params.id, req.user.employee_id, true);
     if (!ojt) return await abort(404, 'OJT tidak ditemukan');
+    if (!(await hasCriterion(run, ojt.id, criterionId))) return await abort(404, 'Kriteria tidak ditemukan di OJT ini');
     if (!scorableDates(ojt.start_date, ojt.days).includes(date)) {
       return await abort(400, 'Hanya hari pertama dan hari terakhir yang dinilai');
     }
@@ -444,16 +467,17 @@ export const addObservingPhotos = async (req, res) => {
     if (date > today) return await abort(400, 'Tanggal itu belum bisa dinilai');
 
     const [[{ photoCount }]] = await conn.query(
-      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND photo_date = ?',
-      [ojt.id, date]
+      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND criterion_id = ? AND photo_date = ?',
+      [ojt.id, criterionId, date]
     );
     const invalid = validatePhotoAdd(photoCount, files.length);
     if (invalid) return await abort(400, invalid);
 
     saved = await saveOjtPhotoBuffers(ojt.id, date, files);
-    await conn.query('INSERT INTO tr_ojt_photo (ojt_id, photo_date, photo_path, photo_name, taken_by, created_by) VALUES ?', [
-      saved.map((s) => [ojt.id, date, OJT_UPLOAD_PUBLIC_PATH, s.fileName, req.user.employee_id, req.user.employee_id]),
-    ]);
+    await conn.query(
+      'INSERT INTO tr_ojt_photo (ojt_id, criterion_id, photo_date, photo_path, photo_name, taken_by, created_by) VALUES ?',
+      [saved.map((s) => [ojt.id, criterionId, date, OJT_UPLOAD_PUBLIC_PATH, s.fileName, req.user.employee_id, req.user.employee_id])]
+    );
     await conn.commit();
     res.json({ success: true, message: 'Foto tersimpan' });
   } catch (err) {
@@ -466,10 +490,11 @@ export const addObservingPhotos = async (req, res) => {
   }
 };
 
-/** Hapus satu foto. Hari yang sudah bernilai tidak boleh kehilangan foto terakhirnya. File dihapus sesudah baris DB. */
+/** Hapus satu foto. Hari yang sudah bernilai (pada kriteria itu) tidak boleh kehilangan foto terakhirnya. File dihapus sesudah baris DB. */
 export const deleteObservingPhoto = async (req, res) => {
   const date = req.params.date;
   if (!isValidDate(date)) return fail(res, 400, 'Tanggal tidak valid');
+  const criterionId = Number(req.params.criterionId);
 
   const conn = await academyPool.getConnection();
   const abort = async (status, message) => {
@@ -484,18 +509,20 @@ export const deleteObservingPhoto = async (req, res) => {
     if (!ojt) return await abort(404, 'OJT tidak ditemukan');
 
     const [[photo]] = await conn.query(
-      'SELECT id, photo_name FROM tr_ojt_photo WHERE id = ? AND ojt_id = ? AND photo_date = ?',
-      [req.params.photoId, ojt.id, date]
+      'SELECT id, photo_name FROM tr_ojt_photo WHERE id = ? AND ojt_id = ? AND criterion_id = ? AND photo_date = ?',
+      [req.params.photoId, ojt.id, criterionId, date]
     );
     if (!photo) return await abort(404, 'Foto tidak ditemukan');
 
     const [[{ photoCount }]] = await conn.query(
-      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND photo_date = ?',
-      [ojt.id, date]
+      'SELECT COUNT(*) AS photoCount FROM tr_ojt_photo WHERE ojt_id = ? AND criterion_id = ? AND photo_date = ?',
+      [ojt.id, criterionId, date]
     );
     const [[{ scoreCount }]] = await conn.query(
-      'SELECT COUNT(*) AS scoreCount FROM tr_ojt_score WHERE ojt_id = ? AND score_date = ?',
-      [ojt.id, date]
+      `SELECT COUNT(*) AS scoreCount FROM tr_ojt_score sc
+       JOIN tr_ojt_subskill s ON s.id = sc.ojt_subskill_id
+       WHERE sc.ojt_id = ? AND sc.score_date = ? AND s.criterion_id = ?`,
+      [ojt.id, date, criterionId]
     );
     const invalid = validatePhotoRemoval(scoreCount > 0, photoCount);
     if (invalid) return await abort(400, invalid);
@@ -513,7 +540,7 @@ export const deleteObservingPhoto = async (req, res) => {
   }
 };
 
-/** OJT milik karyawan yang login, beserta nilai akhir dan rincian per hari. */
+/** OJT milik karyawan yang login: per kriteria beserta nilai, kemajuan, dan rincian hari yang sudah dinilai. */
 export const getMyOjt = async (req, res) => {
   try {
     const [ojts] = await pool(
@@ -532,7 +559,7 @@ export const getMyOjt = async (req, res) => {
       const subskills = await getSubskills(pool, ojt.id);
       const [scores] = await pool('SELECT score_date, ojt_subskill_id, score FROM tr_ojt_score WHERE ojt_id = ?', [ojt.id]);
       const end = endDateOf(ojt);
-      const photosByDate = await getPhotosByDate(pool, ojt.id);
+      const photosByKey = await getPhotosByCriterionDate(pool, ojt.id);
       data.push({
         id: ojt.id,
         training_name: ojt.training_name,
@@ -540,9 +567,11 @@ export const getMyOjt = async (req, res) => {
         end_date: end,
         days: ojt.days,
         phase: ojtPhase(ojt.start_date, end, today),
-        ...summarize(scores, ojt),
-        criteria: buildSubskillProgress(subskills, scores, ...scorableDates(ojt.start_date, ojt.days)),
-        days_detail: buildDays(ojt, scores, subskills, today, photosByDate, (p) => photoUrl(req, p)).filter((d) => d.scored),
+        ...assessmentCounts(ojt, subskills, scores),
+        criteria: buildCriteria(ojt, subskills, scores, photosByKey, today, (p) => photoUrl(req, p)).map((c) => ({
+          ...c,
+          days: c.days.filter((d) => d.scored),
+        })),
       });
     }
     res.json({ success: true, data });

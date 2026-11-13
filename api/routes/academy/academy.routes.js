@@ -52,8 +52,8 @@ router.put('/penilaian/mentor/:participantId', saveMentoring);
 router.get('/penilaian/ojt', listObserving);
 router.get('/penilaian/ojt-saya', getMyOjt);
 router.get('/penilaian/ojt/:id', getObservingDetail);
-router.put('/penilaian/ojt/:id/days/:date', saveObservingDay);
-router.post('/penilaian/ojt/:id/days/:date/photos', uploadOjtPhotosWithErrorHandling, addObservingPhotos);
-router.delete('/penilaian/ojt/:id/days/:date/photos/:photoId', deleteObservingPhoto);
+router.put('/penilaian/ojt/:id/criteria/:criterionId/days/:date', saveObservingDay);
+router.post('/penilaian/ojt/:id/criteria/:criterionId/days/:date/photos', uploadOjtPhotosWithErrorHandling, addObservingPhotos);
+router.delete('/penilaian/ojt/:id/criteria/:criterionId/days/:date/photos/:photoId', deleteObservingPhoto);
 
 export default router;

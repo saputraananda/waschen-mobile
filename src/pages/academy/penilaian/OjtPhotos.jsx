@@ -29,17 +29,17 @@ export function PhotoGrid({ photos }) {
   );
 }
 
-/** Foto hasil untuk satu hari penilaian OJT. Tiap foto diunggah dan dihapus langsung, tidak menunggu simpan nilai. */
-export default function OjtPhotos({ ojtId, day, participantName, onChanged }) {
+/** Foto hasil untuk satu hari penilaian satu kriteria OJT. Tiap foto diunggah dan dihapus langsung, tidak menunggu simpan nilai. */
+export default function OjtPhotos({ ojtId, criterion, day, participantName, onChanged }) {
   const fileInputRef = useRef(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toDelete, setToDelete] = useState(null);
 
-  const base = `/academy/penilaian/ojt/${ojtId}/days/${day.date}/photos`;
+  const base = `/academy/penilaian/ojt/${ojtId}/criteria/${criterion.id}/days/${day.date}/photos`;
   const overlayLines = (date = new Date()) =>
-    buildOjtPhotoLines({ participantName, kindLabel: KIND_LABEL[day.kind], date });
+    buildOjtPhotoLines({ participantName, kindLabel: `${criterion.name} · ${KIND_LABEL[day.kind]}`, date });
 
   const upload = async (file, { stamped = false } = {}) => {
     if (!file || busy) return;

@@ -98,7 +98,7 @@ function PembimbingPanel() {
                   {r.training_name} · {fmtDate(r.start_date)} sampai {fmtDate(r.end_date)}
                 </p>
                 <p className="text-[11.5px] font-bold text-[#5f1340] mt-1">
-                  {r.scored_days} dari 2 penilaian
+                  {r.scored_count} dari {r.total_count} penilaian
                 </p>
                 <div className="mt-2">
                   <PhaseBadge phase={r.phase} />
@@ -126,16 +126,18 @@ function MyOjtCard({ ojt }) {
         </div>
         <PhaseBadge phase={ojt.phase} />
       </div>
-      <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-center">
-        <p className="text-[11px] font-bold text-slate-500">Nilai OJT</p>
-        <p className="text-2xl font-black text-slate-800">{ojt.average === null ? '-' : `${fmt(ojt.average)} dari 4`}</p>
-        <p className="text-[11px] font-medium text-slate-400">{ojt.scored_days} dari 2 penilaian</p>
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <span className="text-[11px] font-bold text-slate-500">Kemajuan</span>
-          <ProgressBadge progress={ojt.progress} />
+      {ojt.criteria.map((criterion) => (
+        <div key={criterion.id} className="mt-3 rounded-2xl bg-slate-50 p-3 text-center">
+          <p className="text-[11px] font-black uppercase tracking-wider text-[#5f1340]">{criterion.name}</p>
+          <p className="text-2xl font-black text-slate-800">{criterion.average === null ? '-' : `${fmt(criterion.average)} dari 4`}</p>
+          <p className="text-[11px] font-medium text-slate-400">{criterion.scored_days} dari 2 penilaian</p>
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <span className="text-[11px] font-bold text-slate-500">Kemajuan</span>
+            <ProgressBadge progress={criterion.progress} />
+          </div>
         </div>
-      </div>
-      {ojt.days_detail.length > 0 && (
+      ))}
+      {ojt.criteria.some((c) => c.days.length > 0) && (
         <>
           <button
             type="button"
@@ -146,37 +148,37 @@ function MyOjtCard({ ojt }) {
             Rincian penilaian
             <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
-          {open && ojt.progress && (
-            <div className="mt-2 rounded-2xl border border-slate-100 p-3">
-              <p className="text-[12.5px] font-black text-slate-800">Kemajuan per sub-skill</p>
-              <SubskillProgress criteria={ojt.criteria} />
-            </div>
-          )}
           {open &&
-            ojt.days_detail.map((day) => (
-              <div key={day.date} className="mt-2 rounded-2xl border border-slate-100 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12.5px] font-black text-slate-800">
-                    {day.kind === 'FIRST' ? 'Hari pertama' : 'Hari terakhir'} · {fmtDate(day.date)}
-                  </span>
-                  <span className="text-[12.5px] font-black text-slate-800">{fmt(day.average)} dari 4</span>
-                </div>
-                {day.scores.map((s, index) => (
-                  <React.Fragment key={s.subskill_id}>
-                    {s.criterion_name !== day.scores[index - 1]?.criterion_name && (
-                      <p className="pt-2 text-[11px] font-black uppercase tracking-wider text-[#5f1340]">{s.criterion_name}</p>
-                    )}
-                    <div className="flex items-center justify-between gap-3 pt-1.5 text-[12px] text-slate-600">
-                      <span className="min-w-0">{s.name}</span>
-                      <span className="font-black shrink-0">{s.score}</span>
-                    </div>
-                  </React.Fragment>
-                ))}
-                {day.photos.length > 0 && (
-                  <div className="mt-3">
-                    <PhotoGrid photos={day.photos} />
-                  </div>
+            ojt.criteria.map((criterion) => (
+              <div key={criterion.id} className="mt-2 rounded-2xl border border-slate-100 p-3">
+                <p className="text-[12.5px] font-black uppercase tracking-wider text-[#5f1340]">{criterion.name}</p>
+                {criterion.progress && (
+                  <>
+                    <p className="pt-2 text-[12.5px] font-black text-slate-800">Kemajuan per sub-skill</p>
+                    <SubskillProgress criteria={[criterion]} />
+                  </>
                 )}
+                {criterion.days.map((day) => (
+                  <div key={day.date} className="mt-2 rounded-2xl border border-slate-100 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12.5px] font-black text-slate-800">
+                        {day.kind === 'FIRST' ? 'Hari pertama' : 'Hari terakhir'} · {fmtDate(day.date)}
+                      </span>
+                      <span className="text-[12.5px] font-black text-slate-800">{fmt(day.average)} dari 4</span>
+                    </div>
+                    {day.scores.map((s) => (
+                      <div key={s.subskill_id} className="flex items-center justify-between gap-3 pt-1.5 text-[12px] text-slate-600">
+                        <span className="min-w-0">{s.name}</span>
+                        <span className="font-black shrink-0">{s.score}</span>
+                      </div>
+                    ))}
+                    {day.photos.length > 0 && (
+                      <div className="mt-3">
+                        <PhotoGrid photos={day.photos} />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             ))}
         </>
