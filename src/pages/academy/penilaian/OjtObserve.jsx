@@ -125,6 +125,7 @@ export default function OjtObserve() {
                           <ScoreButtons
                             value={scores[s.id] ?? null}
                             label={`${criterion.name}: ${s.name}`}
+                            legend
                             onChange={(n) => setScores((prev) => ({ ...prev, [s.id]: n }))}
                           />
                         </div>
