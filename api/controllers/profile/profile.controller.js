@@ -93,7 +93,7 @@ export const getProfileDetail = async (req, res) => {
     if (!employeeRow) {
       return res.status(404).json({
         success: false,
-        message: 'Data karyawan tidak ditemukan di mst_employee'
+        message: 'Data karyawan tidak ditemukan'
       });
     }
 
@@ -384,14 +384,14 @@ export const updateProfile = async (req, res) => {
     emitDataChange({ domain: 'profile', employeeId: empId, action: 'update' });
     return res.status(200).json({
       success: true,
-      message: 'Profil karyawan berhasil diperbarui di database mst_employee'
+      message: 'Profil karyawan berhasil diperbarui'
     });
 
   } catch (error) {
     console.error('updateProfile error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal mengupdate data karyawan di database',
+      message: 'Gagal memperbarui data karyawan',
       error: error.message
     });
   }

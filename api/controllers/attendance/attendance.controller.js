@@ -408,7 +408,7 @@ export const getTodayAttendance = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_attendance belum tersedia di database myWaschen. Jalankan DDL di agent/tr_attendance.sql terlebih dahulu.'
+        message: 'Fitur absensi sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil data absensi', error: error.message });
@@ -661,7 +661,7 @@ export const punchSelfie = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_attendance belum tersedia di database myWaschen. Jalankan DDL di agent/tr_attendance.sql terlebih dahulu.'
+        message: 'Fitur absensi sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal menyimpan absensi', error: error.message });
@@ -724,7 +724,7 @@ export const savePunchNote = async (req, res) => {
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(500).json({
         success: false,
-        message: 'Kolom catatan belum ada. Jalankan DDL di agent/tr_attendance_note.sql terlebih dahulu.'
+        message: 'Fitur catatan absensi sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal menyimpan catatan', error: error.message });
@@ -771,7 +771,7 @@ export const updateShift = async (req, res) => {
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(500).json({
         success: false,
-        message: 'Kolom shift belum ada. Jalankan DDL di agent/tr_attendance_shift.sql terlebih dahulu.'
+        message: 'Fitur shift absensi sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengganti shift', error: error.message });

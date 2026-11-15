@@ -61,7 +61,7 @@ export const getTodayLeave = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_leave belum tersedia di database myWaschen. Jalankan DDL di agent/tr_leave.sql terlebih dahulu.'
+        message: 'Fitur cuti/izin sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil data izin', error: error.message });
@@ -172,7 +172,7 @@ export const getLeaveList = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_leave belum tersedia di database myWaschen. Jalankan DDL di agent/tr_leave.sql terlebih dahulu.'
+        message: 'Fitur cuti/izin sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil riwayat izin', error: error.message });
@@ -257,7 +257,7 @@ export const submitLeave = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_leave belum tersedia di database myWaschen. Jalankan DDL di agent/tr_leave.sql terlebih dahulu.'
+        message: 'Fitur cuti/izin sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengirim pengajuan izin', error: error.message });

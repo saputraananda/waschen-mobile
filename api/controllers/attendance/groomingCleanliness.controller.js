@@ -241,7 +241,7 @@ export const getGroomingCleanliness = async (req, res) => {
     if (error.code === 'ER_BAD_FIELD_ERROR' || error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Schema grooming/kebersihan belum tersedia. Jalankan DDL agent/tr_attendance_grooming_cleanliness.sql.'
+        message: 'Fitur grooming & kebersihan sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal memuat grooming/kebersihan', error: error.message });

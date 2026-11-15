@@ -23,6 +23,7 @@ import leaderReceivableRoutes from './api/routes/leader/receivable.routes.js';
 import academyRoutes from './api/routes/academy/academy.routes.js';
 import { getBaseUploadDir } from './api/middleware/upload.js';
 import { initSocket } from './api/socket/io.js';
+import { safeErrorMessage } from './api/middleware/safeErrorMessage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,8 @@ const PORT = process.env.PORT || 9001;
 
 app.use(cors());
 app.use(express.json());
+// Pesan error ke layar tidak boleh menyebut nama tabel/kolom/SQL
+app.use(safeErrorMessage);
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
     const originalJson = res.json.bind(res);

@@ -258,7 +258,7 @@ export const startOvertime = async (req, res) => {
     const role = await resolveRoleMeta(employeeId);
     const outletId = role?.outlet_id || req.user.assignedOutletId;
     if (!outletId) {
-      return res.status(422).json({ success: false, message: 'Outlet karyawan tidak ditemukan di mst_role' });
+      return res.status(422).json({ success: false, message: 'Outlet karyawan belum ditetapkan. Hubungi admin.' });
     }
 
     const now = new Date();
@@ -389,7 +389,7 @@ export const getMyList = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_overtime belum tersedia. Jalankan migrasi lembur terlebih dahulu.'
+        message: 'Fitur lembur sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: error.message });

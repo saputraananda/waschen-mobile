@@ -84,7 +84,7 @@ export const getKasbonList = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_kasbon belum tersedia di database myWaschen. Jalankan DDL di agent/tr_kasbon.sql terlebih dahulu.'
+        message: 'Fitur kasbon sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil riwayat kasbon', error: error.message });
@@ -105,7 +105,7 @@ export const getKasbonSummary = async (req, res) => {
     if (error.code === 'ER_BAD_FIELD_ERROR') {
       return res.status(500).json({
         success: false,
-        message: 'Kolom kasbon/Take Home Pay belum ada. Jalankan agent/kasbon_limit_alter.sql di database development.'
+        message: 'Fitur kasbon sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengambil ringkasan limit kasbon' });
@@ -220,7 +220,7 @@ export const submitKasbon = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel tr_kasbon belum tersedia di database myWaschen. Jalankan DDL di agent/tr_kasbon.sql terlebih dahulu.'
+        message: 'Fitur kasbon sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal mengirim pengajuan', error: error.message });

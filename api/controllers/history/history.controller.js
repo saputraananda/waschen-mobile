@@ -260,7 +260,7 @@ export const getCalendar = async (req, res) => {
     if (error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({
         success: false,
-        message: 'Tabel riwayat belum lengkap. Jalankan agent/tr_employee_day_off.sql di database myWaschen.'
+        message: 'Fitur riwayat sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({ success: false, message: 'Gagal memuat kalender absensi', error: error.message });
