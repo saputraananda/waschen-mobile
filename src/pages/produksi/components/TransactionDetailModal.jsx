@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, AlertTriangle, PauseCircle, ShieldCheck, Scale, Shirt } from 'lucide-react';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
-import EventBadge from '../../../components/EventBadge.jsx';
+import DropPointBadge from '../../../components/DropPointBadge.jsx';
 import { api, formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
 import formatName from '../../../utils/FormatName.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
@@ -58,7 +58,7 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="text-[14px] font-extrabold text-slate-900 truncate">{data?.order_no || 'Detail Nota'}</span>
-              <EventBadge txn={data} />
+              <DropPointBadge txn={data} />
             </div>
             {data && (
               <div className="text-[10.5px] text-slate-400 font-semibold truncate">

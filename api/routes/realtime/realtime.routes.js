@@ -192,10 +192,20 @@ async function bindPosEmployee(req, res) {
     'SELECT outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
     [employeeId]
   );
-  const outletId = Number(rows[0]?.outlet_id) || null;
+  let outletId = Number(rows[0]?.outlet_id) || null;
   if (!outletId) {
     res.status(403).json({ success: false, message: 'Outlet karyawan belum ditetapkan' });
     return false;
+  }
+  // Staf boleh bekerja di outlet Drop Point yang dipilih di POS (sama seperti aturan POS);
+  // outlet lain tetap terkunci ke mst_role.
+  const requestedOutletId = Number(req.body?.outlet_id) || null;
+  if (requestedOutletId && requestedOutletId !== outletId) {
+    const [dp] = await myWaschenPool.query(
+      'SELECT id FROM mst_outlet WHERE id = ? AND is_drop_point = 1 LIMIT 1',
+      [requestedOutletId]
+    );
+    if (dp.length) outletId = requestedOutletId;
   }
   req.user = {
     employee_id: employeeId,

@@ -3,7 +3,7 @@ import { AlertTriangle, PauseCircle, ChevronRight, Scale, Shirt, PauseOctagon, U
 import { formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
 import { STAGE_ITEM_STATUS as STAGE_STATUS } from '../../../utils/notaScan.js';
 import formatName from '../../../utils/FormatName.js';
-import EventBadge from '../../../components/EventBadge.jsx';
+import DropPointBadge from '../../../components/DropPointBadge.jsx';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 /**
@@ -34,7 +34,7 @@ function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="text-[13px] font-black text-slate-800 truncate">{txn.order_no}</span>
-              <EventBadge txn={txn} />
+              <DropPointBadge txn={txn} />
               {hasFinding && <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
               {hasHold && <PauseCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
             </div>

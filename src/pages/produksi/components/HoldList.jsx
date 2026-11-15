@@ -6,7 +6,7 @@ import {
 import formatName from '../../../utils/FormatName.js';
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
-import EventBadge from '../../../components/EventBadge.jsx';
+import DropPointBadge from '../../../components/DropPointBadge.jsx';
 
 /**
  * Daftar "Perlu Konfirmasi" per role/tahap aktif.
@@ -78,7 +78,7 @@ export default function HoldList({ holds, loading, stage, onResolved }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[13px] font-black text-slate-800 truncate">{h.order_no}</span>
-                  <EventBadge txn={h} />
+                  <DropPointBadge txn={h} />
                 </div>
                 <div className="text-[11px] text-slate-400 font-medium truncate">
                   {formatName(h.customer_name) || 'Customer'} · {h.service_name} · {Number(h.qty)} {h.unit}

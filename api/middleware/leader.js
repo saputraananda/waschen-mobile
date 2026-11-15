@@ -1,7 +1,7 @@
 import { myWaschenPool } from '../db/pool.js';
 
 // mst_outlet.id (myWaschen) -> nama outlet di data penjualan (waschen_smartlink).
-// ponytail: dipetakan manual; outlet baru perlu ditambah di sini. 6 (Event Haji) tidak punya data penjualan.
+// ponytail: dipetakan manual; outlet baru perlu ditambah di sini. 6 (drop point) tidak punya data penjualan.
 export const SMARTLINK_OUTLET_BY_ID = {
   1: 'Waschen Laundry Raffles Hills',
   2: 'Waschen Citra Grand',
