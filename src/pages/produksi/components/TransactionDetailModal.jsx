@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, AlertTriangle, PauseCircle, ShieldCheck, Scale, Shirt } from 'lucide-react';
+import { X, Loader2, AlertTriangle, PauseCircle, ShieldCheck, Scale, Shirt, History } from 'lucide-react';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import DropPointBadge from '../../../components/DropPointBadge.jsx';
 import { api, formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
@@ -123,12 +123,17 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
                   {item.progress.map((p) => (
                     <div key={p.id} className="border-l-2 border-slate-200 pl-2.5">
                       <div className="flex items-center gap-1.5">
-                        {p.qc_status === 'aman'
-                          ? <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                          : <AlertTriangle className="w-3 h-3 text-red-500" />}
+                        {p.source === 'smartlink'
+                          ? <History className="w-3 h-3 text-slate-400" />
+                          : p.qc_status === 'aman'
+                            ? <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                            : <AlertTriangle className="w-3 h-3 text-red-500" />}
                         <span className="text-[11px] font-extrabold text-slate-700">
-                          {STAGE_LABEL[p.stage] || p.stage}
+                          {p.source === 'smartlink' ? p.stage_label : (STAGE_LABEL[p.stage] || p.stage)}
                         </span>
+                        {p.source === 'smartlink' && (
+                          <span className="text-[8.5px] font-black uppercase px-1 py-px rounded bg-slate-100 text-slate-500">Smartlink</span>
+                        )}
                         <span className="text-[10px] text-slate-400 font-semibold">
                           · {formatName(p.employee_name) || '—'} · {formatDateTime(p.completed_at)}
                         </span>

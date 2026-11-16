@@ -1,4 +1,5 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { fetchSmartlinkWorkLog, groupSmartlinkWork, isSmartlinkTransaction, smartlinkEmployeeIds } from '../../utils/smartlinkWorkLog.js';
 import {
   getProduksiPhotoPublicPath,
   deleteProduksiPhotoFile,
@@ -449,13 +450,36 @@ export const getTransactionDetail = async (req, res) => {
       }
     }
 
+    // Nota Smartlink: riwayat pengerjaan lama (tr_smartlink_work_log) ikut tampil di riwayat item
+    let smartlinkByDetail = {};
+    if (isSmartlinkTransaction(txns[0]) && details.length) {
+      const slRows = await fetchSmartlinkWorkLog((sql, params) => myWaschenPool.query(sql, params), txns[0].id);
+      const empIds = smartlinkEmployeeIds(slRows);
+      const nameMap = new Map();
+      if (empIds.length) {
+        try {
+          const [emps] = await mainPool.query('SELECT employee_id, full_name FROM mst_employee WHERE employee_id IN (?)', [empIds]);
+          emps.forEach((e) => nameMap.set(Number(e.employee_id), e.full_name));
+        } catch (err) {
+          console.warn('smartlink worker names:', err.message);
+        }
+      }
+      // details sudah difilter (item produksi / outlet) → beri tahu semua id detail nota
+      const [allDet] = await myWaschenPool.query('SELECT id FROM tr_transaction_detail WHERE transaction_id = ?', [txns[0].id]);
+      const allDetailIds = new Set(allDet.map((r) => Number(r.id)));
+      smartlinkByDetail = groupSmartlinkWork(details, slRows, (eid) => nameMap.get(eid) || null, allDetailIds);
+    }
+
     const data = {
       ...txns[0],
       items: details.map((d) => ({
         ...d,
-        progress: progress
-          .filter((p) => p.transaction_detail_id === d.id)
-          .map((p) => ({ ...p, photos: photos.filter((f) => f.progress_id === p.id) })),
+        progress: [
+          ...(smartlinkByDetail[d.id] || []),
+          ...progress
+            .filter((p) => p.transaction_detail_id === d.id)
+            .map((p) => ({ ...p, photos: photos.filter((f) => f.progress_id === p.id) }))
+        ],
         bags: bags.filter((b) => b.transaction_detail_id === d.id),
         packings: packings.filter((k) => k.transaction_detail_id === d.id)
       }))
