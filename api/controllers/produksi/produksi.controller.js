@@ -1,4 +1,5 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { loadItemPhotos } from '../../utils/itemPhotos.js';
 import { fetchSmartlinkWorkLog, groupSmartlinkWork, isSmartlinkTransaction, smartlinkEmployeeIds } from '../../utils/smartlinkWorkLog.js';
 import {
   getProduksiPhotoPublicPath,
@@ -470,10 +471,16 @@ export const getTransactionDetail = async (req, res) => {
       smartlinkByDetail = groupSmartlinkWork(details, slRows, (eid) => nameMap.get(eid) || null, allDetailIds);
     }
 
+    // Foto kondisi item dari kasir (disimpan di server POS → URL absolut ke POS)
+    const posBase = String(process.env.WASCHEN_POS_PUBLIC_URL || '').replace(/\/+$/, '');
+    const posUrl = (u) => (!u || /^https?:\/\//i.test(u) ? u : `${posBase}${String(u).startsWith('/') ? '' : '/'}${u}`);
+    const itemPhotos = await loadItemPhotos((sql, params) => myWaschenPool.query(sql, params), details);
+
     const data = {
       ...txns[0],
       items: details.map((d) => ({
         ...d,
+        item_photos: (itemPhotos[d.id] || []).map((p) => ({ id: p.id, photo_url: posUrl(p.photo_url) })),
         progress: [
           ...(smartlinkByDetail[d.id] || []),
           ...progress

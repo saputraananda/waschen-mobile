@@ -117,6 +117,31 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
                 </div>
               )}
 
+              {/* Foto kondisi item dari kasir */}
+              {(item.item_photos || []).length > 0 && (
+                <div className="mt-2.5">
+                  <span className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider">
+                    Foto Item · {item.item_photos.length}
+                  </span>
+                  <div className="mt-1 flex gap-1.5 overflow-x-auto hide-scrollbar">
+                    {item.item_photos.map((ph, pi) => (
+                      <button
+                        key={ph.id}
+                        type="button"
+                        onClick={() => setPhotoPreview({
+                          url: ph.photo_url,
+                          title: `Foto Item — ${item.service_name} (${pi + 1}/${item.item_photos.length})`
+                        })}
+                        className="flex-shrink-0 rounded-lg overflow-hidden border border-slate-200"
+                        aria-label={`Preview foto item ${pi + 1}`}
+                      >
+                        <img src={ph.photo_url} alt="Foto item" className="w-14 h-14 object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Riwayat progress */}
               {(item.progress || []).length > 0 && (
                 <div className="mt-3 flex flex-col gap-2">
