@@ -193,13 +193,22 @@ async function bindPosEmployee(req, res) {
     [employeeId]
   );
   let outletId = Number(rows[0]?.outlet_id) || null;
+  const requestedOutletId = Number(req.body?.outlet_id) || null;
   if (!outletId) {
-    res.status(403).json({ success: false, message: 'Outlet karyawan belum ditetapkan' });
-    return false;
+    // Akun tanpa outlet di mst_role (mis. Manajemen) memakai outlet yang dipilih di POS.
+    // Aman: endpoint ini hanya bisa dipanggil server POS (X-Realtime-Secret) yang sudah
+    // memverifikasi sesi login (qc.controller resolveActor, sama dengan aturan POS).
+    if (requestedOutletId) {
+      const [o] = await myWaschenPool.query('SELECT id FROM mst_outlet WHERE id = ? LIMIT 1', [requestedOutletId]);
+      if (o.length) outletId = requestedOutletId;
+    }
+    if (!outletId) {
+      res.status(403).json({ success: false, message: 'Outlet karyawan belum ditetapkan. Pilih outlet di POS.' });
+      return false;
+    }
   }
   // Staf boleh bekerja di outlet Drop Point yang dipilih di POS (sama seperti aturan POS);
   // outlet lain tetap terkunci ke mst_role.
-  const requestedOutletId = Number(req.body?.outlet_id) || null;
   if (requestedOutletId && requestedOutletId !== outletId) {
     const [dp] = await myWaschenPool.query(
       'SELECT id FROM mst_outlet WHERE id = ? AND is_drop_point = 1 LIMIT 1',
@@ -210,7 +219,8 @@ async function bindPosEmployee(req, res) {
   req.user = {
     employee_id: employeeId,
     employeeId,
-    email: null,
+    // Dipakai resolveEmployeeName sebagai cadangan nama bila karyawan tidak punya mst_role
+    email: String(req.body?.employee_name || '').trim() || null,
     assignedOutletId: outletId
   };
   return true;
