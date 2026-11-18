@@ -236,7 +236,7 @@ async function getAbsenLocationById(locationId) {
 }
 
 async function getOutletById(outletId) {
-  const [rows] = await mainPool.query(
+  const [rows] = await myWaschenPool.query(
     'SELECT id, name, full_name, address, lat, lon FROM mst_outlet WHERE id = ? LIMIT 1',
     [outletId]
   );
@@ -290,7 +290,7 @@ async function listAbsenPoints() {
     const lo = parseFloat(lon);
     if (Number.isFinite(la) && Number.isFinite(lo)) points.push({ lat: la, lon: lo });
   };
-  const [rows] = await mainPool.query('SELECT lat, lon FROM mst_outlet');
+  const [rows] = await myWaschenPool.query('SELECT lat, lon FROM mst_outlet');
   rows.forEach((r) => push(r.lat, r.lon));
   try {
     const [locRows] = await myWaschenPool.query(
@@ -420,7 +420,7 @@ export const getTodayAttendance = async (req, res) => {
  */
 export const getOutlets = async (req, res) => {
   try {
-    const [rows] = await mainPool.query(
+    const [rows] = await myWaschenPool.query(
       'SELECT id, name, full_name, address, lat, lon FROM mst_outlet ORDER BY name ASC'
     );
     let absenLocations = [];

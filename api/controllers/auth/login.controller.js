@@ -77,7 +77,7 @@ export const loginUser = async (req, res) => {
           ).then(([rows]) => rows)
         : Promise.resolve([]),
       user.company_id === 1
-        ? mainPool.query('SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC')
+        ? myWaschenPool.query('SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC')
             .then(([rows]) => rows)
         : Promise.resolve([])
     ]);
@@ -94,7 +94,7 @@ export const loginUser = async (req, res) => {
         if (found) {
           assignedOutletName = found.full_name || found.name;
         } else {
-          const [outletRows] = await mainPool.query(
+          const [outletRows] = await myWaschenPool.query(
             'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
             [assignedOutletId]
           );

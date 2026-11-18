@@ -340,7 +340,7 @@ export const getOutletDayOffs = async (req, res) => {
     const outletIds = [...new Set(rows.map((r) => Number(r.outlet_id)).filter(Boolean))];
     const nameById = new Map();
     if (outletIds.length) {
-      const [outlets] = await mainPool.query(
+      const [outlets] = await myWaschenPool.query(
         `SELECT id, name, full_name FROM mst_outlet WHERE id IN (${outletIds.map(() => '?').join(',')})`,
         outletIds
       );
@@ -705,7 +705,7 @@ export const getMyBackups = async (req, res) => {
     const outletIds = [...new Set(rows.map((row) => Number(row.outlet_id)).filter(Boolean))];
     const outletName = new Map();
     if (outletIds.length) {
-      const [outlets] = await mainPool.query(
+      const [outlets] = await myWaschenPool.query(
         `SELECT id, name, full_name FROM mst_outlet WHERE id IN (${outletIds.map(() => '?').join(',')})`,
         outletIds
       );

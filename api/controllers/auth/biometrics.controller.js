@@ -103,7 +103,7 @@ const fetchUserLoginPayload = async (userId) => {
       roleEmployeeName = roleRows[0].employee_name || null;
 
       if (assignedOutletId) {
-        const [outletRows] = await mainPool.query(
+        const [outletRows] = await myWaschenPool.query(
           'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
           [assignedOutletId]
         );
@@ -117,7 +117,7 @@ const fetchUserLoginPayload = async (userId) => {
   // Fetch all outlets if company_id = 1
   let outlets = [];
   if (user.company_id === 1) {
-    const [outletRows] = await mainPool.query(
+    const [outletRows] = await myWaschenPool.query(
       'SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC'
     );
     outlets = outletRows;

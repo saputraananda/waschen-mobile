@@ -122,7 +122,7 @@ export const getProfileDetail = async (req, res) => {
         }
 
         if (assignedOutletId) {
-          const [outletRows] = await mainPool.query(
+          const [outletRows] = await myWaschenPool.query(
             'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
             [assignedOutletId]
           );
