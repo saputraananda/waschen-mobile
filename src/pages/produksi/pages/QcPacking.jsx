@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQcSheet } from './useQcSheet.js';
 import {
-  QcModal, CarriedFinding, BagHistoryBlock, KgHistory, QcVerdict, QcNotes, QcPhotos,
+  QcModal, CarriedFinding, BagHistoryBlock, KgHistory, KgChecklist, QcVerdict, QcNotes, QcPhotos,
   DecisionPair, ReturnPicker, PackingLines, QcActions, sheetSubtitle
 } from './QcSheetFrame.jsx';
 
@@ -12,6 +12,7 @@ export default function QcPacking(props) {
       <CarriedFinding qc={qc} />
       <BagHistoryBlock qc={qc} />
       <KgHistory qc={qc} />
+      <KgChecklist qc={qc} />
       <QcVerdict qc={qc} temuanDecision="kembali" />
       <QcNotes qc={qc} />
       <QcPhotos qc={qc} />

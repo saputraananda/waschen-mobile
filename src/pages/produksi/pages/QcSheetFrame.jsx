@@ -1,8 +1,9 @@
 import React from 'react';
 import {
   X, Loader2, Camera, Images, Trash2, Plus,
-  ShieldCheck, AlertTriangle, ChevronDown
+  ShieldCheck, AlertTriangle, ChevronDown, Check
 } from 'lucide-react';
+import { kgRowKey } from './useQcSheet.js';
 import CameraCaptureModal from '../../../components/CameraCaptureModal';
 import { AlertModal } from '../../../components/ConfirmModal.jsx';
 import { STAGE_LABEL, bagTotal, formatDateTime, mergeKgRows } from '../../../utils/produksiShared.js';
@@ -372,8 +373,78 @@ export function TotalQty({ qc }) {
   );
 }
 
+/** Tim Setrika & Tim Packing: cek tiap jenis pakaian. ✓ sesuai, ✗ tidak sesuai + jumlah ditemukan. */
+export function KgChecklist({ qc }) {
+  if (!qc.needKgCheck) return null;
+  const { kgRows, kgChecks, setKgCheck } = qc;
+  const done = kgRows.filter((k) => kgChecks[kgRowKey(k)]?.match != null).length;
+  const total = kgRows.reduce((s, k) => s + Number(k.qty_pcs || 0), 0);
+  return (
+    <div>
+      <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
+        Ceklis Jenis Pakaian
+      </label>
+      <KgSourceNote source={qc.kgSource} />
+      <div className="rounded-[14px] border border-slate-200 bg-white divide-y divide-slate-100 overflow-hidden">
+        <div className="grid grid-cols-[minmax(0,1fr)_52px_88px] items-center gap-2 px-3 py-2 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+          <span>Jenis Pakaian</span>
+          <span className="text-center">Pcs</span>
+          <span className="text-center">Cek</span>
+        </div>
+        {kgRows.map((k) => {
+          const c = kgChecks[kgRowKey(k)] || {};
+          return (
+            <div key={kgRowKey(k)} className={`px-3 py-2 ${c.match === false ? 'bg-red-50/60' : c.match ? 'bg-emerald-50/40' : ''}`}>
+              <div className="grid grid-cols-[minmax(0,1fr)_52px_88px] items-center gap-2">
+                <div className="text-[12.5px] font-semibold text-slate-700 truncate">{k.item_name}</div>
+                <div className="text-center text-[20px] font-black leading-none text-[#5f1340] tabular-nums">{k.qty_pcs}</div>
+                <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setKgCheck(k, { match: true, actual: '' })}
+                  aria-label={`${k.item_name} sesuai`}
+                  className={`w-10 h-10 rounded-[12px] border grid place-items-center flex-shrink-0 ${c.match === true ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
+                >
+                  <Check className="w-5 h-5" strokeWidth={3} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKgCheck(k, { match: false })}
+                  aria-label={`${k.item_name} tidak sesuai`}
+                  className={`w-10 h-10 rounded-[12px] border grid place-items-center flex-shrink-0 ${c.match === false ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
+                >
+                  <X className="w-5 h-5" strokeWidth={3} />
+                </button>
+                </div>
+              </div>
+              {c.match === false && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-red-700 flex-shrink-0">Jumlah ditemukan</span>
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    placeholder={`bukan ${k.qty_pcs}`}
+                    value={c.actual ?? ''}
+                    onChange={(e) => setKgCheck(k, { actual: e.target.value })}
+                    className="flex-1 min-w-0 text-[12px] font-bold text-slate-700 bg-white border border-red-200 rounded-xl px-3 py-2 outline-none"
+                  />
+                  <span className="text-[11px] font-bold text-slate-500">pcs</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] font-semibold text-slate-500">
+        Dicek {done}/{kgRows.length} jenis · total tercatat {total} pcs
+      </p>
+    </div>
+  );
+}
+
 export function KgHistory({ qc }) {
-  if (!qc.kiloan || qc.needKgItems || !qc.kgHistory.length) return null;
+  if (!qc.kiloan || qc.needKgItems || qc.needKgCheck || !qc.kgHistory.length) return null;
   const rows = mergeKgRows(qc.kgHistory);
   return (
     <div className="flex flex-col gap-2">
@@ -437,7 +508,8 @@ export function QcVerdict({ qc, temuanDecision }) {
         <button
           type="button"
           onClick={() => { qc.setQcStatus('aman'); qc.setDecision('lanjut'); }}
-          className={`py-3 rounded-2xl border flex flex-col items-center gap-1 ${qc.qcStatus === 'aman' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-slate-50 text-slate-400 border-slate-200'}`}
+          disabled={qc.lockTemuan}
+          className={`py-3 rounded-2xl border flex flex-col items-center gap-1 disabled:opacity-40 ${qc.qcStatus === 'aman' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-slate-50 text-slate-400 border-slate-200'}`}
         >
           <ShieldCheck className="w-5 h-5" />
           <span className="text-[11.5px] font-black">Aman</span>
@@ -451,6 +523,9 @@ export function QcVerdict({ qc, temuanDecision }) {
           <span className="text-[11.5px] font-black">Temuan</span>
         </button>
       </div>
+      {qc.lockTemuan && (
+        <p className="mt-2 text-[11px] font-bold text-red-700">Ada jenis pakaian yang tidak sesuai, hasil QC otomatis Temuan.</p>
+      )}
     </div>
   );
 }
@@ -458,8 +533,14 @@ export function QcVerdict({ qc, temuanDecision }) {
 export function QcNotes({ qc }) {
   return (
     <div>
+      {qc.autoNote && (
+        <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-red-700 mb-0.5">Catatan otomatis</div>
+          <p className="text-[12px] font-semibold text-red-800">{qc.autoNote}</p>
+        </div>
+      )}
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
-        Catatan{qc.qcStatus === 'temuan' ? ' (Wajib)' : ''}
+        {qc.autoNote ? 'Catatan Tambahan (Opsional)' : `Catatan${qc.qcStatus === 'temuan' ? ' (Wajib)' : ''}`}
       </label>
       <textarea
         value={qc.notes}

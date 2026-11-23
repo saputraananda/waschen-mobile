@@ -13,6 +13,31 @@ const STAGES = ['frontliner', 'washing', 'ironing', 'packing'];
 const ALL_QC_STAGES = [...STAGES, 'delivery', 'handover'];
 // Tahap yang boleh mengisi rincian jenis pakaian kiloan (frontliner = juga pickup Delivery)
 const KG_ENTRY_STAGES = ['frontliner', 'washing'];
+// Tahap yang mencentang rincian jenis pakaian (✓ sesuai / ✗ tidak sesuai) alih-alih menghitung total
+const KG_CHECK_STAGES = ['ironing', 'packing'];
+
+const kgKey = (k) => (Number(k?.item_kg_id)
+  ? `id:${Number(k.item_kg_id)}`
+  : `name:${String(k?.item_name || '').trim().toLowerCase()}`);
+
+/** Rincian jenis pakaian versi terbaru (Frontliner/Tim Cuci), digabung lintas plastik. */
+async function loadLatestKgRows(db, detailId) {
+  const [rows] = await db.query(
+    `SELECT item_kg_id, item_name, qty_pcs FROM tr_item_kg_detail
+     WHERE transaction_detail_id = ?
+       AND progress_id = (SELECT MAX(progress_id) FROM tr_item_kg_detail WHERE transaction_detail_id = ?)
+     ORDER BY bag_no ASC, id ASC`,
+    [detailId, detailId]
+  );
+  const merged = new Map();
+  for (const r of rows) {
+    const key = kgKey(r);
+    const row = merged.get(key);
+    if (row) row.qty_pcs += Number(r.qty_pcs) || 0;
+    else merged.set(key, { item_kg_id: r.item_kg_id || null, item_name: r.item_name, qty_pcs: Number(r.qty_pcs) || 0 });
+  }
+  return [...merged.values()];
+}
 
 // Mapping tahap → item_work_status yang sedang menunggu di tahap tsb
 const STAGE_STATUS = {
@@ -711,6 +736,58 @@ export const submitQC = async (req, res) => {
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian packing' });
     }
 
+    // Tim Setrika & Tim Packing (kiloan): ceklis tiap baris rincian jenis pakaian versi terbaru.
+    // ✗ wajib isi jumlah ditemukan → QC wajib Temuan, ringkasan selisih masuk catatan otomatis.
+    // Nota tanpa rincian tetap memakai total quantity seperti sebelumnya.
+    const kgChecks = [];
+    let kgCheckSummary = null;
+    if (isKiloan && KG_CHECK_STAGES.includes(stage)) {
+      const expectedRows = await loadLatestKgRows(myWaschenPool, detail.id);
+      if (expectedRows.length) {
+        let rawChecks = null;
+        try { rawChecks = JSON.parse(req.body.kg_checks || '[]'); } catch (_) { rawChecks = null; }
+        let checkError = null;
+        if (!Array.isArray(rawChecks) || rawChecks.length === 0) {
+          checkError = 'Ceklis rincian jenis pakaian wajib diisi. Muat ulang aplikasi bila form masih meminta total quantity.';
+        } else {
+          const byKey = new Map(rawChecks.map((c) => [kgKey(c), c]));
+          for (const e of expectedRows) {
+            const c = byKey.get(kgKey(e));
+            if (!c) { checkError = `Ceklis belum lengkap: ${e.item_name}`; break; }
+            const match = c.is_match === true || Number(c.is_match) === 1;
+            const actual = match ? e.qty_pcs : Number(c.actual_qty);
+            if (!match && (c.actual_qty === '' || c.actual_qty == null || !Number.isInteger(actual) || actual < 0 || actual > 999 || actual === e.qty_pcs)) {
+              checkError = `${e.item_name}: isi jumlah ditemukan (berbeda dari ${e.qty_pcs} pcs)`;
+              break;
+            }
+            kgChecks.push({
+              item_kg_id: e.item_kg_id,
+              item_name: e.item_name,
+              expected_qty: e.qty_pcs,
+              actual_qty: actual,
+              is_match: match ? 1 : 0
+            });
+          }
+        }
+        const wrong = kgChecks.filter((c) => !c.is_match);
+        if (!checkError && wrong.length && qc_status !== 'temuan') {
+          checkError = 'Ada jenis pakaian yang tidak sesuai, hasil QC wajib Temuan';
+        }
+        if (checkError) {
+          await cleanupFiles();
+          return res.status(422).json({ success: false, message: checkError });
+        }
+        if (wrong.length) {
+          kgCheckSummary = `Tidak sesuai rincian: ${wrong
+            .map((c) => `${c.item_name} tercatat ${c.expected_qty}, ditemukan ${c.actual_qty}`)
+            .join('; ')}`;
+        }
+        // Tim Setrika: total tahap ini = jumlah yang ditemukan (riwayat plastik tetap terisi)
+        if (stage === 'ironing') bags = [{ bag_no: 1, qty_pcs: kgChecks.reduce((s, c) => s + c.actual_qty, 0) }];
+      }
+    }
+    const noteText = [kgCheckSummary, notes?.trim()].filter(Boolean).join('\n') || null;
+
     const employeeName = await resolveEmployeeName(employeeId, req.user.email);
     const roleUsed = await resolveEmployeeRole(employeeId);
 
@@ -751,7 +828,7 @@ export const submitQC = async (req, res) => {
         qc_status,
         qc_decision,
         qc_decision === 'kembali' ? resolvedReturnStage : null,
-        notes?.trim() || null,
+        noteText,
         stage === 'frontliner' && (wa_contacted === '1' || wa_contacted === 1) ? 1 : 0,
         progressStatus,
         overtimeId,
@@ -806,6 +883,16 @@ export const submitQC = async (req, res) => {
       );
     }
 
+    // Ceklis jenis pakaian Tim Setrika / Tim Packing — riwayat per aksi QC
+    if (kgChecks.length > 0) {
+      await conn.query(
+        `INSERT INTO tr_item_kg_check
+           (progress_id, transaction_detail_id, stage, item_kg_id, item_name, expected_qty, actual_qty, is_match)
+         VALUES ?`,
+        [kgChecks.map((c) => [progressId, detail.id, stage, c.item_kg_id, c.item_name, c.expected_qty, c.actual_qty, c.is_match])]
+      );
+    }
+
     // Update state item
     const detailUpdates = [];
     const detailParams = [];
@@ -826,7 +913,7 @@ export const submitQC = async (req, res) => {
       }
       if (qc_status === 'temuan') {
         detailUpdates.push('has_finding = 1', 'finding_note = ?');
-        detailParams.push(notes?.trim() || 'Temuan dilanjutkan dengan catatan');
+        detailParams.push(noteText || 'Temuan dilanjutkan dengan catatan');
       }
     } else if (qc_decision === 'kembali' && stage === 'delivery') {
       // QC final delivery gagal / temuan → kembalikan ke packing
@@ -838,7 +925,7 @@ export const submitQC = async (req, res) => {
       );
       if (qc_status === 'temuan') {
         detailUpdates.push('has_finding = 1', 'finding_note = ?');
-        detailParams.push(notes?.trim() || 'Dikembalikan ke packing dari QC delivery');
+        detailParams.push(noteText || 'Dikembalikan ke packing dari QC delivery');
       }
     } else {
       // hold / kembali (tahap lain) → item tetap di posisi, ditandai hold
@@ -846,7 +933,7 @@ export const submitQC = async (req, res) => {
       detailParams.push(stage === 'delivery' ? 'packing' : stage);
       if (qc_status === 'temuan') {
         detailUpdates.push('finding_note = ?');
-        detailParams.push(notes?.trim() || 'Temuan menunggu konfirmasi');
+        detailParams.push(noteText || 'Temuan menunggu konfirmasi');
       }
     }
 
@@ -892,7 +979,7 @@ export const submitQC = async (req, res) => {
         detail.id,
         logStatus,
         employeeId,
-        `[${stage}] QC ${qc_status} — ${qc_decision}${notes ? ` : ${notes.trim()}` : ''}`
+        `[${stage}] QC ${qc_status} — ${qc_decision}${noteText ? ` : ${noteText}` : ''}`
       ]
     );
 

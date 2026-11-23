@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   api, isKiloanItem, prevBagStagesFor, bagGap, bagTotal, mergeKgRows
 } from '../../../utils/produksiShared.js';
@@ -60,6 +60,9 @@ function kgItemsToTotalBag(kgItems) {
   }];
 }
 
+/** Kunci baris rincian (sama dengan server): id master, atau nama untuk "Lainnya". */
+export const kgRowKey = (k) => (k.item_kg_id ? `id:${k.item_kg_id}` : `name:${String(k.item_name || '').trim().toLowerCase()}`);
+
 const RETURN_STAGE_OPTIONS = {
   washing: ['frontliner'],
   ironing: ['washing', 'frontliner'],
@@ -89,6 +92,8 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   const [kgMaster, setKgMaster] = useState([]);
   const [kgHistory, setKgHistory] = useState([]);
   const [kgSource, setKgSource] = useState(null);
+  // Ceklis jenis pakaian Tim Setrika / Tim Packing: { [kgRowKey]: { match: true|false, actual: '' } }
+  const [kgChecks, setKgChecks] = useState({});
 
   const buildPhotoOverlay = useCallback((date = new Date()) => buildProduksiPhotoLines({
     orderNo: txn?.order_no,
@@ -106,7 +111,22 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   // Rincian packing diisi saat item lanjut, termasuk Temuan + Lanjutkan (samakan dengan submitQC)
   const needPackings = kiloan && stage === 'packing' && decision === 'lanjut';
   const needKgItems = kiloan && stage === 'washing';
-  const needTotal = kiloan && stage === 'ironing';
+  // Rincian terbaru (Frontliner / Tim Cuci) digabung → dasar ceklis Tim Setrika & Tim Packing
+  const kgRows = useMemo(() => mergeKgRows(kgHistory), [kgHistory]);
+  const needKgCheck = kiloan && ['ironing', 'packing'].includes(stage) && kgRows.length > 0;
+  // Nota tanpa rincian jenis pakaian: Tim Setrika tetap isi total quantity seperti dulu
+  const needTotal = kiloan && stage === 'ironing' && !historyLoading && kgRows.length === 0;
+  const wrongChecks = needKgCheck
+    ? kgRows.filter((k) => kgChecks[kgRowKey(k)]?.match === false)
+    : [];
+  // Ada ✗ → wajib Temuan; ringkasan selisih jadi catatan otomatis (server menyusun dari data yang sama)
+  const lockTemuan = wrongChecks.length > 0;
+  const autoNote = lockTemuan
+    ? `Tidak sesuai rincian: ${wrongChecks.map((k) => {
+      const actual = kgChecks[kgRowKey(k)]?.actual;
+      return `${k.item_name} tercatat ${k.qty_pcs}, ditemukan ${actual === '' || actual == null ? '?' : Number(actual)}`;
+    }).join('; ')}`
+    : '';
   // Foto opsional hanya untuk Tim Cuci & Tim Setrika saat aman (samakan dengan submitQC)
   const photoRequired = !(['washing', 'ironing'].includes(stage) && qcStatus === 'aman');
   // Frontliner / Pickup Delivery boleh membantu merinci (opsional) saat load Tim Cuci penuh
@@ -177,6 +197,17 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
 
   useLockBodyScroll(open || !!photoPreview);
 
+  useEffect(() => {
+    if (!lockTemuan || qcStatus === 'temuan') return;
+    setQcStatus('temuan');
+    setDecision('kembali');
+  }, [lockTemuan, qcStatus]);
+
+  const setKgCheck = (row, patch) => {
+    const key = kgRowKey(row);
+    setKgChecks((prev) => ({ ...prev, [key]: { actual: '', ...prev[key], ...patch } }));
+  };
+
   // Patokan selisih Tim Cuci & Tim Setrika. 0 = tidak ada hitungan Frontliner (nota lama)
   const frontlinerTotal = bagTotal(bagHistory.find((h) => h.stage === 'frontliner')?.bags);
   const bagSum = (b) =>
@@ -231,6 +262,7 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     setBagHistory([]);
     setKgHistory([]);
     setKgSource(null);
+    setKgChecks({});
     setHistoryLoading(false);
     setPhotoPreview(null);
     setError(null);
@@ -240,7 +272,27 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
   const handleSubmit = async () => {
     setError(null);
 
-    if (qcStatus === 'temuan' && !notes.trim()) {
+    if (kiloan && ['ironing', 'packing'].includes(stage) && historyLoading) {
+      setError('Rincian jenis pakaian masih dimuat, tunggu sebentar.');
+      return;
+    }
+    if (needKgCheck) {
+      const unchecked = kgRows.find((k) => kgChecks[kgRowKey(k)]?.match == null);
+      if (unchecked) {
+        setError(`Cek semua jenis pakaian (✓ / ✗). Belum dicek: ${unchecked.item_name}.`);
+        return;
+      }
+      const badQty = wrongChecks.find((k) => {
+        const raw = kgChecks[kgRowKey(k)]?.actual;
+        const n = Number(raw);
+        return raw === '' || raw == null || !Number.isInteger(n) || n < 0 || n > 999 || n === Number(k.qty_pcs);
+      });
+      if (badQty) {
+        setError(`${badQty.item_name}: isi jumlah yang ditemukan (berbeda dari ${badQty.qty_pcs} pcs).`);
+        return;
+      }
+    }
+    if (qcStatus === 'temuan' && !notes.trim() && !autoNote) {
       setError('Catatan temuan wajib diisi.');
       return;
     }
@@ -306,10 +358,28 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
       if (askIroning) fd.append('requires_ironing', requiresIroning ? '1' : '0');
       if (needBags) {
         fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))));
-      } else if (needKgItems || needTotal) {
-        // Tim Cuci & Tim Setrika: satu baris total
-        const total = needTotal ? Number(totalQty) : bags.reduce((sum, b) => sum + bagSum(b), 0);
+      } else if (needKgItems || needTotal || (needKgCheck && stage === 'ironing')) {
+        // Tim Cuci & Tim Setrika: satu baris total (Setrika ceklis = jumlah yang ditemukan)
+        const total = needTotal
+          ? Number(totalQty)
+          : needKgItems
+            ? bags.reduce((sum, b) => sum + bagSum(b), 0)
+            : kgRows.reduce((sum, k) => {
+              const c = kgChecks[kgRowKey(k)];
+              return sum + (c?.match === false ? Number(c.actual) : Number(k.qty_pcs));
+            }, 0);
         fd.append('bags', JSON.stringify([{ bag_no: 1, qty_pcs: total }]));
+      }
+      if (needKgCheck) {
+        fd.append('kg_checks', JSON.stringify(kgRows.map((k) => {
+          const c = kgChecks[kgRowKey(k)];
+          return {
+            item_kg_id: k.item_kg_id || null,
+            item_name: k.item_name,
+            is_match: c?.match === false ? 0 : 1,
+            actual_qty: c?.match === false ? Number(c.actual) : Number(k.qty_pcs)
+          };
+        })));
       }
       if (needKgItems || optionalKg) {
         const kgItems = bagsToKgItems(bags);
@@ -366,6 +436,12 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
     needPackings,
     needKgItems,
     needTotal,
+    needKgCheck,
+    kgRows,
+    kgChecks,
+    setKgCheck,
+    lockTemuan,
+    autoNote,
     optionalKg,
     showBagHistory,
     returnStageOptions,
