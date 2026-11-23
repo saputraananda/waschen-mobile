@@ -728,11 +728,11 @@ export default function ProfileEditPage() {
                         <FieldRow label="No. Rekening" name="bank_account_number" value={form.bank_account_number} onChange={handleChange} placeholder="Contoh : 1234567890" />
                     </Section>
 
-                    {/* PIN Kasir / POS */}
-                    <Section title="PIN Kasir (POS)">
+                    {/* PIN Karyawan (mst_employee_pin) */}
+                    <Section title="PIN Karyawan">
                         <p className="text-[11px] text-slate-500 font-medium leading-relaxed -mt-1 mb-1">
-                            PIN dipakai saat buat nota / pelunasan di POS. Angka saja, tepat 4 digit, harus unik.
-                            {detail?.has_pin ? ' PIN Anda sudah terisi — ubah jika perlu.' : ' Belum ada PIN — isi untuk bisa verifikasi di POS.'}
+                            4 digit angka, unik. Dipakai di POS dan aplikasi Alora lainnya.
+                            {detail?.has_pin ? ' PIN sudah ada — isi untuk mengganti.' : ' Belum ada PIN.'}
                         </p>
                         <div className="w-full min-w-0">
                             <div className="text-[10.5px] font-semibold text-slate-400 mb-1.5">PIN Baru</div>
