@@ -2,6 +2,7 @@ import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { emitDataChange } from '../../socket/io.js';
 import { toWibDateKey, formatWibTime } from '../../utils/wib.js';
 import { cutoffFor, currentCutoff } from '../../utils/kasbonLimit.js';
+import { isDailyWorker, rejectDailyWorker } from '../../utils/dailyWorker.js';
 
 const leaveLabel = (type) => {
   if (type === 'sakit') return 'Sakit';
@@ -236,9 +237,12 @@ export const getCalendar = async (req, res) => {
       else if (QUOTA_STATUSES.includes(row.status)) stats.pengajuan_libur += 1;
     });
 
-    // Hari lampau tanpa absensi / izin / libur → tidak masuk (alpha / lupa absen)
+    // Hari lampau tanpa absensi / izin / libur → tidak masuk (alpha / lupa absen).
+    // Daily Worker masuk hanya saat dibutuhkan, jadi hari kosong bukan alpha.
     const today = toWibDateKey(new Date());
+    const dailyWorker = await isDailyWorker(employeeId);
     for (const key of expandDateRange(start, end)) {
+      if (dailyWorker) break;
       if (key >= today) continue;
       if (days[key]) continue;
       days[key] = {
@@ -391,6 +395,7 @@ export const getOutletDayOffs = async (req, res) => {
 export const requestDayOff = async (req, res) => {
   let conn;
   try {
+    if (await rejectDailyWorker(req, res, 'jadwal libur')) return;
     const employeeId = req.user.employee_id;
     const { off_date: offDateRaw, reason } = req.body;
     const offDate = toWibDateKey(offDateRaw);

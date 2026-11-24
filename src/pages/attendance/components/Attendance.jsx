@@ -192,8 +192,10 @@ export default function Attendance() {
     return outlets.find((o) => String(o.id) === String(activeOutletId)) || assignedOutlet;
   }, [activeOutletId, outlets, assignedOutlet]);
 
+  // Tanpa cek GPS: karyawan tertentu, atau absen di outlet event (stand event)
   const skipGps = SKIP_GPS_EMPLOYEE_IDS.has(Number(currentUser.employee_id || currentUser.employeeId))
-    || SKIP_GPS_EMPLOYEE_IDS.has(storedEmployeeId());
+    || SKIP_GPS_EMPLOYEE_IDS.has(storedEmployeeId())
+    || Number(activeOutlet?.is_event) === 1;
   const inZone = gpsDist != null && gpsDist <= MAX_DIST_M;
   const outsideRange = gpsState === 'far';
   const canPunch = timeStatus?.isOpen && (skipGps || ((inZone || outsideRange) && (gpsState === 'ok' || gpsState === 'far')));
@@ -922,7 +924,11 @@ export default function Attendance() {
   const checkOutPhotoUrl = getPhotoUrl(record, 'out');
 
   const gpsBadge = () => {
-    if (skipGps) return { label: 'Tanpa cek GPS', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
+    if (skipGps) {
+      return Number(activeOutlet?.is_event) === 1
+        ? { label: 'Outlet Event · Tanpa cek GPS', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+        : { label: 'Tanpa cek GPS', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
+    }
     if (!activeOutlet?.lat || !activeOutlet?.lon) {
       return { label: 'Pilih outlet untuk cek GPS', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
     }

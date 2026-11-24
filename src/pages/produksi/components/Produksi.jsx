@@ -311,7 +311,8 @@ export default function Produksi() {
       setShowHolds(false);
       return;
     }
-    if (stageKey === userStage) {
+    // Daily Worker bisa bekerja sebagai role apa saja → tanpa konfirmasi pindah tahap
+    if (stageKey === userStage || currentUser.role === 'Daily Worker') {
       applyStageSwitch(stageKey);
       return;
     }

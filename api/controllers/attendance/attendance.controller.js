@@ -1,6 +1,7 @@
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { ATTENDANCE_UPLOAD_PUBLIC_PATH, deleteAttendancePhotoFile, deleteGroomingPhotoFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
+import { eventColumnSql, isEventOutlet } from '../../utils/eventOutlet.js';
 import { getAttendanceWorkDate, getWibHoursMinutes } from '../../utils/wib.js';
 import { requiresGrooming, deriveGroomingStatus } from '../../utils/groomingCleanliness.js';
 import {
@@ -421,7 +422,7 @@ export const getTodayAttendance = async (req, res) => {
 export const getOutlets = async (req, res) => {
   try {
     const [rows] = await myWaschenPool.query(
-      'SELECT id, name, full_name, address, lat, lon FROM mst_outlet ORDER BY name ASC'
+      `SELECT id, name, full_name, address, lat, lon, ${await eventColumnSql()} FROM mst_outlet ORDER BY name ASC`
     );
     let absenLocations = [];
     try {
@@ -452,6 +453,17 @@ export const checkLocation = async (req, res) => {
 
     if (!outletId) {
       return res.status(400).json({ success: false, message: 'Outlet belum ditetapkan untuk akun Anda.' });
+    }
+
+    // Outlet event (stand): tanpa cek GPS
+    if (await isEventOutlet(outletId)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          inZone: true, outsideRange: false, distance: null, maxDistanceM: MAX_DIST_M, outOfRangeM: OUT_OF_RANGE_M,
+          outlet: null, skipGps: true, message: 'Outlet event — absen tanpa cek lokasi.'
+        }
+      });
     }
 
     const result = await validateLocation(lat, lng, outletId);
@@ -524,7 +536,8 @@ export const punchSelfie = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Outlet absensi belum dipilih.' });
     }
 
-    const skipGps = SKIP_GPS_EMPLOYEE_IDS.has(Number(employeeId));
+    // Karyawan tertentu, atau outlet event (stand event) → tanpa cek GPS
+    const skipGps = SKIP_GPS_EMPLOYEE_IDS.has(Number(employeeId)) || await isEventOutlet(outletId);
     if (!skipGps) {
       const locCheck = await validateLocation(lat, lng, outletId);
       if (!locCheck.ok) {

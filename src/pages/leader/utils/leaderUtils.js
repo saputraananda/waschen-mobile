@@ -84,4 +84,5 @@ export const DAY_STATUS = {
   belum_berjalan: { label: 'Belum', cls: 'bg-white text-slate-400 border-slate-200' },
   belum_bergabung: { label: 'Belum gabung', cls: 'bg-slate-50 text-slate-400 border-slate-200' },
   sudah_keluar: { label: 'Sudah keluar', cls: 'bg-slate-50 text-slate-400 border-slate-200' },
+  tidak_bekerja: { label: 'Tidak bekerja', cls: 'bg-slate-50 text-slate-500 border-slate-200' },
 };

@@ -32,7 +32,9 @@ export default function MenuSection({
   currentUser = null
 }) {
   const role = getDisplayRole(currentUser);
-  const isDeliveryStaff = role === 'Delivery Staff';
+  const isDailyWorker = role === 'Daily Worker';
+  // Daily Worker bisa mengerjakan fungsi semua role, termasuk delivery
+  const isDeliveryStaff = role === 'Delivery Staff' || isDailyWorker;
   const isLeader = [1, '1', true].includes(currentUser?.is_leader) || [1, '1', true].includes(currentUser?.isLeader);
   const lockBadge = menusLocked ? (
     <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-black text-rose-700">
@@ -79,6 +81,7 @@ export default function MenuSection({
           </div>
         </button>
 
+        {!isDailyWorker && (
         <button
           id="menu-izin-btn"
           type="button"
@@ -100,7 +103,9 @@ export default function MenuSection({
             </span>
           </div>
         </button>
+        )}
 
+        {!isDailyWorker && (
         <button
           id="menu-kasbon-btn"
           type="button"
@@ -122,6 +127,7 @@ export default function MenuSection({
             </span>
           </div>
         </button>
+        )}
 
         <button
           id="menu-lembur-btn"
@@ -139,6 +145,7 @@ export default function MenuSection({
           </div>
         </button>
 
+        {!isDailyWorker && (
         <button
           id="menu-payslip-btn"
           type="button"
@@ -160,7 +167,9 @@ export default function MenuSection({
             </span>
           </div>
         </button>
+        )}
 
+        {!isDailyWorker && (
         <button
           id="menu-stock-btn"
           type="button"
@@ -182,6 +191,7 @@ export default function MenuSection({
             </span>
           </div>
         </button>
+        )}
       </div>
 
       <button
@@ -304,6 +314,8 @@ export default function MenuSection({
         </>
       )}
 
+      {!isDailyWorker && (
+      <>
       <div className="flex justify-between items-center mt-7 mb-3.5 px-1">
         <h3 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
           Alora Academy
@@ -357,6 +369,8 @@ export default function MenuSection({
           </div>
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

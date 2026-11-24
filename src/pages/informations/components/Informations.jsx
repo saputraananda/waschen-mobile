@@ -64,6 +64,7 @@ const SECTIONS = [
     bg: 'bg-fuchsia-50',
     steps: [
       'Grooming wajib untuk Frontliner dan Delivery Staff. Posisi lain cukup foto kebersihan area.',
+      'Daily Worker tidak wajib foto grooming maupun foto kebersihan, tetapi tetap wajib absen.',
       'Unggah 6 foto grooming: tampak depan, close-up wajah, samping, belakang, celana, dan kuku.',
       'Jendela unggah grooming: pukul 05.00–09.00 dan 10.00–11.30 WIB.',
       'Lewat pukul 11.30 WIB unggahan dikunci. Jika foto belum lengkap, Anda wajib mengisi kolom Alasan.',

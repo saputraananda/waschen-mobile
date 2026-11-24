@@ -2,6 +2,7 @@ import { myWaschenPool } from '../../db/pool.js';
 import { KASBON_UPLOAD_PUBLIC_PATH, deleteKasbonProofFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
 import { buildKasbonSummary, splitInstallments } from '../../utils/kasbonLimit.js';
+import { rejectDailyWorker } from '../../utils/dailyWorker.js';
 
 const KASBON_TYPES = ['kasbon', 'pinjaman'];
 
@@ -161,6 +162,10 @@ export const submitKasbon = async (req, res) => {
   };
 
   try {
+    if (await rejectDailyWorker(req, res, 'kasbon / pinjaman')) {
+      await cleanupFile();
+      return;
+    }
     const employeeId = req.user.employee_id;
     const { type, submission_date, purpose, amount_requested, notes, tenor_count } = req.body;
 

@@ -24,6 +24,8 @@ import { useRealtimeRefresh } from '../../../context/SocketContext.jsx';
 import useSoftRefresh from '../../../hooks/useSoftRefresh.js';
 
 const DELIVERY_ROLE = 'Delivery Staff';
+// Daily Worker bisa menjalankan fungsi delivery juga
+const canDeliver = (role) => role === DELIVERY_ROLE || role === 'Daily Worker';
 
 function MotorbikeIcon({ className = 'w-4 h-4' }) {
   return (
@@ -333,11 +335,11 @@ export default function Delivery() {
     const fullName = parsed?.fullName || parsed?.name || 'Karyawan Waschen';
     if (displayRole) {
       setCurrentUser({ fullName, role: displayRole, assignedOutletName: parsed?.assignedOutletName || null });
-      if (displayRole !== DELIVERY_ROLE) navigate('/', { replace: true });
+      if (!canDeliver(displayRole)) navigate('/', { replace: true });
     } else {
       fetchAssignedRole(token).then((r) => {
         setCurrentUser({ fullName, role: r, assignedOutletName: parsed?.assignedOutletName || null });
-        if (r !== DELIVERY_ROLE) navigate('/', { replace: true });
+        if (!canDeliver(r)) navigate('/', { replace: true });
       });
     }
   }, [navigate]);
@@ -391,7 +393,7 @@ export default function Delivery() {
   const { refreshing, showUpdated, setShowUpdated, handleRefresh } = useSoftRefresh(softRefresh);
 
   useEffect(() => {
-    if (role === DELIVERY_ROLE) {
+    if (canDeliver(role)) {
       setSearchQuery('');
       setSearchResults(null);
       setSearchError(null);
@@ -516,7 +518,7 @@ export default function Delivery() {
     else loadData({ silent: true });
   };
 
-  if (role && role !== DELIVERY_ROLE) return null;
+  if (role && !canDeliver(role)) return null;
 
   const displayList = searchResults !== null ? searchResults : txns;
   const isSearchMode = searchResults !== null;

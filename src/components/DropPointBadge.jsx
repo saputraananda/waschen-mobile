@@ -10,7 +10,7 @@ export default function DropPointBadge({ txn, className = '' }) {
     <span
       className={`inline-flex items-center text-[9px] font-black px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200 flex-shrink-0 uppercase tracking-wide ${className}`}
     >
-      {txn.drop_point_name ? `Drop Point · ${txn.drop_point_name}` : 'Drop Point'}
+      {txn.drop_point_name || 'Drop Point'}
     </span>
   );
 }

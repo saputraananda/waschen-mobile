@@ -215,7 +215,8 @@ function buildEmployee(emp, ctx, startDate, endDate, shifts, withDetail) {
   // Tanpa keterangan: sejak tanggal masuk s/d kemarin (atau tanggal keluar)
   const scopeFrom = emp.join_date && emp.join_date > startDate ? emp.join_date : startDate;
   const scopeTo = [endDate, yesterday, emp.exit_date].filter(Boolean).sort()[0];
-  const noInfoDates = scopeFrom <= scopeTo
+  const isDailyWorker = emp.role === 'Daily Worker';
+  const noInfoDates = !isDailyWorker && scopeFrom <= scopeTo
     ? eachDateISO(scopeFrom, scopeTo).filter((d) => !hadirDates.has(d) && !offDates.has(d) && !leaveByDate.has(d))
     : [];
 
@@ -270,6 +271,7 @@ function buildEmployee(emp, ctx, startDate, endDate, shifts, withDetail) {
     else if (noInfoSet.has(d)) status = 'tanpa_keterangan';
     else if (emp.join_date && d < emp.join_date) status = 'belum_bergabung';
     else if (emp.exit_date && d > emp.exit_date) status = 'sudah_keluar';
+    else if (isDailyWorker && d <= yesterday) status = 'tidak_bekerja';
     else status = 'belum_berjalan';
     return {
       date: d,

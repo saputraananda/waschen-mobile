@@ -246,6 +246,8 @@ export default function History() {
   const [backupList, setBackupList] = useState([]);
   const [outletBoard, setOutletBoard] = useState(null);
   const [isLeader, setIsLeader] = useState(false);
+  // Daily Worker: pekerja lepas, tanpa jadwal libur
+  const [isDailyWorker, setIsDailyWorker] = useState(false);
   const [leaderQueue, setLeaderQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -274,6 +276,7 @@ export default function History() {
         const parsed = JSON.parse(storedUser);
         const leader = parsed.is_leader === 1 || parsed.is_leader === true || parsed.isLeader === 1 || parsed.is_leader === '1';
         setIsLeader(!!leader);
+        setIsDailyWorker((parsed.assignedRole || parsed.mst_role) === 'Daily Worker');
       } catch { /* ignore */ }
     }
   }, [navigate]);
@@ -481,6 +484,7 @@ export default function History() {
   const openDayLabel = formatOpenDays(openDays);
   const requestWindow = requestPeriodOnDay(todayKey, openDays);
   const canRequestDayOff = Boolean(
+    !isDailyWorker &&
     requestWindow &&
     selectedKey &&
     selectedKey >= requestWindow.start &&
@@ -785,7 +789,7 @@ export default function History() {
                   <span className="text-[12px] text-slate-500 font-bold block text-center mb-3">
                     Belum ada data absensi untuk tanggal ini.
                   </span>
-                  {canRequestDayOff ? (
+                  {isDailyWorker ? null : canRequestDayOff ? (
                     <button
                       onClick={openRequestModal}
                       className="w-full mb-3 py-3 rounded-2xl bg-purple-600 text-white text-[12.5px] font-black shadow-md shadow-purple-500/25 flex items-center justify-center gap-2"

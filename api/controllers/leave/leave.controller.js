@@ -2,6 +2,7 @@ import { myWaschenPool } from '../../db/pool.js';
 import { LEAVE_UPLOAD_PUBLIC_PATH, deleteLeaveDocFile } from '../../middleware/upload.js';
 import { emitDataChange } from '../../socket/io.js';
 import { toWibDateKey, getWibYearMonth } from '../../utils/wib.js';
+import { rejectDailyWorker } from '../../utils/dailyWorker.js';
 
 const LEAVE_TYPES = ['izin', 'sakit', 'cuti'];
 const DURATION_TYPES = ['full_day', 'half_day_morning', 'half_day_afternoon'];
@@ -190,6 +191,10 @@ export const submitLeave = async (req, res) => {
   };
 
   try {
+    if (await rejectDailyWorker(req, res, 'izin / cuti')) {
+      await cleanupFile();
+      return;
+    }
     const employeeId = req.user.employee_id;
     const { leave_type, duration_type = 'full_day', start_date, end_date, reason } = req.body;
 
