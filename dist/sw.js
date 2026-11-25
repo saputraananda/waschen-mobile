@@ -78,7 +78,7 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "c2a13e802baf0218c63dd700e6df1920"
+    "revision": "b8b783d62fbf5230d2603cff60a1cf6c"
   }, {
     "url": "assets/wib-CeU2UH6I.js",
     "revision": null
@@ -89,88 +89,106 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/vendor-BUOIucNs.js",
     "revision": null
   }, {
-    "url": "assets/TrainingDetail-KoHlXQ3n.js",
+    "url": "assets/TrainingDetail-CfCnX9Sj.js",
     "revision": null
   }, {
-    "url": "assets/TestPage-DT13ICKZ.js",
+    "url": "assets/TestPage-DTNbNcTi.js",
+    "revision": null
+  }, {
+    "url": "assets/ScoreButtons-CidBMMBA.js",
     "revision": null
   }, {
     "url": "assets/scanner-ca9zSWah.js",
     "revision": null
   }, {
-    "url": "assets/Sales-D56gYumV.js",
+    "url": "assets/Sales-C5vpWncC.js",
     "revision": null
   }, {
     "url": "assets/react-vendor-CqaKXY98.js",
     "revision": null
   }, {
-    "url": "assets/PeriodPicker-CrG9GMH7.js",
+    "url": "assets/Progress-BtWjkpQA.js",
     "revision": null
   }, {
-    "url": "assets/index-XCy85hQN.js",
+    "url": "assets/PeriodPicker-BGL_faAa.js",
     "revision": null
   }, {
-    "url": "assets/index-vTKs3vyJ.js",
+    "url": "assets/OjtObserve-C04EHnok.js",
     "revision": null
   }, {
-    "url": "assets/index-GspQiE-I.js",
+    "url": "assets/MentorScore--koE016b.js",
     "revision": null
   }, {
-    "url": "assets/index-DYpb7pXK.js",
+    "url": "assets/MentorBatch-BsFFp9Jt.js",
     "revision": null
   }, {
-    "url": "assets/index-DXS7bIqK.js",
+    "url": "assets/index-wDe3vZYX.js",
     "revision": null
   }, {
-    "url": "assets/index-DnMGGbRN.js",
+    "url": "assets/index-opm4WP_W.js",
     "revision": null
   }, {
-    "url": "assets/index-Dg_vtSkU.js",
+    "url": "assets/index-FcTaMEtr.js",
     "revision": null
   }, {
-    "url": "assets/index-DEPGbF_h.js",
+    "url": "assets/index-Ekih_Xa6.js",
     "revision": null
   }, {
-    "url": "assets/index-DAunQc2z.js",
+    "url": "assets/index-DSm3_M5m.js",
     "revision": null
   }, {
-    "url": "assets/index-CPzfYuP7.js",
+    "url": "assets/index-DdN3Y05M.css",
     "revision": null
   }, {
-    "url": "assets/index-BzxC9uhi.js",
+    "url": "assets/index-C_AtQCZ2.js",
     "revision": null
   }, {
-    "url": "assets/index-BTkeVjs4.js",
+    "url": "assets/index-B_qQgXCH.js",
     "revision": null
   }, {
-    "url": "assets/index-BB1M3fAr.css",
+    "url": "assets/index-B_CQ3aR_.js",
     "revision": null
   }, {
-    "url": "assets/index--yQX_9rO.js",
+    "url": "assets/index-Bv47-muo.js",
     "revision": null
   }, {
-    "url": "assets/icons-DAdzS6ox.js",
+    "url": "assets/index-BO9XuXJB.js",
     "revision": null
   }, {
-    "url": "assets/FeedbackPage-ByRWjR4r.js",
+    "url": "assets/index-Bglm1YZH.js",
     "revision": null
   }, {
-    "url": "assets/Employee-DluQHTMk.js",
+    "url": "assets/index-B7thVQI-.js",
     "revision": null
   }, {
-    "url": "assets/EditProfile-DIsXtK2x.js",
+    "url": "assets/index-B0Wtq2-T.js",
     "revision": null
   }, {
-    "url": "assets/CameraCaptureModal-DlMgQBSL.js",
+    "url": "assets/index-3kwxxqRl.js",
     "revision": null
   }, {
-    "url": "assets/BarcodeScannerModal-C7g5jnkR.js",
+    "url": "assets/icons-M8s84Ubu.js",
     "revision": null
   }, {
-    "url": "assets/AnswerReview-BwyQtMir.js",
+    "url": "assets/FeedbackPage-CCuH2sDV.js",
     "revision": null
   }, {
-    "url": "assets/academyShared-nK8IVq_h.js",
+    "url": "assets/Employee-m3OPDFtu.js",
+    "revision": null
+  }, {
+    "url": "assets/EditProfile-BjUS1lgI.js",
+    "revision": null
+  }, {
+    "url": "assets/CameraCaptureModal-MLoU9__a.js",
+    "revision": null
+  }, {
+    "url": "assets/BarcodeScannerModal-D1v3IuCb.js",
+    "revision": null
+  }, {
+    "url": "assets/AnswerReview-Bt1HJigF.js",
+    "revision": null
+  }, {
+    "url": "assets/academyShared-zuvjGU0C.js",
     "revision": null
   }, {
     "url": "apple-touch-icon.png",

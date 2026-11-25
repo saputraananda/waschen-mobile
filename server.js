@@ -75,9 +75,29 @@ app.use('/api/leader/receivable', leaderReceivableRoutes);
 app.use('/api/academy', academyRoutes);
 
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, 'dist')));
+  const distDir = path.join(__dirname, 'dist');
+  // PWA: sw.js / index.html / manifest jangan pernah di-cache supaya app terinstall dapat update;
+  // file di /assets bernama hash -> aman di-cache permanen.
+  app.use(express.static(distDir, {
+    setHeaders(res, filePath) {
+      const base = path.basename(filePath);
+      if (
+        base === 'index.html' ||
+        base === 'sw.js' ||
+        base === 'registerSW.js' ||
+        base.endsWith('.webmanifest')
+      ) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return;
+      }
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
   app.get('*', (req, res) => {
-    res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.resolve(distDir, 'index.html'));
   });
 } else {
   app.get('/', (req, res) => {
