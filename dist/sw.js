@@ -78,7 +78,7 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "e77d798d9343d161a8e70582425a957b"
+    "revision": "a7094fc744e40a4b7c81828afc4c96f1"
   }, {
     "url": "assets/wib-CeU2UH6I.js",
     "revision": null
@@ -89,10 +89,10 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/vendor-BUOIucNs.js",
     "revision": null
   }, {
-    "url": "assets/TrainingDetail-CAvzpfpo.js",
+    "url": "assets/TrainingDetail-IV3jT6Tc.js",
     "revision": null
   }, {
-    "url": "assets/TestPage-DpUvzCe3.js",
+    "url": "assets/TestPage-CA_5fbPF.js",
     "revision": null
   }, {
     "url": "assets/ScoreButtons-CidBMMBA.js",
@@ -101,91 +101,91 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/scanner-ca9zSWah.js",
     "revision": null
   }, {
-    "url": "assets/Sales-DD7GcH5N.js",
+    "url": "assets/Sales-jFGW8E7G.js",
     "revision": null
   }, {
     "url": "assets/react-vendor-CqaKXY98.js",
     "revision": null
   }, {
-    "url": "assets/Progress-BvRWafMg.js",
+    "url": "assets/Progress-Bk7OKnC7.js",
     "revision": null
   }, {
-    "url": "assets/PeriodPicker-zadODlOS.js",
+    "url": "assets/PeriodPicker-B8ZeknZi.js",
     "revision": null
   }, {
-    "url": "assets/OjtObserve-BtgHgXB8.js",
+    "url": "assets/OjtObserve-D3F-Hbkz.js",
     "revision": null
   }, {
-    "url": "assets/MentorScore-CrGNency.js",
+    "url": "assets/MentorScore-BhNTQYoC.js",
     "revision": null
   }, {
-    "url": "assets/MentorBatch-BfHOk4gI.js",
+    "url": "assets/MentorBatch-fURV_adz.js",
     "revision": null
   }, {
-    "url": "assets/index-xiAqX-S2.js",
+    "url": "assets/index-wzK-GNDB.js",
     "revision": null
   }, {
-    "url": "assets/index-QApNnV-S.js",
+    "url": "assets/index-rHwnaTST.js",
     "revision": null
   }, {
-    "url": "assets/index-Q9tniQ5F.js",
+    "url": "assets/index-Dzcj_G6f.js",
     "revision": null
   }, {
-    "url": "assets/index-KTRBnQHO.js",
-    "revision": null
-  }, {
-    "url": "assets/index-Dr-ZKGkA.js",
-    "revision": null
-  }, {
-    "url": "assets/index-DItKaEHd.js",
+    "url": "assets/index-DX2I28gk.js",
     "revision": null
   }, {
     "url": "assets/index-DdN3Y05M.css",
     "revision": null
   }, {
-    "url": "assets/index-Cpv1isgK.js",
+    "url": "assets/index-D7cCd04i.js",
     "revision": null
   }, {
-    "url": "assets/index-CmSIBQDs.js",
+    "url": "assets/index-CxVlrW7x.js",
     "revision": null
   }, {
-    "url": "assets/index-Cdy_1b2u.js",
+    "url": "assets/index-CTgAVjeg.js",
     "revision": null
   }, {
-    "url": "assets/index-BzAqeBm_.js",
+    "url": "assets/index-CJwGCEES.js",
     "revision": null
   }, {
-    "url": "assets/index-BxcOsmJs.js",
+    "url": "assets/index-C086cmeJ.js",
     "revision": null
   }, {
-    "url": "assets/index-B045zW0f.js",
+    "url": "assets/index-BwhjVcGm.js",
     "revision": null
   }, {
-    "url": "assets/index-95cK6x7B.js",
+    "url": "assets/index-BvkMYNDQ.js",
     "revision": null
   }, {
-    "url": "assets/index-0OOFgrN2.js",
+    "url": "assets/index-BS_WhC7m.js",
+    "revision": null
+  }, {
+    "url": "assets/index-BcOJcvtg.js",
+    "revision": null
+  }, {
+    "url": "assets/index-BBf3o-Cq.js",
     "revision": null
   }, {
     "url": "assets/icons-M8s84Ubu.js",
     "revision": null
   }, {
-    "url": "assets/FeedbackPage-Co1oJxtj.js",
+    "url": "assets/FeedbackPage-VqH2EHzk.js",
     "revision": null
   }, {
-    "url": "assets/Employee-BVtCsvmk.js",
+    "url": "assets/Employee-s9mAt2lE.js",
     "revision": null
   }, {
-    "url": "assets/EditProfile-9oT7Qh0T.js",
+    "url": "assets/EditProfile-B2QOOpnV.js",
     "revision": null
   }, {
-    "url": "assets/CameraCaptureModal-BOJxFMqg.js",
+    "url": "assets/CameraCaptureModal-DxRGGv2-.js",
     "revision": null
   }, {
-    "url": "assets/BarcodeScannerModal-D9pXecrg.js",
+    "url": "assets/BarcodeScannerModal-DqR-9fop.js",
     "revision": null
   }, {
-    "url": "assets/AnswerReview-DiBxVzCo.js",
+    "url": "assets/AnswerReview-7ieX07mi.js",
     "revision": null
   }, {
     "url": "assets/academyShared-zuvjGU0C.js",

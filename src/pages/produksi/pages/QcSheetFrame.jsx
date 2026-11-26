@@ -172,7 +172,7 @@ export function SimpleBags({ qc }) {
       </label>
       {optionalKg && (
         <p className="mb-2 text-[10.5px] font-semibold text-slate-500 leading-snug">
-          Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci).
+          Opsional — jumlah plastik & rincian jenis pakaian boleh dikosongkan (dihitung Tim Cuci).
         </p>
       )}
       <div className="flex flex-col gap-2">

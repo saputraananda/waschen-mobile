@@ -725,7 +725,8 @@ export const submitQC = async (req, res) => {
     }
 
     const isKiloan = detail.category_code === 'KILOAN' || String(detail.unit).toLowerCase() === 'kg';
-    if (isKiloan && ['frontliner', 'washing', 'ironing'].includes(stage) && bags.length === 0) {
+    // Rincian plastik Frontliner opsional (keputusan user 2026-11-26); Tim Cuci & Setrika tetap wajib total
+    if (isKiloan && ['washing', 'ironing'].includes(stage) && bags.length === 0) {
       await cleanupFiles();
       return res.status(422).json({ success: false, message: 'Item kiloan wajib diisi rincian plastik' });
     }

@@ -317,9 +317,10 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
         return;
       }
     } else if (needBags) {
-      const valid = bags.every((b) => Number(b.qty_pcs) > 0);
-      if (!valid) {
-        setError('Isi jumlah pakaian per plastik (semua plastik).');
+      // Jumlah per plastik opsional; tapi plastik yang dirinci jenis pakaiannya wajib ada jumlahnya
+      const noQtyIdx = bags.findIndex((b) => !(Number(b.qty_pcs) > 0) && (optionalKg ? bagSum(b) > 0 : false));
+      if (noQtyIdx >= 0) {
+        setError(`Plastik ${noQtyIdx + 1}: isi jumlah pakaian, atau kosongkan rinciannya.`);
         return;
       }
       if (optionalKg) {
@@ -357,7 +358,11 @@ export function useQcSheet({ open, stage, item, txn, onClose, onDone }) {
       fd.append('wa_contacted', stage === 'frontliner' && waContacted ? '1' : '0');
       if (askIroning) fd.append('requires_ironing', requiresIroning ? '1' : '0');
       if (needBags) {
-        fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))));
+        // Plastik yang dikosongkan tidak dikirim (rincian plastik Frontliner opsional)
+        const filledBags = bags
+          .map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty_pcs) }))
+          .filter((b) => b.qty_pcs > 0);
+        if (filledBags.length) fd.append('bags', JSON.stringify(filledBags));
       } else if (needKgItems || needTotal || (needKgCheck && stage === 'ironing')) {
         // Tim Cuci & Tim Setrika: satu baris total (Setrika ceklis = jumlah yang ditemukan)
         const total = needTotal
