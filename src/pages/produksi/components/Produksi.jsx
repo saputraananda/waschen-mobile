@@ -5,7 +5,7 @@ import getDisplayRole, { getRoleLabel } from '../../../utils/getDisplayRole.js';
 import fetchAssignedRole from '../../../utils/fetchAssignedRole.js';
 import { ArrowLeft, Loader2, PauseCircle, RefreshCw, PackageSearch, Search, ScanLine, X } from 'lucide-react';
 import { api, STAGES, stageForRole } from '../../../utils/produksiShared.js';
-import { evaluateNotaForStage, STAGE_ITEM_STATUS } from '../../../utils/notaScan.js';
+import { evaluateNotaForStage, STAGE_ITEM_STATUS, skippedStagesForItem, skipLabel } from '../../../utils/notaScan.js';
 import TransactionCard from './TransactionCard.jsx';
 import ItemQCSheet from '../pages/ItemQCSheet.jsx';
 import HoldList from './HoldList.jsx';
@@ -53,6 +53,12 @@ export default function Produksi() {
   const searchDebounceRef = useRef(null);
   const skipSearchEffectRef = useRef(false);
   const [stageSwitchPrompt, setStageSwitchPrompt] = useState(null);
+  // QC lompat tahap dari hasil pencarian: konfirmasi dulu sebelum buka lembar QC
+  const [skipPrompt, setSkipPrompt] = useState(null);
+  const handleItemClick = useCallback((target) => {
+    if (target?.skipped?.length) setSkipPrompt(target);
+    else setQcTarget(target);
+  }, []);
 
   const handleAuthError = useCallback((err) => {
     if (err?.response?.status === 401) {
@@ -256,7 +262,7 @@ export default function Produksi() {
       const verdict = evaluateNotaForStage(txn, activeStage, stageLabel);
       if (verdict.ok) {
         const matched = list.filter((t) =>
-          (t.items || []).some((it) => it.item_work_status === stageStatus)
+          (t.items || []).some((it) => it.item_work_status === stageStatus || skippedStagesForItem(it, activeStage).length > 0)
         );
         setSearchResults(matched.length ? matched : [txn]);
         setSearching(false);
@@ -467,7 +473,8 @@ export default function Produksi() {
                     txn={txn}
                     activeStage={activeStage}
                     onOpen={openDetail}
-                    onItemClick={setQcTarget}
+                    onItemClick={handleItemClick}
+                    allowSkip
                   />
                 ))
               )}
@@ -561,6 +568,24 @@ export default function Produksi() {
               : ''
           }
           confirmText="Ya, Lanjutkan"
+          cancelText="Batal"
+          variant="warning"
+        />
+        <ConfirmModal
+          isOpen={!!skipPrompt}
+          onClose={() => setSkipPrompt(null)}
+          onConfirm={() => {
+            const target = skipPrompt;
+            setSkipPrompt(null);
+            setQcTarget(target);
+          }}
+          title="Lewati Tahap Sebelumnya?"
+          message={
+            skipPrompt
+              ? `${skipPrompt.item?.service_name || 'Item'} masih di tahap ${skipPrompt.item?.item_work_status}. QC di ${stageStatusLabel} akan menandai ${skipLabel(skipPrompt.skipped)} sebagai "Dilewati".`
+              : ''
+          }
+          confirmText="Ya, Lewati & QC"
           cancelText="Batal"
           variant="warning"
         />

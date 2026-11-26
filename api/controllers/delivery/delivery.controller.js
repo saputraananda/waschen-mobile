@@ -63,7 +63,7 @@ const fetchDetailsForTxns = async (txnIds) => {
     `SELECT d.id, d.transaction_id, d.service_id, d.service_name, d.qty, d.unit,
             d.item_work_status, d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage,
             d.requires_ironing, d.fulfillment_type, d.brand, d.color, d.material, d.size,
-            d.condition_notes,
+            d.condition_notes, d.is_cleanox,
             s.category_id,
             cat.code AS category_code
      FROM tr_transaction_detail d

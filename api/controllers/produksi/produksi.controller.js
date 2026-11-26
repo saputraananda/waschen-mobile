@@ -62,6 +62,35 @@ const STATUS_PERCENT = {
   'Dibatalkan': 0
 };
 
+/**
+ * QC lompat tahap (keputusan user 2026-11-26): lewat pencarian, tim tahap berikutnya boleh QC item
+ * yang belum di-QC tahap sebelumnya. Tahap yang terlewat dicatat sebagai baris tr_item_progress
+ * status 'skipped' ("Dilewati") — tidak dihitung KPI/payroll/lembur.
+ */
+const SKIP_FLOW = ['frontliner', 'washing', 'ironing', 'packing', 'delivery'];
+const SKIP_TARGET_STAGES = ['washing', 'ironing', 'packing', 'delivery'];
+const SKIP_STAGE_LABEL = {
+  frontliner: 'Frontliner',
+  washing: 'Tim Cuci',
+  ironing: 'Tim Setrika',
+  packing: 'Tim Packing',
+  delivery: 'Delivery'
+};
+
+/** Tahap yang akan dilewati bila item di-QC di `targetStage`; null = tidak boleh lompat. */
+const skippedStagesFor = (detail, targetStage) => {
+  if (!SKIP_TARGET_STAGES.includes(targetStage)) return null;
+  if (Number(detail.is_on_hold) === 1 || Number(detail.is_cleanox) === 1) return null;
+  if (targetStage === 'delivery' && detail.fulfillment_type !== 'Delivery_Kurir') return null;
+  if (targetStage === 'ironing' && Number(detail.requires_ironing) === 0) return null;
+  const current = SKIP_FLOW.find((s) => STAGE_STATUS[s] === detail.item_work_status);
+  const ci = SKIP_FLOW.indexOf(current);
+  const ti = SKIP_FLOW.indexOf(targetStage);
+  if (ci < 0 || ti < 0 || ci >= ti) return null;
+  // Item tanpa setrika memang tidak pernah lewat Tim Setrika → bukan "dilewati"
+  return SKIP_FLOW.slice(ci, ti).filter((s) => !(s === 'ironing' && Number(detail.requires_ironing) === 0));
+};
+
 const buildPhotoUrl = (req, photoPath) => {
   if (!photoPath) return null;
   const normalized = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
@@ -674,12 +703,17 @@ export const submitQC = async (req, res) => {
       return;
     }
 
+    let skippedStages = [];
     if (detail.item_work_status !== STAGE_STATUS[stage]) {
-      await cleanupFiles();
-      return res.status(409).json({
-        success: false,
-        message: `Item tidak berada di tahap ini (posisi sekarang: ${detail.item_work_status})`
-      });
+      const skip = skippedStagesFor(detail, stage);
+      if (!skip) {
+        await cleanupFiles();
+        return res.status(409).json({
+          success: false,
+          message: `Item tidak berada di tahap ini (posisi sekarang: ${detail.item_work_status})`
+        });
+      }
+      skippedStages = skip;
     }
     if (Number(detail.is_on_hold) === 1) {
       await cleanupFiles();
@@ -811,6 +845,25 @@ export const submitQC = async (req, res) => {
     const progressStatus =
       qc_decision === 'hold' ? 'hold' : qc_decision === 'kembali' ? 'returned' : 'done';
 
+    for (const skipped of skippedStages) {
+      await conn.query(
+        `INSERT INTO tr_item_progress
+           (transaction_id, transaction_detail_id, stage, employee_id, employee_name, role_used,
+            outlet_id, qc_status, qc_decision, notes, status, work_time_flag)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'aman', 'lanjut', ?, 'skipped', 'normal')`,
+        [
+          detail.txn_id,
+          detail.id,
+          skipped,
+          employeeId,
+          employeeName,
+          roleUsed,
+          workOutletOf(detail, skipped),
+          `Dilewati — langsung di-QC ${SKIP_STAGE_LABEL[stage] || stage}`
+        ]
+      );
+    }
+
     const [progressResult] = await conn.query(
       `INSERT INTO tr_item_progress
          (transaction_id, transaction_detail_id, stage, employee_id, employee_name, role_used,
@@ -929,6 +982,11 @@ export const submitQC = async (req, res) => {
       }
     } else {
       // hold / kembali (tahap lain) → item tetap di posisi, ditandai hold
+      // (lompat tahap: posisinya dipindah dulu ke tahap ini)
+      if (skippedStages.length) {
+        detailUpdates.push('item_work_status = ?');
+        detailParams.push(STAGE_STATUS[stage]);
+      }
       detailUpdates.push('is_on_hold = 1', 'hold_stage = ?');
       detailParams.push(stage === 'delivery' ? 'packing' : stage);
       if (qc_status === 'temuan') {
@@ -979,7 +1037,7 @@ export const submitQC = async (req, res) => {
         detail.id,
         logStatus,
         employeeId,
-        `[${stage}] QC ${qc_status} — ${qc_decision}${noteText ? ` : ${noteText}` : ''}`
+        `[${stage}] QC ${qc_status} — ${qc_decision}${skippedStages.length ? ` (melewati ${skippedStages.map((x) => SKIP_STAGE_LABEL[x] || x).join(', ')})` : ''}${noteText ? ` : ${noteText}` : ''}`
       ]
     );
 

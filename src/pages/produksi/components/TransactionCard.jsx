@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, PauseCircle, ChevronRight, Scale, Shirt, PauseOctagon, UserRound } from 'lucide-react';
 import { formatDateTime, isKiloanItem } from '../../../utils/produksiShared.js';
-import { STAGE_ITEM_STATUS as STAGE_STATUS } from '../../../utils/notaScan.js';
+import { STAGE_ITEM_STATUS as STAGE_STATUS, skippedStagesForItem, skipLabel } from '../../../utils/notaScan.js';
 import formatName from '../../../utils/FormatName.js';
 import DropPointBadge from '../../../components/DropPointBadge.jsx';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
@@ -10,14 +10,20 @@ import { customerPickLabel } from '../../../utils/customerPickLabel.js';
  * Kartu nota di list progres — header info nota + nested section item yang bisa di-QC
  * di tahap aktif. Header putih, section item dalam box abu supaya kontras & tidak nyaru.
  */
-function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
+function TransactionCard({ txn, activeStage, onOpen, onItemClick, allowSkip = false }) {
   const hasFinding = !!txn.has_finding;
   const hasHold = !!txn.has_hold;
   const place = customerPickLabel({ street: txn.address, block: txn.block, houseNumber: txn.house_number });
 
-  const stageItems = (txn.items || []).filter(
-    (it) => it.item_work_status === STAGE_STATUS[activeStage]
-  );
+  // Hasil pencarian: item yang belum sampai tahap ini ikut tampil (QC = lewati tahap sebelumnya)
+  const stageItems = (txn.items || [])
+    .map((it) => ({
+      item: it,
+      skipped: it.item_work_status === STAGE_STATUS[activeStage] || !allowSkip
+        ? []
+        : skippedStagesForItem(it, activeStage)
+    }))
+    .filter(({ item, skipped }) => item.item_work_status === STAGE_STATUS[activeStage] || skipped.length > 0);
 
   return (
     <div
@@ -83,7 +89,7 @@ function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
       {/* Section item QC — nested box abu supaya kontras dari header putih */}
       {stageItems.length > 0 && (
         <div className="mx-3 mb-3 bg-slate-50 rounded-[14px] border border-slate-200/80 p-2 flex flex-col gap-1.5">
-          {stageItems.map((item) => {
+          {stageItems.map(({ item, skipped }) => {
             const isHold = Number(item.is_on_hold) === 1;
             const isFinding = Number(item.has_finding) === 1;
             return (
@@ -91,7 +97,7 @@ function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
                 key={item.id}
                 type="button"
                 disabled={isHold}
-                onClick={() => onItemClick({ txn, item })}
+                onClick={() => onItemClick({ txn, item, skipped })}
                 className={`text-left pl-2.5 pr-3 py-2.5 rounded-[11px] border text-[11.5px] font-bold flex items-center gap-2.5 transition active:scale-[.98] ${
                   isHold
                     ? 'bg-amber-50 text-amber-700 border-amber-200 opacity-80'
@@ -107,13 +113,18 @@ function TransactionCard({ txn, activeStage, onOpen, onItemClick }) {
                 >
                   {isHold ? <PauseOctagon className="w-3.5 h-3.5" /> : isKiloanItem(item) ? <Scale className="w-3.5 h-3.5" /> : <Shirt className="w-3.5 h-3.5" />}
                 </span>
-                <span className="flex-1 min-w-0 truncate">
-                  {item.service_name} · {Number(item.qty)} {item.unit}
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate">{item.service_name} · {Number(item.qty)} {item.unit}</span>
+                  {skipped.length > 0 && (
+                    <span className="block truncate text-[10px] font-bold text-amber-700">
+                      Posisi: {item.item_work_status} · Lewati {skipLabel(skipped)}
+                    </span>
+                  )}
                 </span>
                 <span className={`text-[9.5px] font-black flex-shrink-0 px-2 py-1 rounded-full ${
-                  isHold ? 'bg-amber-200/60 text-amber-800' : 'bg-[#5f1340] text-white'
+                  isHold ? 'bg-amber-200/60 text-amber-800' : skipped.length > 0 ? 'bg-amber-500 text-white' : 'bg-[#5f1340] text-white'
                 }`}>
-                  {isHold ? 'HOLD' : 'QC →'}
+                  {isHold ? 'HOLD' : skipped.length > 0 ? 'LEWATI →' : 'QC →'}
                 </span>
               </button>
             );

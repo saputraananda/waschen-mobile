@@ -12,7 +12,9 @@ import { api, formatDateTime, isKiloanItem } from '../../../utils/produksiShared
 import {
   extractNotaSearchKey,
   evaluateNotaForStage,
-  STAGE_ITEM_STATUS
+  STAGE_ITEM_STATUS,
+  skippedStagesForItem,
+  skipLabel
 } from '../../../utils/notaScan.js';
 import ItemQCSheet from '../../produksi/pages/ItemQCSheet.jsx';
 import TransactionDetailModal from '../../produksi/components/TransactionDetailModal.jsx';
@@ -114,10 +116,14 @@ function AddressBlock({ txn }) {
   );
 }
 
-function DeliveryCard({ txn, tab, onOpen, onItemClick }) {
+function DeliveryCard({ txn, tab, onOpen, onItemClick, allowSkip = false }) {
   const isPickup = tab === 'pickup';
+  // Hasil pencarian tab Delivery: item yang belum Siap Diantar ikut tampil (QC = lewati tahap sebelumnya)
+  const skipOf = (it) => (!isPickup && allowSkip && it.item_work_status !== 'Siap Diantar'
+    ? skippedStagesForItem(it, 'delivery')
+    : []);
   const pendingQcItems = (txn.items || []).filter((it) =>
-    isPickup ? it.item_work_status === 'Antrean' : it.item_work_status === 'Siap Diantar'
+    isPickup ? it.item_work_status === 'Antrean' : it.item_work_status === 'Siap Diantar' || skipOf(it).length > 0
   );
   const inTransitItems = isPickup
     ? []
@@ -226,12 +232,13 @@ function DeliveryCard({ txn, tab, onOpen, onItemClick }) {
         <div className="mx-3 mb-3 bg-slate-50 rounded-[14px] border border-slate-200/80 p-2 flex flex-col gap-1.5">
           {pendingQcItems.map((item) => {
             const isHold = Number(item.is_on_hold) === 1;
+            const skipped = skipOf(item);
             return (
               <button
                 key={item.id}
                 type="button"
                 disabled={isHold}
-                onClick={() => onItemClick({ txn, item, stage: isPickup ? 'frontliner' : 'delivery' })}
+                onClick={() => onItemClick({ txn, item, stage: isPickup ? 'frontliner' : 'delivery', skipped })}
                 className={`text-left pl-2.5 pr-3 py-2.5 rounded-[11px] border text-[11.5px] font-bold flex items-center gap-2.5 transition active:scale-[.98] ${
                   isHold
                     ? 'bg-amber-50 text-amber-700 border-amber-200 opacity-80'
@@ -243,13 +250,18 @@ function DeliveryCard({ txn, tab, onOpen, onItemClick }) {
                 }`}>
                   {isHold ? <PauseOctagon className="w-3.5 h-3.5" /> : isKiloanItem(item) ? <Scale className="w-3.5 h-3.5" /> : <Shirt className="w-3.5 h-3.5" />}
                 </span>
-                <span className="flex-1 min-w-0 truncate">
-                  {item.service_name} · {Number(item.qty)} {item.unit}
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate">{item.service_name} · {Number(item.qty)} {item.unit}</span>
+                  {skipped.length > 0 && (
+                    <span className="block truncate text-[10px] font-bold text-amber-700">
+                      Posisi: {item.item_work_status} · Lewati {skipLabel(skipped)}
+                    </span>
+                  )}
                 </span>
                 <span className={`text-[9.5px] font-black flex-shrink-0 px-2 py-1 rounded-full ${
-                  isHold ? 'bg-amber-200/60 text-amber-800' : 'bg-[#5f1340] text-white'
+                  isHold ? 'bg-amber-200/60 text-amber-800' : skipped.length > 0 ? 'bg-amber-500 text-white' : 'bg-[#5f1340] text-white'
                 }`}>
-                  {isHold ? 'HOLD' : 'QC →'}
+                  {isHold ? 'HOLD' : skipped.length > 0 ? 'LEWATI →' : 'QC →'}
                 </span>
               </button>
             );
@@ -294,6 +306,12 @@ export default function Delivery() {
   const [toast, setToast] = useState(null);
   const [qcTarget, setQcTarget] = useState(null);
   const [detailTxnId, setDetailTxnId] = useState(null);
+  // QC lompat tahap dari hasil pencarian: konfirmasi dulu sebelum buka lembar QC
+  const [skipPrompt, setSkipPrompt] = useState(null);
+  const handleItemClick = useCallback((target) => {
+    if (target?.skipped?.length) setSkipPrompt(target);
+    else setQcTarget(target);
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
@@ -473,7 +491,8 @@ export default function Delivery() {
         const matchStatuses =
           tab === 'delivery' ? ['Siap Diantar', 'Sedang Diantar'] : [waitingStatus];
         const matched = list.filter((t) =>
-          (t.items || []).some((it) => matchStatuses.includes(it.item_work_status))
+          (t.items || []).some((it) => matchStatuses.includes(it.item_work_status)
+            || (tab === 'delivery' && skippedStagesForItem(it, 'delivery').length > 0))
         );
         setSearchResults(matched.length ? matched : [txn]);
         setSearching(false);
@@ -655,7 +674,8 @@ export default function Delivery() {
                     txn={txn}
                     tab={tab}
                     onOpen={(t) => setDetailTxnId(t.id)}
-                    onItemClick={setQcTarget}
+                    onItemClick={handleItemClick}
+                    allowSkip
                   />
                 ))
               )}
@@ -722,6 +742,24 @@ export default function Delivery() {
           confirmText="Mengerti"
           cancelText=""
           variant={scanNotice?.variant || 'info'}
+        />
+        <ConfirmModal
+          isOpen={!!skipPrompt}
+          onClose={() => setSkipPrompt(null)}
+          onConfirm={() => {
+            const target = skipPrompt;
+            setSkipPrompt(null);
+            setQcTarget(target);
+          }}
+          title="Lewati Tahap Sebelumnya?"
+          message={
+            skipPrompt
+              ? `${skipPrompt.item?.service_name || 'Item'} masih di tahap ${skipPrompt.item?.item_work_status}. QC Delivery akan menandai ${skipLabel(skipPrompt.skipped)} sebagai "Dilewati".`
+              : ''
+          }
+          confirmText="Ya, Lewati & QC"
+          cancelText="Batal"
+          variant="warning"
         />
         <DataUpdatedModal isOpen={showUpdated} onClose={() => setShowUpdated(false)} />
       </div>

@@ -148,7 +148,7 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
                   {item.progress.map((p) => (
                     <div key={p.id} className="border-l-2 border-slate-200 pl-2.5">
                       <div className="flex items-center gap-1.5">
-                        {p.source === 'smartlink'
+                        {p.source === 'smartlink' || p.status === 'skipped'
                           ? <History className="w-3 h-3 text-slate-400" />
                           : p.qc_status === 'aman'
                             ? <ShieldCheck className="w-3 h-3 text-emerald-500" />
@@ -158,6 +158,9 @@ export default function TransactionDetailModal({ open, transactionId, onClose })
                         </span>
                         {p.source === 'smartlink' && (
                           <span className="text-[8.5px] font-black uppercase px-1 py-px rounded bg-slate-100 text-slate-500">Smartlink</span>
+                        )}
+                        {p.status === 'skipped' && (
+                          <span className="text-[8.5px] font-black uppercase px-1 py-px rounded bg-amber-100 text-amber-700">Dilewati</span>
                         )}
                         <span className="text-[10px] text-slate-400 font-semibold">
                           · {formatName(p.employee_name) || '—'} · {formatDateTime(p.completed_at)}

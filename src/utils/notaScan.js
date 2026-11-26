@@ -118,6 +118,17 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
     };
   }
 
+  // Belum sampai tahap ini → tetap bisa di-QC; tahap sebelumnya dicatat "Dilewati"
+  const skippable = items.filter((it) => skippedStagesForItem(it, stageKey).length > 0);
+  if (skippable.length > 0) {
+    return {
+      ok: true,
+      title: 'Nota Bisa Dilewati',
+      message: `${skippable.length} item belum sampai ${stageLabel}. QC di sini menandai tahap sebelumnya sebagai Dilewati.`,
+      variant: 'info',
+    };
+  }
+
   const indices = items.map((it) => statusIndex(it.item_work_status)).filter((i) => i >= 0);
   if (!indices.length) {
     return {
@@ -157,3 +168,32 @@ export function evaluateNotaForStage(txn, stageKey, stageLabel) {
     variant: 'warning',
   };
 }
+
+/**
+ * QC lompat tahap lewat pencarian (keputusan user 2026-11-26). Padanan skippedStagesFor di
+ * api/controllers/produksi/produksi.controller.js — ubah keduanya bersamaan.
+ */
+const SKIP_FLOW = ['frontliner', 'washing', 'ironing', 'packing', 'delivery'];
+const SKIP_TARGET_STAGES = ['washing', 'ironing', 'packing', 'delivery'];
+export const SKIP_STAGE_LABEL = {
+  frontliner: 'Frontliner',
+  washing: 'Tim Cuci',
+  ironing: 'Tim Setrika',
+  packing: 'Tim Packing',
+  delivery: 'Delivery',
+};
+
+/** Tahap yang akan "Dilewati" bila item di-QC di stageKey; [] = tidak bisa lompat. */
+export function skippedStagesForItem(item, stageKey) {
+  if (!item || !SKIP_TARGET_STAGES.includes(stageKey)) return [];
+  if (Number(item.is_on_hold) === 1 || Number(item.is_cleanox) === 1) return [];
+  if (stageKey === 'delivery' && item.fulfillment_type !== 'Delivery_Kurir') return [];
+  if (stageKey === 'ironing' && Number(item.requires_ironing) === 0) return [];
+  const current = SKIP_FLOW.find((s) => STAGE_ITEM_STATUS[s] === item.item_work_status);
+  const ci = SKIP_FLOW.indexOf(current);
+  const ti = SKIP_FLOW.indexOf(stageKey);
+  if (ci < 0 || ti < 0 || ci >= ti) return [];
+  return SKIP_FLOW.slice(ci, ti).filter((s) => !(s === 'ironing' && Number(item.requires_ironing) === 0));
+}
+
+export const skipLabel = (stages) => stages.map((s) => SKIP_STAGE_LABEL[s] || s).join(', ');
