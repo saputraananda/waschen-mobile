@@ -170,6 +170,11 @@ function DeliveryCard({ txn, tab, onOpen, onItemClick, allowSkip = false }) {
                   {isLunas ? 'LUNAS' : 'BELUM LUNAS'}
                 </span>
               )}
+              {!isPickup && Number(txn.convert_to_delivery) === 1 && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
+                  AMBIL DI OUTLET → DIANTAR
+                </span>
+              )}
               {hasFinding && <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
               {hasHold && <PauseOctagon className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
             </div>
@@ -480,7 +485,7 @@ export default function Delivery() {
         setSearching(false);
         setScanNotice({
           title: 'Nota Tidak Ditemukan',
-          message: `Nota "${key}" tidak ditemukan sebagai nota delivery di outlet ini. Pastikan QR/barcode sesuai dan fulfillment_type = Delivery_Kurir.`,
+          message: `Nota "${key}" tidak ditemukan di outlet ini. Pastikan QR/barcode sesuai.`,
           variant: 'warning'
         });
         return;

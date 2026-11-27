@@ -91,6 +91,37 @@ const skippedStagesFor = (detail, targetStage) => {
   return SKIP_FLOW.slice(ci, ti).filter((s) => !(s === 'ironing' && Number(detail.requires_ironing) === 0));
 };
 
+/**
+ * Ubah seluruh nota "Ambil di Outlet" → Delivery (mengikuti updateFulfillment di POS):
+ * item aktif jadi Delivery_Kurir, "Siap Diambil" → "Siap Diantar", header is_delivery = 1,
+ * alamat antar diisi alamat pelanggan bila kosong, dan dicatat di status log.
+ */
+export const convertNotaToDelivery = async (transactionId, employeeId) => {
+  const [upd] = await myWaschenPool.query(
+    `UPDATE tr_transaction_detail
+     SET fulfillment_type = 'Delivery_Kurir',
+         item_work_status = CASE WHEN item_work_status = 'Siap Diambil' THEN 'Siap Diantar' ELSE item_work_status END
+     WHERE transaction_id = ? AND is_production = 1
+       AND COALESCE(item_work_status, '') NOT IN ('Dibatalkan', 'Selesai')
+       AND COALESCE(fulfillment_type, '') <> 'Delivery_Kurir'`,
+    [transactionId]
+  );
+  if (!upd.affectedRows) return;
+  await myWaschenPool.query(
+    `UPDATE tr_transaction t
+     LEFT JOIN mst_customer c ON c.id = t.customer_id
+     SET t.is_delivery = 1,
+         t.delivery_address = COALESCE(NULLIF(TRIM(t.delivery_address), ''), NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), '')),
+         t.updated_at = NOW()
+     WHERE t.id = ?`,
+    [transactionId]
+  );
+  await myWaschenPool.query(
+    'INSERT INTO tr_transaction_status_log (transaction_id, status, employee_id, notes) VALUES (?, ?, ?, ?)',
+    [transactionId, 'Siap Diantar', employeeId, 'Pengambilan diubah ke Delivery otomatis saat QC Delivery (nota semula Ambil di Outlet)']
+  );
+};
+
 const buildPhotoUrl = (req, photoPath) => {
   if (!photoPath) return null;
   const normalized = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
@@ -701,6 +732,15 @@ export const submitQC = async (req, res) => {
     if (!(isDistributedItem && stage === 'frontliner') && !assertSameOutlet(req, res, workOutletId)) {
       await cleanupFiles();
       return;
+    }
+
+    // Nota "Ambil di Outlet" (mis. dari Smartlink) yang mendadak minta diantar: QC Delivery lewat
+    // pencarian otomatis mengubah seluruh nota jadi Delivery (sama seperti ubah pengambilan di POS).
+    if (stage === 'delivery' && detail.fulfillment_type !== 'Delivery_Kurir'
+      && !['Selesai', 'Dibatalkan', 'Sedang Diantar'].includes(detail.item_work_status)) {
+      await convertNotaToDelivery(detail.txn_id, Number(employeeId) || null);
+      detail.fulfillment_type = 'Delivery_Kurir';
+      if (detail.item_work_status === 'Siap Diambil') detail.item_work_status = 'Siap Diantar';
     }
 
     let skippedStages = [];

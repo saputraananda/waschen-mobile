@@ -122,8 +122,30 @@ const composeListQuery = async (req, { waitingStatuses, requireLunas = false }) 
 };
 
 /**
+ * Nota "Ambil di Outlet" yang muncul di pencarian Delivery ditampilkan seolah nota delivery
+ * (Siap Diambil → Siap Diantar) supaya bisa langsung di-QC. Saat QC Delivery disimpan, server
+ * (submitQC → convertNotaToDelivery) benar-benar mengubah notanya jadi Delivery.
+ */
+const presentAsDelivery = (txns, details) => {
+  const hasDelivery = new Set(
+    details.filter((d) => d.fulfillment_type === FULFILLMENT_DELIVERY).map((d) => d.transaction_id)
+  );
+  const convertIds = new Set(txns.filter((t) => !hasDelivery.has(t.id)).map((t) => t.id));
+  const shownDetails = details.map((d) => (convertIds.has(d.transaction_id)
+    ? {
+      ...d,
+      fulfillment_type: FULFILLMENT_DELIVERY,
+      item_work_status: d.item_work_status === 'Siap Diambil' ? 'Siap Diantar' : d.item_work_status,
+      convert_to_delivery: 1
+    }
+    : d));
+  return { convertIds, shownDetails };
+};
+
+/**
  * GET /api/delivery/search?q=
- * Cari nota delivery (fulfillment_type = Delivery_Kurir) by order_no / barcode / nama / HP.
+ * Cari nota by order_no / barcode / nama / HP. Termasuk nota Ambil di Outlet (mis. Smartlink yang
+ * mendadak minta diantar): ditandai convert_to_delivery dan jadi Delivery saat di-QC.
  */
 export const searchDelivery = async (req, res) => {
   try {
@@ -152,7 +174,8 @@ export const searchDelivery = async (req, res) => {
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
        WHERE t.outlet_id = ?
-         AND d.fulfillment_type = ?
+         AND d.is_production = 1
+         AND COALESCE(d.item_work_status, '') <> 'Dibatalkan'
          AND (
            t.order_no = ? OR t.barcode = ? OR CAST(t.id AS CHAR) = ?
            OR t.order_no LIKE ? OR t.barcode LIKE ?
@@ -166,7 +189,7 @@ export const searchDelivery = async (req, res) => {
          t.order_date DESC
        LIMIT 50`,
       [
-        outletId, FULFILLMENT_DELIVERY,
+        outletId,
         search, search, search, like, like, like, like,
         search, search, search
       ]
@@ -177,10 +200,14 @@ export const searchDelivery = async (req, res) => {
     }
 
     const details = await fetchDetailsForTxns(txns.map((t) => t.id));
+    const { convertIds, shownDetails } = presentAsDelivery(txns, details);
     return res.status(200).json({
       success: true,
       message: 'OK',
-      data: mapTxnRows(txns, details, null)
+      data: mapTxnRows(txns, shownDetails, null).map((t) => ({
+        ...t,
+        convert_to_delivery: convertIds.has(t.id) ? 1 : 0
+      }))
     });
   } catch (error) {
     console.error('delivery.searchDelivery error:', error);
