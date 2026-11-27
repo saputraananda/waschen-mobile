@@ -19,7 +19,7 @@ router.use(requireAuth);
 router.use(requireCleanlinessForProgress);
 
 const uploadProduksiPhotosWithErrorHandling = (req, res, next) => {
-  uploadProduksiPhotos.array('photos', 5)(req, res, (err) => {
+  uploadProduksiPhotos.array('photos')(req, res, (err) => {
     if (err) {
       const message =
         err.code === 'LIMIT_FILE_SIZE'

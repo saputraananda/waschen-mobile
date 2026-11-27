@@ -558,10 +558,10 @@ export function QcPhotos({ qc }) {
     <div>
       <label className="text-[10.5px] text-slate-700 font-extrabold uppercase tracking-wider block mb-2">
         {qc.isHandover
-          ? 'Foto Bukti Diantar (wajib, maks 5)'
+          ? 'Foto Bukti Diantar (wajib)'
           : qc.qcStatus === 'temuan'
-            ? 'Foto Bukti Temuan (wajib, maks 5)'
-            : `Foto Hasil (${qc.photoRequired ? 'wajib' : 'opsional'}, maks 5)`}
+            ? 'Foto Bukti Temuan (wajib)'
+            : `Foto Hasil (${qc.photoRequired ? 'wajib' : 'opsional'})`}
       </label>
       <input
         ref={qc.fileInputRef}

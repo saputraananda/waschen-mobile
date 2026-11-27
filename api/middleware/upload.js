@@ -493,7 +493,8 @@ const produksiPhotoFileFilter = (req, file, cb) => {
 export const uploadProduksiPhotos = multer({
   storage: multer.memoryStorage(),
   fileFilter: produksiPhotoFileFilter,
-  limits: { fileSize: 6 * 1024 * 1024, files: 5 }
+  // Jumlah foto QC tidak dibatasi (hanya ukuran per foto)
+  limits: { fileSize: 6 * 1024 * 1024 }
 });
 
 /** @deprecated gunakan uploadProduksiPhotos */

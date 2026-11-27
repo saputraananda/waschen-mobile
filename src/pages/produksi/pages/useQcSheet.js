@@ -5,7 +5,7 @@ import {
 import useLockBodyScroll from '../../../hooks/useLockBodyScroll.js';
 import { buildProduksiPhotoLines, burnPhotoOverlay, getCurrentUserName } from '../../../utils/photoStamp.js';
 
-const MAX_PHOTOS = 5;
+const MAX_PHOTOS = Infinity; // jumlah foto QC tidak dibatasi
 const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
 
 const TEMUAN_NOTE = {

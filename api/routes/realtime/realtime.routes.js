@@ -227,7 +227,7 @@ async function bindPosEmployee(req, res) {
 }
 
 const uploadQcPhotos = (req, res, next) => {
-  uploadProduksiPhotos.array('photos', 5)(req, res, (err) => {
+  uploadProduksiPhotos.array('photos')(req, res, (err) => {
     if (err) {
       const message = err.code === 'LIMIT_FILE_SIZE'
         ? 'Ukuran foto terlalu besar (maks 6MB per foto).'
